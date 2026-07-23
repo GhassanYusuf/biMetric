@@ -1,8 +1,10 @@
 import DonutChart from '@/Components/DonutChart';
 import { BuildingIcon, CalendarIcon, InboxIcon, MailIcon, SpinnerIcon, XIcon } from '@/Components/Icons';
 import Modal from '@/Components/Modal';
+import useRealtimePunches from '@/hooks/useRealtimePunches';
+import { usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const CATEGORY_META = {
     early: { label: 'Early arrival', shortLabel: 'Early', color: '#10b981' },
@@ -66,6 +68,21 @@ export default function EmployeeProfileModal({ employee, onClose }) {
         setSelectedCategory(null);
         fetchSummary();
     }, [show, fetchSummary]);
+
+    const { mqtt } = usePage().props;
+    const refetchTimeout = useRef(null);
+
+    useRealtimePunches(mqtt, (payload) => {
+        if (!show || payload.employee_id !== employee?.id) return;
+
+        // Debounced refetch rather than hand-patching the computed
+        // early/late/absent buckets client-side - that categorization is
+        // business logic that already lives server-side.
+        clearTimeout(refetchTimeout.current);
+        refetchTimeout.current = setTimeout(fetchSummary, 1500);
+    });
+
+    useEffect(() => () => clearTimeout(refetchTimeout.current), []);
 
     function toggleWaive(date) {
         setWaivingDate(date);

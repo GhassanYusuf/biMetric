@@ -4,9 +4,10 @@ import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import TextInput from '@/Components/TextInput';
+import useRealtimePunches from '@/hooks/useRealtimePunches';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 
 const VERIFY_METHODS = {
     0: 'Password',
@@ -20,6 +21,22 @@ export default function Index({ logs, devices, filters }) {
     const [from, setFrom] = useState(filters.from ?? '');
     const [to, setTo] = useState(filters.to ?? '');
     const [reading, setReading] = useState(false);
+
+    const { mqtt } = usePage().props;
+    const reloadTimeout = useRef(null);
+
+    const { connected: liveConnected } = useRealtimePunches(mqtt, () => {
+        // Debounced reload of just the logs prop - reuses the same call
+        // "Read from Device" already triggers on completion, just fired by
+        // an incoming live punch instead of a button click. Debounced so a
+        // burst of several punches only triggers one reload.
+        clearTimeout(reloadTimeout.current);
+        reloadTimeout.current = setTimeout(() => {
+            router.reload({ only: ['logs'], preserveScroll: true });
+        }, 1500);
+    });
+
+    useEffect(() => () => clearTimeout(reloadTimeout.current), []);
 
     function applyFilters(e) {
         e.preventDefault();
@@ -62,9 +79,26 @@ export default function Index({ logs, devices, filters }) {
         <AuthenticatedLayout
             header={
                 <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-semibold leading-tight text-gray-800">
-                        Attendance Logs
-                    </h2>
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-xl font-semibold leading-tight text-gray-800">
+                            Attendance Logs
+                        </h2>
+                        <span
+                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${
+                                liveConnected ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-400'
+                            }`}
+                            title={
+                                liveConnected
+                                    ? 'Connected — new punches appear automatically'
+                                    : 'Not connected — use "Read from Device" to pull new punches'
+                            }
+                        >
+                            <span
+                                className={`h-1.5 w-1.5 rounded-full ${liveConnected ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                            />
+                            {liveConnected ? 'Live' : 'Offline'}
+                        </span>
+                    </div>
                     <PrimaryButton onClick={readFromDevice} disabled={reading}>
                         <RefreshIcon className={`-ml-0.5 mr-1.5 h-4 w-4 ${reading ? 'animate-spin' : ''}`} />
                         {reading ? 'Reading…' : 'Read from Device'}

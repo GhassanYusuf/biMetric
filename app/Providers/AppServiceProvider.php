@@ -21,5 +21,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // App\Listeners\PublishPunchToMqtt is wired to App\Events\PunchRecorded
+        // automatically by Laravel's event auto-discovery (its handle() method
+        // is type-hinted with the event) - no explicit Event::listen() needed,
+        // and adding one here would double-register it.
     }
 }

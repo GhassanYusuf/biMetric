@@ -1,5 +1,16 @@
 import Badge from '@/Components/Badge';
-import { InboxIcon, PencilIcon, PlusIcon, RefreshIcon, SignalIcon, TrashIcon, UserPlusIcon } from '@/Components/Icons';
+import Dropdown from '@/Components/Dropdown';
+import {
+    ChevronDownIcon,
+    InboxIcon,
+    PencilIcon,
+    PlusIcon,
+    RefreshIcon,
+    SignalIcon,
+    SpinnerIcon,
+    TrashIcon,
+    UserPlusIcon,
+} from '@/Components/Icons';
 import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
 import Modal from '@/Components/Modal';
@@ -160,7 +171,13 @@ export default function Index({ devices }) {
                                             </td>
                                             <td className="px-4 py-3">
                                                 {device.last_sync_status === 'error' ? (
-                                                    <Badge variant="error" title={device.last_sync_error}>error</Badge>
+                                                    <Badge
+                                                        variant="error"
+                                                        title={device.last_sync_error}
+                                                        className="cursor-help decoration-dotted underline underline-offset-2"
+                                                    >
+                                                        error
+                                                    </Badge>
                                                 ) : device.last_sync_status === 'success' ? (
                                                     <Badge variant="success">ok</Badge>
                                                 ) : (
@@ -168,36 +185,60 @@ export default function Index({ devices }) {
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                                <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                                    <Dropdown>
+                                                        <Dropdown.Trigger>
+                                                            <button
+                                                                type="button"
+                                                                disabled={busyDeviceId === device.id}
+                                                                className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-700 shadow-sm transition duration-150 ease-in-out hover:border-indigo-300 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 disabled:pointer-events-none disabled:opacity-40"
+                                                            >
+                                                                {busyDeviceId === device.id ? (
+                                                                    <SpinnerIcon className="h-3.5 w-3.5" />
+                                                                ) : (
+                                                                    <SignalIcon className="h-3.5 w-3.5" />
+                                                                )}
+                                                                <span>Device</span>
+                                                                <ChevronDownIcon className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </Dropdown.Trigger>
+                                                        <Dropdown.Content align="right" width="56">
+                                                            <Dropdown.Button
+                                                                disabled={busyDeviceId === device.id}
+                                                                onClick={() => runAction('devices.test-connection', 'test', device)}
+                                                            >
+                                                                <SignalIcon className="h-4 w-4 text-indigo-600" />
+                                                                {isBusy(device, 'test') ? 'Testing…' : 'Test Connection'}
+                                                            </Dropdown.Button>
+                                                            <Dropdown.Button
+                                                                disabled={busyDeviceId === device.id}
+                                                                onClick={() => runAction('devices.import-employees', 'import', device)}
+                                                            >
+                                                                <UserPlusIcon className="h-4 w-4 text-indigo-600" />
+                                                                {isBusy(device, 'import') ? 'Importing…' : 'Import Employees'}
+                                                            </Dropdown.Button>
+                                                            <Dropdown.Button
+                                                                disabled={busyDeviceId === device.id}
+                                                                onClick={() => runAction('devices.sync-attendance', 'sync', device)}
+                                                            >
+                                                                <RefreshIcon className="h-4 w-4 text-indigo-600" />
+                                                                {isBusy(device, 'sync') ? 'Syncing…' : 'Sync Attendance'}
+                                                            </Dropdown.Button>
+                                                        </Dropdown.Content>
+                                                    </Dropdown>
                                                     <TableActionButton
-                                                        icon={SignalIcon}
-                                                        loading={isBusy(device, 'test')}
+                                                        icon={PencilIcon}
                                                         disabled={busyDeviceId === device.id}
-                                                        onClick={() => runAction('devices.test-connection', 'test', device)}
+                                                        onClick={() => openEdit(device)}
                                                     >
-                                                        Test
-                                                    </TableActionButton>
-                                                    <TableActionButton
-                                                        icon={UserPlusIcon}
-                                                        loading={isBusy(device, 'import')}
-                                                        disabled={busyDeviceId === device.id}
-                                                        onClick={() => runAction('devices.import-employees', 'import', device)}
-                                                    >
-                                                        Import Employees
-                                                    </TableActionButton>
-                                                    <TableActionButton
-                                                        icon={RefreshIcon}
-                                                        variant="accent"
-                                                        loading={isBusy(device, 'sync')}
-                                                        disabled={busyDeviceId === device.id}
-                                                        onClick={() => runAction('devices.sync-attendance', 'sync', device)}
-                                                    >
-                                                        Sync
-                                                    </TableActionButton>
-                                                    <TableActionButton icon={PencilIcon} onClick={() => openEdit(device)}>
                                                         Edit
                                                     </TableActionButton>
-                                                    <TableActionButton icon={TrashIcon} variant="danger" onClick={() => destroy(device)}>
+                                                    <TableActionButton
+                                                        icon={TrashIcon}
+                                                        variant="danger"
+                                                        disabled={busyDeviceId === device.id}
+                                                        onClick={() => destroy(device)}
+                                                    >
                                                         Delete
                                                     </TableActionButton>
                                                 </div>
@@ -275,6 +316,8 @@ export default function Index({ devices }) {
                             <InputLabel htmlFor="comm_key" value="Comm Key (optional)" />
                             <TextInput
                                 id="comm_key"
+                                type="password"
+                                placeholder={editingDevice ? '(unchanged)' : ''}
                                 className="mt-1 block w-full"
                                 value={data.comm_key}
                                 onChange={(e) => setData('comm_key', e.target.value)}
@@ -322,11 +365,11 @@ export default function Index({ devices }) {
                     </div>
 
                     <div className="mt-6 flex justify-end space-x-3">
-                        <SecondaryButton onClick={() => setShowAddModal(false)}>
+                        <SecondaryButton type="button" onClick={() => setShowAddModal(false)} disabled={processing}>
                             Cancel
                         </SecondaryButton>
                         <PrimaryButton disabled={processing}>
-                            {editingDevice ? 'Save' : 'Add'}
+                            {processing ? (editingDevice ? 'Saving…' : 'Adding…') : editingDevice ? 'Save' : 'Add'}
                         </PrimaryButton>
                     </div>
                 </form>

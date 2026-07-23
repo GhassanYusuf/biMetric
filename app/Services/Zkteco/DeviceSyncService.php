@@ -2,6 +2,7 @@
 
 namespace App\Services\Zkteco;
 
+use App\Events\PunchRecorded;
 use App\Models\AttendanceLog;
 use App\Models\Device;
 use App\Models\Employee;
@@ -423,12 +424,84 @@ class DeviceSyncService
         // (device_id, device_user_id, punched_at, verify_method) still does the
         // deduplication, but as one statement per chunk instead of a
         // SELECT-then-INSERT round trip per record.
-        DB::transaction(function () use ($rows, &$inserted) {
+        DB::transaction(function () use ($rows, $device, &$inserted) {
             foreach (array_chunk($rows, 500) as $chunk) {
+                // Figure out which of this chunk's natural keys are genuinely new
+                // *before* inserting, so we know which ones to fire PunchRecorded
+                // for afterward (insertOrIgnore's return count alone doesn't tell
+                // us *which* rows were new) - one query per chunk, not per row.
+                $existingKeys = DB::table('attendance_logs')
+                    ->where('device_id', $device->id)
+                    ->whereIn('device_user_id', array_unique(array_column($chunk, 'device_user_id')))
+                    ->whereIn('punched_at', array_unique(array_column($chunk, 'punched_at')))
+                    ->get(['device_user_id', 'punched_at', 'verify_method'])
+                    ->map(fn ($row) => "{$row->device_user_id}|{$row->punched_at}|{$row->verify_method}")
+                    ->flip();
+
+                $newKeys = collect($chunk)
+                    ->map(fn (array $r) => "{$r['device_user_id']}|{$r['punched_at']}|{$r['verify_method']}")
+                    ->reject(fn (string $key) => $existingKeys->has($key))
+                    ->flip();
+
                 $inserted += DB::table('attendance_logs')->insertOrIgnore($chunk);
+
+                if ($newKeys->isEmpty()) {
+                    continue;
+                }
+
+                AttendanceLog::with(['employee', 'device'])
+                    ->where('device_id', $device->id)
+                    ->whereIn('device_user_id', array_unique(array_column($chunk, 'device_user_id')))
+                    ->whereIn('punched_at', array_unique(array_column($chunk, 'punched_at')))
+                    ->get()
+                    ->each(function (AttendanceLog $log) use ($newKeys) {
+                        $key = "{$log->device_user_id}|{$log->punched_at->format('Y-m-d H:i:s')}|{$log->verify_method}";
+
+                        if ($newKeys->has($key)) {
+                            event(new PunchRecorded($log));
+                        }
+                    });
             }
         });
 
         return $inserted;
+    }
+
+    /**
+     * Single-punch counterpart to storeRecords() for the live realtime
+     * listener - no chunking/bulk-diffing needed since it's one record at a
+     * time. Fires PunchRecorded only when the row is genuinely new.
+     */
+    public function storeRealtimePunch(Device $device, array $record): ?AttendanceLog
+    {
+        if (!isset($record['user_id'], $record['timestamp'])) {
+            return null;
+        }
+
+        $employeeId = Employee::query()
+            ->where('employee_code', $record['user_id'])
+            ->value('id');
+
+        $punchedAtUtc = $record['timestamp']->setTimezone(new \DateTimeZone('UTC'));
+
+        $log = AttendanceLog::query()->firstOrCreate(
+            [
+                'device_id' => $device->id,
+                'device_user_id' => $record['user_id'],
+                'punched_at' => $punchedAtUtc,
+                'verify_method' => $record['verify_method'] ?? 0,
+            ],
+            [
+                'employee_id' => $employeeId,
+                'status' => $record['status'] ?? 0,
+            ]
+        );
+
+        if ($log->wasRecentlyCreated) {
+            $log->load(['employee', 'device']);
+            event(new PunchRecorded($log));
+        }
+
+        return $log;
     }
 }

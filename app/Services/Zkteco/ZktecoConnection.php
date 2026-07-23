@@ -383,6 +383,53 @@ class ZktecoConnection
         $this->sendAndReceive(ZktecoProtocol::CMD_TESTVOICE, pack('V', 0));
     }
 
+    /** @return resource|null the raw socket, for stream_select()-based multi-device listening loops. */
+    public function socket()
+    {
+        return $this->socket;
+    }
+
+    /**
+     * Subscribes to the device's realtime event stream without entering
+     * fingerprint/card capture mode - the device keeps behaving normally
+     * (regular badge in/out) while also pushing matching events to us.
+     * Same first two steps enrollFingerprint()/enrollCard() use.
+     */
+    public function beginRealtimeListening(int $eventMask = ZktecoProtocol::EF_ATTLOG): void
+    {
+        $this->sendAndReceive(ZktecoProtocol::CMD_CANCELCAPTURE);
+        $this->sendAndReceive(ZktecoProtocol::CMD_REG_EVENT, pack('V', $eventMask));
+
+        // Short poll interval so a caller's read attempt (after stream_select
+        // says data is ready) never blocks longer than necessary.
+        stream_set_timeout($this->socket, 0, 500_000);
+    }
+
+    /**
+     * Reads and ACKs one pending realtime packet, if any is available right
+     * now - callers drive their own poll/select loop across potentially
+     * multiple device connections and only call this once a socket is
+     * known to be readable. Returns the raw event payload, or null if
+     * nothing arrived or it wasn't a usable push.
+     */
+    public function readPendingRealtimeRaw(): ?string
+    {
+        $datagram = @fread($this->socket, 8192);
+
+        if ($datagram === '' || $datagram === false) {
+            return null;
+        }
+
+        $packet = ZktecoProtocol::parseHeader($datagram);
+        $this->ackRealtime($packet['sessionId']);
+
+        if ($packet['command'] !== ZktecoProtocol::CMD_REG_EVENT || $packet['data'] === '') {
+            return null;
+        }
+
+        return $packet['data'];
+    }
+
     private function ackRealtime(int $sessionId): void
     {
         // Realtime pushes are acknowledged with a bare CMD_ACK_OK carrying

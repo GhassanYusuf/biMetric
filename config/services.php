@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'mqtt' => [
+        'attendance_topic' => env('MQTT_ATTENDANCE_TOPIC', 'payroll/attendance/punch'),
+    ],
+
 ];

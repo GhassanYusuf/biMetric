@@ -123,6 +123,61 @@ class ZktecoDevice
         return $this->connection->enrollCard($uid, $employeeCode, $name, $privilege, $onProgress, $timeoutSeconds);
     }
 
+    /** @return resource|null the raw socket, for a stream_select()-based multi-device realtime listening loop. */
+    public function socket()
+    {
+        return $this->connection->socket();
+    }
+
+    /** Subscribes to the device's realtime event stream (regular badge in/out keeps working normally). */
+    public function beginRealtimeListening(int $eventMask = ZktecoProtocol::EF_ATTLOG): void
+    {
+        $this->connection->beginRealtimeListening($eventMask);
+    }
+
+    /**
+     * Reads one pending realtime attendance push, if any, decoded to the
+     * same shape getAttendanceLogs() records use. Returns null if nothing
+     * arrived or the packet wasn't a usable attendance event.
+     *
+     * @return array{user_id:string, timestamp:\DateTimeImmutable, status:int, verify_method:int}|null
+     */
+    public function readNextRealtimeAttendance(): ?array
+    {
+        $raw = $this->connection->readPendingRealtimeRaw();
+
+        return $raw === null ? null : self::decodeSingleRealtimeAttendance($raw);
+    }
+
+    /**
+     * Realtime EF_ATTLOG pushes are commonly shaped like a single record
+     * from the bulk attendance table - try decoding it directly as one
+     * 40-byte record first (this device's confirmed bulk record width),
+     * falling back to the bulk-transfer framing (4-byte length prefix +
+     * record) in case this firmware includes it even for a single realtime
+     * push. Unverified against a real live punch as of writing - if the
+     * resulting employee_id/timestamp look wrong once tested live, this is
+     * the parsing to revisit (see ListenZkteco console command).
+     */
+    public static function decodeSingleRealtimeAttendance(string $data): ?array
+    {
+        if (strlen($data) >= 40) {
+            $record = self::decode40ByteAttendance(substr($data, 0, 40));
+
+            if ($record !== null) {
+                return $record;
+            }
+        }
+
+        foreach (self::decodeAttendanceRecords($data) as $record) {
+            if (isset($record['timestamp'])) {
+                return $record;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @return array<int, array{user_id:string, timestamp:\DateTimeImmutable, status:int, verify_method:int}>
      */

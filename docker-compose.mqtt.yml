@@ -1,0 +1,28 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: payroll-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      # Mounted read-only from Windows - bind-mounted file permission bits
+      # from the Windows host don't propagate correctly into the Linux
+      # container via Docker Desktop, so these are copied into the
+      # container's own filesystem (and chmod'd there) at startup rather
+      # than used directly in place - see the entrypoint override below.
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config-src/mosquitto.conf:ro
+      - ./docker/mosquitto/passwd:/mosquitto/config-src/passwd:ro
+      - mosquitto_data:/mosquitto/data
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        cp /mosquitto/config-src/mosquitto.conf /mosquitto/config/mosquitto.conf &&
+        cp /mosquitto/config-src/passwd /mosquitto/config/passwd &&
+        chown mosquitto:mosquitto /mosquitto/config/passwd &&
+        chmod 700 /mosquitto/config/passwd &&
+        exec /docker-entrypoint.sh mosquitto -c /mosquitto/config/mosquitto.conf
+
+volumes:
+  mosquitto_data:

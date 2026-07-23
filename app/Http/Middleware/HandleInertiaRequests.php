@@ -38,6 +38,16 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            // Broker connection details for the browser's live-attendance MQTT
+            // subscription (see resources/js/hooks/useRealtimePunches.js) - same
+            // trust boundary as the rest of this authenticated app.
+            'mqtt' => [
+                'host' => $request->getHost(),
+                'port' => 9001,
+                'username' => config('mqtt-client.connections.default.connection_settings.auth.username'),
+                'password' => config('mqtt-client.connections.default.connection_settings.auth.password'),
+                'topic' => config('services.mqtt.attendance_topic'),
+            ],
         ];
     }
 }
