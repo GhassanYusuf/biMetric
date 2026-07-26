@@ -5,9 +5,11 @@ import PrimaryButton from '@/Components/PrimaryButton';
 import TableActionButton from '@/Components/TableActionButton';
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { useConfirm } from '@/Components/ConfirmDialog';
 import { Head, router, useForm } from '@inertiajs/react';
 
 export default function Index({ holidays }) {
+    const confirm = useConfirm();
     const { data, setData, post, processing, errors, reset } = useForm({
         date: '',
         name: '',
@@ -18,8 +20,15 @@ export default function Index({ holidays }) {
         post(route('holidays.store'), { onSuccess: () => reset() });
     }
 
-    function destroy(holiday) {
-        if (!confirm(`Remove "${holiday.name}" (${holiday.date})?`)) return;
+    async function destroy(holiday) {
+        const ok = await confirm({
+            title: `Remove "${holiday.name}"?`,
+            body: `${holiday.date} will count as a normal working day again.`,
+            confirmLabel: 'Remove holiday',
+            danger: true,
+        });
+        if (!ok) return;
+
         router.delete(route('holidays.destroy', holiday.id));
     }
 

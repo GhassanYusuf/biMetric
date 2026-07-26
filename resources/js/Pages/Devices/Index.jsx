@@ -19,10 +19,12 @@ import SecondaryButton from '@/Components/SecondaryButton';
 import TableActionButton from '@/Components/TableActionButton';
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { useConfirm } from '@/Components/ConfirmDialog';
 import { Head, router, useForm } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function Index({ devices }) {
+    const confirm = useConfirm();
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingDevice, setEditingDevice] = useState(null);
     const [busyDeviceId, setBusyDeviceId] = useState(null);
@@ -74,8 +76,15 @@ export default function Index({ devices }) {
         }
     }
 
-    function destroy(device) {
-        if (!confirm(`Remove device "${device.name}"?`)) return;
+    async function destroy(device) {
+        const ok = await confirm({
+            title: `Remove device "${device.name}"?`,
+            body: 'Punches already imported from it stay in attendance history.',
+            confirmLabel: 'Remove device',
+            danger: true,
+        });
+        if (!ok) return;
+
         router.delete(route('devices.destroy', device.id));
     }
 

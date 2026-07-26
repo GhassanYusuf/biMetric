@@ -93,6 +93,15 @@ class ZktecoDevice
         $this->connection->writeUser($uid, $employeeCode, $name, $privilege, $cardNumber);
     }
 
+    /**
+     * Removes ONE fingerprint template from the device, keeping the user and
+     * their other fingers. See ZktecoConnection::deleteFingerprint().
+     */
+    public function deleteFingerprint(int $uid, int $fingerIndex): void
+    {
+        $this->connection->deleteFingerprint($uid, $fingerIndex);
+    }
+
     /** Removes a single enrolled user (by device-internal uid) from the device. */
     public function deleteUser(int $uid): void
     {
@@ -207,6 +216,155 @@ class ZktecoDevice
     public function getUsersRaw(): string
     {
         return bin2hex($this->connection->readUsersRaw());
+    }
+
+    /**
+     * How many fingerprints each enrolled user has, keyed by employee code
+     * (the device's user_id). Combines the user table (uid -> employee code)
+     * with the fingerprint-template table (one record per enrolled finger,
+     * carrying that finger's uid).
+     *
+     * Deliberately fail-safe: if the template read errors, comes back empty,
+     * or decodes into something implausible (see decodeTemplateRecords), this
+     * returns an empty map so the caller records "unknown" rather than a
+     * wrong "0 fingerprints" for everyone. Only employee codes we can
+     * positively account for appear in the result.
+     *
+     * @return array<string,int> employee_code => fingerprint count
+     */
+    public function getFingerprintCounts(): array
+    {
+        return array_map('count', $this->getFingerprintSlots());
+    }
+
+    /**
+     * WHICH finger slots each enrolled user has a template in, keyed by employee
+     * code. The template table carries a finger index per record, so this is the
+     * fuller answer and getFingerprintCounts() is derived from it — the hand
+     * picker needs the slots themselves, not just a total.
+     *
+     * Same fail-safe contract as the counts: an unreadable or implausible
+     * template table yields an empty map, meaning "unknown", never a wrong
+     * "no fingers enrolled" for everybody.
+     *
+     * @return array<string,list<int>> employee_code => sorted finger indexes
+     */
+    public function getFingerprintSlots(): array
+    {
+        $users = $this->getUsers();
+
+        // uid -> employee code, so a template's uid can be mapped back to a person.
+        $codeByUid = [];
+        foreach ($users as $user) {
+            if (isset($user['uid'], $user['user_id']) && $user['user_id'] !== '') {
+                $codeByUid[$user['uid']] = $user['user_id'];
+            }
+        }
+
+        $templates = self::decodeTemplateRecords($this->connection->readTemplatesRaw());
+        if ($templates === []) {
+            return []; // couldn't read/parse templates - report "unknown", not zero
+        }
+
+        // Every enrolled user starts empty (we successfully read the table, so
+        // "no fingers" is now a real, trustworthy answer), then each template
+        // records its own slot against its owner.
+        $slots = array_fill_keys(array_values($codeByUid), []);
+
+        foreach ($templates as $template) {
+            $code = $codeByUid[$template['uid']] ?? null;
+            if ($code === null) {
+                continue;
+            }
+            // A device can hold more than one template per finger; the slot is
+            // what the picker highlights, so keep it unique.
+            if (! in_array($template['fid'], $slots[$code], true)) {
+                $slots[$code][] = $template['fid'];
+            }
+        }
+
+        foreach ($slots as $code => $list) {
+            sort($list);
+            $slots[$code] = array_values($list);
+        }
+
+        return $slots;
+    }
+
+    /** DIAGNOSTIC passthrough — see ZktecoConnection::probeCommand(). */
+    public function probeCommand(int $command, string $data = ''): array
+    {
+        return $this->connection->probeCommand($command, $data);
+    }
+
+    /** DIAGNOSTIC passthrough — see ZktecoConnection::probeBuffered(). */
+    public function probeBuffered(int $command, string $data = ''): string
+    {
+        return $this->connection->probeBuffered($command, $data);
+    }
+
+    /** Raw hex dump of the fingerprint-template table - for calibrating decodeTemplateRecords() against a specific device. */
+    public function getTemplatesRaw(): string
+    {
+        return bin2hex($this->connection->readTemplatesRaw());
+    }
+
+    /**
+     * Fingerprint templates arrive as a 4-byte total-length field followed by
+     * variable-length records. Each record is a 2-byte record length, then a
+     * 2-byte uid, a 1-byte finger index (0-9) and a 1-byte "valid" flag,
+     * then the template blob - the header layout every open-source ZK client
+     * uses. We only need the header (uid + finger index) to count fingers.
+     *
+     * This is UNVERIFIED against this project's hardware, so the parser is
+     * defensive: at the first sign the bytes don't match this layout
+     * (record length that can't fit its own header, a finger index outside
+     * 0-9, or a record that would overrun the buffer) it abandons the whole
+     * read and returns [] - i.e. "unknown", never a half-decoded miscount.
+     *
+     * @return array<int,array{uid:int,fid:int}>
+     */
+    public static function decodeTemplateRecords(string $raw): array
+    {
+        if (strlen($raw) < 4) {
+            return [];
+        }
+
+        $body = substr($raw, 4); // leading 4 bytes are a total byte-length field
+        $records = [];
+        $offset = 0;
+        $length = strlen($body);
+
+        while ($offset + 6 <= $length) {
+            $recordSize = unpack('v', substr($body, $offset, 2))[1];
+
+            // A record must be at least its own 6-byte header and must not
+            // claim to run past the end of the buffer - either means we've
+            // lost alignment and can't trust anything decoded so far.
+            if ($recordSize < 6 || $offset + $recordSize > $length) {
+                return [];
+            }
+
+            $uid = unpack('v', substr($body, $offset + 2, 2))[1];
+            $fid = ord($body[$offset + 4]);
+
+            if ($fid > 9) {
+                return []; // not a real finger index - layout doesn't match
+            }
+
+            $records[] = ['uid' => $uid, 'fid' => $fid];
+            $offset += $recordSize;
+        }
+
+        // The record walk must land exactly on the end of the body. A real table
+        // does (confirmed on hardware: 22062 of 22062 bytes consumed across 19
+        // records); trailing bytes mean the buffer was truncated or misaligned,
+        // and a partial decode would undercount somebody's fingers.
+        if ($offset !== $length) {
+            return [];
+        }
+
+        return $records;
     }
 
     /**

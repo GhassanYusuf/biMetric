@@ -1,0 +1,28 @@
+{
+    "name": "promoseven/zkteco-protocol",
+    "description": "Framework-agnostic PHP implementation of the ZKTeco standalone device protocol. Talks to biometric terminals directly over the network with no vendor DLL, OCX or SDK runtime.",
+    "type": "library",
+    "license": "proprietary",
+    "keywords": ["zkteco", "biometric", "attendance", "fingerprint", "protocol", "f18"],
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Zkteco\\Protocol\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Zkteco\\Protocol\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

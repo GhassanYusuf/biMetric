@@ -111,7 +111,11 @@ class DeviceController extends Controller
 
             $message = "Found {$result['total_on_device']} employee(s) on the device: "
                 . "{$result['created']} added, {$result['already_existed']} already existed (left unchanged). "
-                . "{$result['backfilled']} existing punch(es) linked to employees.";
+                . "{$result['backfilled']} existing punch(es) linked to employees. "
+                . "Card status updated for {$result['enrollment_updated']} employee(s)";
+            $message .= $result['fingerprints_known']
+                ? ' (fingerprint counts included).'
+                : ' (fingerprint counts unavailable on this device).';
 
             return back()->with('success', $message);
         } catch (ZktecoException $e) {

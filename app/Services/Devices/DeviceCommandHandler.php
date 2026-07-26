@@ -1,0 +1,158 @@
+<?php
+
+namespace App\Services\Devices;
+
+use App\Contracts\BiometricDeviceDriver;
+use App\Models\DeviceCommand;
+use App\Models\Employee;
+use App\Services\Devices\AttendanceSyncService;
+use App\Services\Devices\DeviceHealthService;
+use App\Services\Devices\DeviceUserSyncService;
+use App\Services\Devices\EnrollmentOrchestratorService;
+use Zkteco\Protocol\Client\Device as ProtocolDevice;
+use Zkteco\Protocol\Exception\ProtocolException;
+
+/**
+ * Routes a queued command to the service that performs it.
+ *
+ * Deliberately thin: this is a dispatch table, not a place for logic. Each arm hands
+ * off to a service that owns the actual behaviour, so the same operation is callable
+ * synchronously (from a console command or a UI probe) and asynchronously (through
+ * the queue) without duplication.
+ *
+ * Every arm returns a message an operator can read plus optional raw device output
+ * for troubleshooting — that shape is what DeviceCommand stores.
+ */
+class DeviceCommandHandler
+{
+    public function __construct(
+        private readonly BiometricDeviceDriver $driver,
+        private readonly AttendanceSyncService $attendance,
+        private readonly DeviceUserSyncService $users,
+        private readonly EnrollmentOrchestratorService $enrollment,
+        private readonly DeviceHealthService $health,
+    ) {
+    }
+
+    /**
+     * @return array{message:string, raw?:array<string,mixed>}
+     */
+    public function handle(DeviceCommand $command): array
+    {
+        $device = $command->device;
+        $payload = $command->payload ?? [];
+
+        return match ($command->command) {
+            DeviceCommand::HEALTH_CHECK => $this->health->check($device),
+
+            DeviceCommand::READ_INFO => $this->health->readInfo($device),
+
+            DeviceCommand::PROBE_CAPABILITIES => (function () use ($device) {
+                $caps = $this->driver->probeCapabilities($device);
+                $confirmed = count(array_filter($caps->toArray(), fn ($l) => $l === 'confirmed'));
+
+                return [
+                    'message' => "Probed {$device->name}: {$confirmed} capabilities confirmed.",
+                    'raw' => ['capabilities' => $caps->toArray()],
+                ];
+            })(),
+
+            DeviceCommand::SYNC_ATTENDANCE => $this->attendance->sync(
+                $device,
+                full: (bool) ($payload['full'] ?? false),
+                command: $command,
+            ),
+
+            DeviceCommand::SYNC_ENROLLMENT => $this->users->syncEnrollmentState($device),
+
+            DeviceCommand::IMPORT_EMPLOYEES => $this->users->importFromDevice($device),
+
+            DeviceCommand::RECONCILE_USERS => $this->users->reconcile($device),
+
+            DeviceCommand::PUSH_USER => $this->users->pushEmployee(
+                $device,
+                $this->employee($payload),
+            ),
+
+            DeviceCommand::REMOVE_USER => $this->users->removeEmployee(
+                $device,
+                $this->employee($payload),
+            ),
+
+            DeviceCommand::ENROLL_FINGERPRINT => $this->enrollment->captureFingerprint(
+                $device,
+                $this->employee($payload),
+                (int) ($payload['finger_slot'] ?? 0),
+                $command,
+            ),
+
+            DeviceCommand::ENROLL_CARD => $this->enrollment->captureCard(
+                $device,
+                $this->employee($payload),
+                $command,
+            ),
+
+            DeviceCommand::DELETE_FINGERPRINT => $this->enrollment->deleteFingerprint(
+                $device,
+                $this->employee($payload),
+                (int) ($payload['finger_slot'] ?? -1),
+            ),
+
+            DeviceCommand::CLEAR_CARD => $this->enrollment->clearCard(
+                $device,
+                $this->employee($payload),
+            ),
+
+            DeviceCommand::SYNC_TIME => (function () use ($device) {
+                $before = $this->driver->run($device, fn (ProtocolDevice $d) => $d->time());
+                $this->driver->run($device, fn (ProtocolDevice $d) => $d->syncTime());
+                $after = $this->driver->run($device, fn (ProtocolDevice $d) => $d->time());
+
+                // Read back rather than trusting the write: the device stamps every
+                // future punch with this clock, so a silently rejected write would
+                // corrupt attendance from here on.
+                return [
+                    'message' => sprintf(
+                        'Device clock set. Was %s, now %s.',
+                        $before?->format('Y-m-d H:i:s') ?? 'unreadable',
+                        $after?->format('Y-m-d H:i:s') ?? 'unreadable',
+                    ),
+                    'raw' => [
+                        'before' => $before?->format('c'),
+                        'after' => $after?->format('c'),
+                    ],
+                ];
+            })(),
+
+            default => throw new ProtocolException(
+                "Unknown device command '{$command->command}'.",
+                ['command' => $command->command],
+            ),
+        };
+    }
+
+    /**
+     * Resolves the employee a command targets.
+     *
+     * withoutGlobalScopes is safe here because ProcessDeviceCommand has already
+     * restored the tenant, and the id came from a command row inside that tenant.
+     *
+     * @param array<string,mixed> $payload
+     */
+    private function employee(array $payload): Employee
+    {
+        $id = $payload['employee_id'] ?? null;
+
+        if ($id === null) {
+            throw new ProtocolException('This command requires an employee_id in its payload.');
+        }
+
+        $employee = Employee::query()->find($id);
+
+        if ($employee === null) {
+            throw new ProtocolException("Employee {$id} no longer exists.", ['employee_id' => $id]);
+        }
+
+        return $employee;
+    }
+}

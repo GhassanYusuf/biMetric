@@ -30,12 +30,15 @@ final class ZktecoProtocol
     public const CMD_FREE_DATA = 1502;
 
     // Reads
+    public const CMD_DB_RRQ = 7;
     public const CMD_USER_WRQ = 8;
     public const CMD_USERTEMP_RRQ = 9;
     public const CMD_ATTLOG_RRQ = 13;
     public const CMD_CLEAR_DATA = 14;
     public const CMD_CLEAR_ATTLOG = 15;
     public const CMD_DELETE_USER = 18;
+    /** Deletes ONE fingerprint template: payload is (uint16 uid, uint8 finger index). */
+    public const CMD_DELETE_USERTEMP = 19;
     public const CMD_WRITE_LCD = 66;
     public const CMD_CLEAR_LCD = 67;
     public const CMD_GET_TIME = 201;
@@ -63,6 +66,11 @@ final class ZktecoProtocol
     public const EF_FPFTR = 1 << 8;
     public const EF_ALARM = 1 << 9;
     public const EF_ALL = 0xFFFF;
+
+    // Data "function" selectors used alongside CMD_DB_RRQ to pick which
+    // table the bulk read returns (matching pyzk's FCT_* constants).
+    public const FCT_FINGERTMP = 2;
+    public const FCT_USER = 5;
 
     public const USHRT_MAX = 0xFFFF;
 

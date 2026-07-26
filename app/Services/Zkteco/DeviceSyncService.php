@@ -62,6 +62,9 @@ class DeviceSyncService
                 'last_sync_error' => $e->getMessage(),
             ]);
 
+            // Alert operators (persisted notification + live MQTT) via a listener.
+            event(new \App\Events\DeviceSyncFailed($device, $e->getMessage()));
+
             throw $e;
         }
 
@@ -104,12 +107,95 @@ class DeviceSyncService
             }
         }
 
+        $backfilled = $this->backfillEmployeeMapping();
+
+        // Best-effort: refresh card/fingerprint enrollment status off the same
+        // device now that the roster is in sync. A failure here (e.g. this
+        // firmware doesn't expose templates the way we read them) must not
+        // fail the import that already succeeded above.
+        $enrollment = ['updated' => 0, 'fingerprints_known' => false];
+        try {
+            $enrollment = $this->syncEnrollmentStatus($device);
+        } catch (ZktecoException $e) {
+            Log::warning("Enrollment-status sync failed for device {$device->id}: {$e->getMessage()}");
+        }
+
         return [
             'created' => $created,
             'already_existed' => $alreadyExisted,
             'total_on_device' => count($directory),
-            'backfilled' => $this->backfillEmployeeMapping(),
+            'backfilled' => $backfilled,
+            'enrollment_updated' => $enrollment['updated'],
+            'fingerprints_known' => $enrollment['fingerprints_known'],
         ];
+    }
+
+    /**
+     * Reads each enrolled user's card number and fingerprint count off the
+     * device and stores them on the matching Employee. Binary/TCP-IP only -
+     * the CSL/web-export firmware doesn't expose card or template data here,
+     * so nothing is touched for those devices (existing values are left as-is
+     * rather than being wiped to null).
+     *
+     * Card numbers are read straight from the user record and are reliable.
+     * Fingerprint counts come from getFingerprintCounts(), which returns an
+     * empty map if the template table can't be read/decoded - in that case
+     * fingerprint_count is left untouched (kept "unknown") instead of being
+     * set to a possibly-wrong 0.
+     *
+     * @return array{updated:int, fingerprints_known:bool}
+     */
+    public function syncEnrollmentStatus(Device $device): array
+    {
+        if ($device->protocol !== Device::PROTOCOL_BINARY) {
+            return ['updated' => 0, 'fingerprints_known' => false];
+        }
+
+        $zk = ZktecoDevice::fromModel($device);
+
+        // Slots rather than bare counts: the template table already carries a
+        // finger index per record, so one read tells us WHICH fingers each person
+        // has. That is what lets the roster draw enrolled fingers without a
+        // connection per row.
+        [$users, $fingerSlots] = $zk->run(fn (ZktecoDevice $d) => [
+            $d->getUsers(),
+            $d->getFingerprintSlots(),
+        ]);
+
+        $fingerprintsKnown = $fingerSlots !== [];
+        $now = now();
+        $updated = 0;
+
+        foreach ($users as $user) {
+            $code = $user['user_id'] ?? null;
+            if ($code === null || $code === '') {
+                continue;
+            }
+
+            $employee = Employee::query()->where('employee_code', $code)->first();
+            if ($employee === null) {
+                continue;
+            }
+
+            $attributes = [
+                'card_number' => ($user['card_number'] ?? 0) > 0 ? $user['card_number'] : null,
+                'enrollment_synced_at' => $now,
+            ];
+
+            // Only overwrite fingerprint state when we actually read the template
+            // table; otherwise leave whatever was there before rather than
+            // replacing a known answer with a guess.
+            if ($fingerprintsKnown) {
+                $slots = $fingerSlots[$code] ?? [];
+                $attributes['fingerprint_slots'] = $slots;
+                $attributes['fingerprint_count'] = count($slots);
+            }
+
+            $employee->update($attributes);
+            $updated++;
+        }
+
+        return ['updated' => $updated, 'fingerprints_known' => $fingerprintsKnown];
     }
 
     /**
@@ -147,12 +233,240 @@ class DeviceSyncService
         $zk = ZktecoDevice::fromModel($device);
 
         return $zk->run(function (ZktecoDevice $d) use ($employee, $fingerIndex, $onProgress) {
-            if (self::findByEmployeeCode($d->getUsers(), $employee->employee_code) === null) {
-                throw new ZktecoException('This employee is not enrolled on the device yet - push them to the device first.');
-            }
+            self::ensureOnDevice($d, $employee);
 
             return $d->enrollFingerprint($employee->employee_code, $fingerIndex, $onProgress);
         });
+    }
+
+    /**
+     * Reads ONE employee's enrollment straight off the terminal: which finger
+     * slots hold a template, and whether a card is registered.
+     *
+     * ON DEMAND ONLY. Enrollment lives in the employees table (fingerprint_slots,
+     * fingerprint_count, card_number) and every screen reads it from there, so
+     * nothing is waiting on hardware to render. This opens a connection and takes
+     * seconds; call it when someone explicitly asks for fresh data, never on a
+     * page load. Use syncEnrollmentStatus() to refresh a whole roster in one
+     * conversation instead of looping this.
+     *
+     * Whatever it reads is written back to the employee, so an explicit refresh
+     * updates what every other screen shows rather than only this response.
+     *
+     * `fingerprint_slots` is null when the template table could not be trusted,
+     * which is distinct from an empty list meaning "none enrolled".
+     *
+     * @return array{
+     *     on_device:bool, fingerprint_slots:list<int>|null, fingerprint_count:int|null,
+     *     card_number:int|null, card_count:int, synced_at:string|null
+     * }
+     */
+    public function readEmployeeEnrollment(Device $device, Employee $employee): array
+    {
+        if ($device->protocol !== Device::PROTOCOL_BINARY) {
+            throw new ZktecoException('Reading enrollment requires the Binary/TCP-IP protocol.');
+        }
+
+        $zk = ZktecoDevice::fromModel($device);
+
+        $result = $zk->run(function (ZktecoDevice $d) use ($employee) {
+            $user = self::findByEmployeeCode($d->getUsers(), $employee->employee_code);
+
+            if ($user === null) {
+                return [
+                    'on_device' => false,
+                    'fingerprint_slots' => null,
+                    'fingerprint_count' => null,
+                    'card_number' => null,
+                    'card_count' => 0,
+                ];
+            }
+
+            $slotMap = $d->getFingerprintSlots();
+            $known = $slotMap !== [];
+            $slots = $known ? ($slotMap[$employee->employee_code] ?? []) : null;
+
+            $cardNumber = ($user['card_number'] ?? 0) > 0 ? (int) $user['card_number'] : null;
+
+            return [
+                'on_device' => true,
+                'fingerprint_slots' => $slots,
+                'fingerprint_count' => $slots === null ? null : count($slots),
+                'card_number' => $cardNumber,
+                // The ZKTeco user record holds exactly one card field, so this is
+                // structurally 0 or 1 — not a limit we impose.
+                'card_count' => $cardNumber === null ? 0 : 1,
+            ];
+        });
+
+        // Persist so the roster and every other screen see the refreshed values.
+        if ($result['on_device']) {
+            $attributes = [
+                'card_number' => $result['card_number'],
+                'enrollment_synced_at' => now(),
+            ];
+
+            // Only overwrite fingerprint state when the template table decoded;
+            // otherwise keep the last known answer rather than erasing it.
+            if ($result['fingerprint_slots'] !== null) {
+                $attributes['fingerprint_slots'] = $result['fingerprint_slots'];
+                $attributes['fingerprint_count'] = count($result['fingerprint_slots']);
+            }
+
+            $employee->update($attributes);
+        }
+
+        $result['synced_at'] = $employee->fresh()->enrollment_synced_at?->toIso8601String();
+
+        return $result;
+    }
+
+    /**
+     * Clears the employee's card on the terminal, keeping their record, their
+     * fingerprints and their privilege.
+     *
+     * There is no "delete card" command: the card lives in a single field on the
+     * user record, so clearing it means rewriting that record with card 0. That
+     * is also why this reuses the existing uid — a new uid would orphan their
+     * fingerprint templates, which are keyed by uid.
+     *
+     * Read back and confirmed before reporting success, like every other write.
+     *
+     * @return array{cleared:bool, reason:string|null, previous_card:int|null}
+     */
+    public function clearCard(Device $device, Employee $employee): array
+    {
+        if ($device->protocol !== Device::PROTOCOL_BINARY) {
+            throw new ZktecoException('Clearing a card requires the Binary/TCP-IP protocol.');
+        }
+
+        $zk = ZktecoDevice::fromModel($device);
+
+        $result = $zk->run(function (ZktecoDevice $d) use ($employee) {
+            $user = self::findByEmployeeCode($d->getUsers(), $employee->employee_code);
+
+            if ($user === null) {
+                throw new ZktecoException('This employee is not enrolled on the device.');
+            }
+
+            $previous = (int) ($user['card_number'] ?? 0);
+
+            if ($previous === 0) {
+                return ['cleared' => false, 'reason' => 'no_card', 'previous_card' => null];
+            }
+
+            // Same name/code/privilege, card zeroed.
+            $d->writeUser(
+                $user['uid'],
+                $employee->employee_code,
+                $user['name'] ?? $employee->name,
+                (int) ($user['privilege'] ?? 0),
+                0,
+            );
+
+            $confirmed = self::findByEmployeeCode($d->getUsers(), $employee->employee_code);
+
+            if ($confirmed === null) {
+                throw new ZktecoException(
+                    'The card write was accepted but the employee is gone from the device when read back.'
+                );
+            }
+
+            if ((int) ($confirmed['card_number'] ?? 0) !== 0) {
+                throw new ZktecoException(
+                    "The device still reports card #{$confirmed['card_number']} after the clear."
+                );
+            }
+
+            return ['cleared' => true, 'reason' => null, 'previous_card' => $previous];
+        });
+
+        if ($result['cleared']) {
+            $employee->update([
+                'card_number' => null,
+                'enrollment_synced_at' => now(),
+            ]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Deletes ONE fingerprint from the terminal, keeping the employee's other
+     * fingers and their card. Destructive and not reversible from here — the
+     * person has to re-enroll that finger.
+     *
+     * The template table is read BEFORE and AFTER: before, to refuse a delete we
+     * cannot verify and to detect a slot that was never enrolled; after, to
+     * confirm the finger is actually gone rather than trusting the device's
+     * acknowledgement. The employee's stored slots are then updated from the
+     * confirmed read.
+     *
+     * @return array{deleted:bool, reason:string|null, slots:list<int>}
+     */
+    public function deleteFingerprint(Device $device, Employee $employee, int $slot): array
+    {
+        if ($device->protocol !== Device::PROTOCOL_BINARY) {
+            throw new ZktecoException('Deleting a fingerprint requires the Binary/TCP-IP protocol.');
+        }
+
+        if ($slot < 0 || $slot > 9) {
+            throw new ZktecoException("Finger slot must be 0-9, got {$slot}.");
+        }
+
+        $zk = ZktecoDevice::fromModel($device);
+
+        $result = $zk->run(function (ZktecoDevice $d) use ($employee, $slot) {
+            $user = self::findByEmployeeCode($d->getUsers(), $employee->employee_code);
+
+            if ($user === null) {
+                throw new ZktecoException('This employee is not enrolled on the device.');
+            }
+
+            $before = $d->getFingerprintSlots();
+
+            // Refusing here is deliberate: without a readable template table we
+            // could neither tell what is enrolled nor prove the delete worked,
+            // and a silent no-op on biometric data is worse than an error.
+            if ($before === []) {
+                throw new ZktecoException(
+                    "The device's fingerprint table could not be read, so a delete cannot be verified."
+                );
+            }
+
+            $beforeSlots = $before[$employee->employee_code] ?? [];
+
+            if (! in_array($slot, $beforeSlots, true)) {
+                return ['deleted' => false, 'reason' => 'not_enrolled', 'slots' => $beforeSlots];
+            }
+
+            $d->deleteFingerprint($user['uid'], $slot);
+
+            $after = $d->getFingerprintSlots();
+
+            if ($after === []) {
+                throw new ZktecoException(
+                    "The delete was sent but the device's fingerprint table could not be re-read to confirm it."
+                );
+            }
+
+            $afterSlots = $after[$employee->employee_code] ?? [];
+
+            if (in_array($slot, $afterSlots, true)) {
+                throw new ZktecoException("The device still reports slot {$slot} as enrolled after the delete.");
+            }
+
+            return ['deleted' => true, 'reason' => null, 'slots' => $afterSlots];
+        });
+
+        // Confirmed state wins over whatever was stored.
+        $employee->update([
+            'fingerprint_slots' => $result['slots'],
+            'fingerprint_count' => count($result['slots']),
+            'enrollment_synced_at' => now(),
+        ]);
+
+        return $result;
     }
 
     /**
@@ -172,11 +486,7 @@ class DeviceSyncService
         $zk = ZktecoDevice::fromModel($device);
 
         return $zk->run(function (ZktecoDevice $d) use ($employee, $onProgress) {
-            $existing = self::findByEmployeeCode($d->getUsers(), $employee->employee_code);
-
-            if ($existing === null) {
-                throw new ZktecoException('This employee is not enrolled on the device yet - push them to the device first.');
-            }
+            $existing = self::ensureOnDevice($d, $employee);
 
             return $d->enrollCard(
                 $existing['uid'],
@@ -193,11 +503,33 @@ class DeviceSyncService
     {
         if ($device->protocol === Device::PROTOCOL_CSL_HTTP) {
             $this->removeEmployeeViaCslHttp($device, $employee);
+            $this->forgetStoredEnrollment($employee);
 
             return;
         }
 
         $this->removeEmployeeViaBinary($device, $employee);
+        $this->forgetStoredEnrollment($employee);
+    }
+
+    /**
+     * Clears the stored enrollment after a confirmed removal. Deleting the user
+     * record takes their fingerprints and card with it, so leaving the old counts
+     * on the roster would show enrollment that no longer exists anywhere.
+     *
+     * NOTE: these columns describe one terminal's worth of enrollment — the
+     * schema has no per-device breakdown. With a single terminal that is exact.
+     * If this workspace ever runs several, removing from one would clear values
+     * that another still holds, and the columns would need a device dimension.
+     */
+    private function forgetStoredEnrollment(Employee $employee): void
+    {
+        $employee->update([
+            'card_number' => null,
+            'fingerprint_count' => null,
+            'fingerprint_slots' => null,
+            'enrollment_synced_at' => null,
+        ]);
     }
 
     private function pushEmployeeViaCslHttp(Device $device, Employee $employee): void
@@ -243,7 +575,20 @@ class DeviceSyncService
             $existing = self::findByEmployeeCode($users, $employee->employee_code);
             $uid = $existing['uid'] ?? self::nextFreeUid($users);
 
-            $d->writeUser($uid, $employee->employee_code, $employee->name);
+            /*
+             * Preserve the privilege and card already on the device.
+             *
+             * writeUser() defaults both to 0, so re-pushing someone who is
+             * already enrolled would silently wipe their card number and demote
+             * an admin to a plain user. Fingerprint templates are keyed by uid in
+             * a separate table and the uid is reused here, so they survive the
+             * rewrite — but the card lives in the user record itself and would
+             * not have.
+             */
+            $privilege = (int) ($existing['privilege'] ?? 0);
+            $cardNumber = (int) ($existing['card_number'] ?? $employee->card_number ?? 0);
+
+            $d->writeUser($uid, $employee->employee_code, $employee->name, $privilege, $cardNumber);
 
             // This firmware has been observed to acknowledge a write (ACK_OK) and
             // then silently fail to persist it. Never report success without
@@ -278,6 +623,50 @@ class DeviceSyncService
                 );
             }
         });
+    }
+
+    /**
+     * Guarantees the employee has a record on the terminal, creating one if not,
+     * and returns it.
+     *
+     * A capture attaches a template or card to an EXISTING user record, so this
+     * used to just fail with "push them to the device first" — which made adding
+     * a new person a two-step dance with an error in the middle. Now the write
+     * happens automatically as part of the capture.
+     *
+     * Runs on the caller's already-open connection rather than calling
+     * pushEmployeeToDevice(), which would open a second one.
+     *
+     * @return array the confirmed device user record
+     */
+    private static function ensureOnDevice(ZktecoDevice $d, Employee $employee): array
+    {
+        $existing = self::findByEmployeeCode($d->getUsers(), $employee->employee_code);
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $users = $d->getUsers();
+        $d->writeUser(
+            self::nextFreeUid($users),
+            $employee->employee_code,
+            $employee->name,
+            0,
+            (int) ($employee->card_number ?? 0),
+        );
+
+        // Same rule as every other write on this firmware: confirm by reading back.
+        $confirmed = self::findByEmployeeCode($d->getUsers(), $employee->employee_code);
+
+        if ($confirmed === null) {
+            throw new ZktecoException(
+                "{$employee->name} could not be added to the device automatically. "
+                . 'This firmware intermittently drops writes - try again, and if it keeps happening the device may need a power cycle.'
+            );
+        }
+
+        return $confirmed;
     }
 
     private static function findByEmployeeCode(array $users, string $employeeCode): ?array

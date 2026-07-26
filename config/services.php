@@ -37,6 +37,9 @@ return [
 
     'mqtt' => [
         'attendance_topic' => env('MQTT_ATTENDANCE_TOPIC', 'payroll/attendance/punch'),
+        // Browser MQTT-over-WebSocket endpoint the React SPA connects to.
+        // Null disables live updates (the UI falls back to on-demand fetches).
+        'ws_url' => env('MQTT_WS_URL'),
     ],
 
 ];

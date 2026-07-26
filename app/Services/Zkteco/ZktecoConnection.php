@@ -119,6 +119,23 @@ class ZktecoConnection
     }
 
     /**
+     * Raw bytes of the fingerprint-template table (used to count how many
+     * fingers each enrolled user has). The template read is requested via
+     * CMD_DB_RRQ with the FCT_FINGERTMP selector, mirroring how pyzk and the
+     * other open-source clients pull templates. Unlike the user/attendance
+     * tables, this exact framing has NOT yet been confirmed against this
+     * project's specific hardware - callers must treat a failure or an
+     * unrecognised layout as "unknown", never as "zero fingerprints".
+     */
+    public function readTemplatesRaw(): string
+    {
+        return $this->readBufferedDataWithRetry(
+            ZktecoProtocol::CMD_DB_RRQ,
+            pack('C', ZktecoProtocol::FCT_FINGERTMP)
+        );
+    }
+
+    /**
      * Enrolls (or updates) a user on the device itself. UID is the
      * device-internal slot number - reuse an existing one to update a
      * user, or pass an unused one to add a new enrollment. Writes only;
@@ -157,6 +174,39 @@ class ZktecoConnection
 
             if (!in_array($reply['command'], [ZktecoProtocol::CMD_ACK_OK, ZktecoProtocol::CMD_ACK_DATA], true)) {
                 throw new ZktecoException("Device rejected the user delete (command {$reply['command']}).");
+            }
+
+            $this->refreshData();
+        } finally {
+            $this->enableDevice();
+        }
+    }
+
+    /**
+     * Deletes ONE fingerprint template, leaving the user and their other fingers
+     * in place. `$fingerIndex` is the device's own slot number (0-9), the same
+     * value the template table reports.
+     *
+     * Follows the same disable → write → refresh → enable sequence as the other
+     * writes: this firmware acknowledges changes it hasn't committed until told
+     * to reload its tables. Writes only; never called automatically.
+     */
+    public function deleteFingerprint(int $uid, int $fingerIndex): void
+    {
+        if ($fingerIndex < 0 || $fingerIndex > 9) {
+            throw new ZktecoException("Finger slot must be 0-9, got {$fingerIndex}.");
+        }
+
+        $this->disableDevice();
+
+        try {
+            $reply = $this->sendAndReceive(
+                ZktecoProtocol::CMD_DELETE_USERTEMP,
+                pack('v', $uid) . pack('C', $fingerIndex),
+            );
+
+            if (! in_array($reply['command'], [ZktecoProtocol::CMD_ACK_OK, ZktecoProtocol::CMD_ACK_DATA], true)) {
+                throw new ZktecoException("Device rejected the fingerprint delete (command {$reply['command']}).");
             }
 
             $this->refreshData();
@@ -489,6 +539,33 @@ class ZktecoConnection
     }
 
     /**
+     * DIAGNOSTIC ONLY: issues one raw command and reports what came back.
+     *
+     * The fingerprint-template table framing differs between firmwares, and
+     * guessing at it produced a wrong answer once already. This exists so the
+     * layout can be calibrated against a real terminal instead of assumed.
+     * Read-only — it never writes, beeps, or enters capture mode.
+     *
+     * @return array{command:int, length:int, hex:string}
+     */
+    public function probeCommand(int $command, string $data = ''): array
+    {
+        $reply = $this->sendAndReceive($command, $data);
+
+        return [
+            'command' => $reply['command'],
+            'length' => strlen($reply['data']),
+            'hex' => bin2hex(substr($reply['data'], 0, 48)),
+        ];
+    }
+
+    /** DIAGNOSTIC ONLY: buffered read for an arbitrary command/payload. See probeCommand(). */
+    public function probeBuffered(int $command, string $data = ''): string
+    {
+        return $this->readBufferedDataWithRetry($command, $data);
+    }
+
+    /**
      * A single bulk-transfer attempt can come back short if a UDP
      * datagram is lost along the way. Since reading never consumes
      * data on the device, it's always safe to just retry the whole
@@ -496,17 +573,27 @@ class ZktecoConnection
      */
     private function readBufferedDataWithRetry(int $command, string $requestData = ''): string
     {
-        $wasConnected = $this->socket !== null;
         $lastException = null;
 
         for ($attempt = 1; $attempt <= self::MAX_BULK_ATTEMPTS; $attempt++) {
             try {
-                if (!$wasConnected || $attempt > 1) {
-                    // A fresh connection/session per attempt avoids any stale in-flight datagrams
-                    // from a previous partial attempt confusing the next read.
-                    $this->close();
-                    $this->connect();
-                }
+                /*
+                 * EVERY bulk read starts on a fresh session, not just retries.
+                 *
+                 * A completed bulk transfer can leave the device still pushing
+                 * chunks. Reusing the session makes the NEXT request return
+                 * those leftovers — and they arrive as a perfectly well-formed
+                 * CMD_DATA reply, so the read "succeeds" with the wrong table
+                 * instead of failing loudly.
+                 *
+                 * Observed on real hardware (ZKTeco @ 4370): getUsers()
+                 * immediately followed by the template read returned 1024 bytes
+                 * of the previous transfer, which decoded to nothing and made
+                 * every employee report "fingerprints unknown". A separate
+                 * session per bulk read is what made the read reliable.
+                 */
+                $this->close();
+                $this->connect();
 
                 return $this->readBufferedDataOnce($command, $requestData);
             } catch (ZktecoException $e) {

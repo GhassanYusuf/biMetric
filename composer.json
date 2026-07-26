@@ -3,7 +3,10 @@
     "name": "laravel/laravel",
     "type": "project",
     "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "keywords": [
+        "laravel",
+        "framework"
+    ],
     "license": "MIT",
     "require": {
         "php": "^8.2",
@@ -13,7 +16,9 @@
         "laravel/tinker": "^2.10.1",
         "php-mqtt/client": "^2.3",
         "php-mqtt/laravel-client": "^1.8",
-        "tightenco/ziggy": "^2.0"
+        "spatie/laravel-permission": "^6.25",
+        "tightenco/ziggy": "^2.0",
+        "promoseven/zkteco-protocol": "@dev"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -88,5 +93,14 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "repositories": [
+        {
+            "type": "path",
+            "url": "packages/zkteco-protocol",
+            "options": {
+                "symlink": true
+            }
+        }
+    ]
 }

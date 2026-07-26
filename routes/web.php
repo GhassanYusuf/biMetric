@@ -18,6 +18,12 @@ Route::get('/', function () {
     ]);
 });
 
+/*
+| The legacy Inertia app stays the default landing page until the SPA covers
+| every module it carries in its nav (Devices, Attendance, Holidays). Do not
+| redirect this to /app/dashboard before then — it strips those modules out of
+| reach without deleting anything, which is exactly how they "disappear".
+*/
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
@@ -46,5 +52,13 @@ Route::middleware('auth')->group(function () {
     Route::post('/holidays', [HolidayController::class, 'store'])->name('holidays.store');
     Route::delete('/holidays/{holiday}', [HolidayController::class, 'destroy'])->name('holidays.destroy');
 });
+
+/*
+| The new API-first SPA shell. Web routes only ship the shell HTML — all data
+| comes from /api. A catch-all under /app lets client-side routing own every
+| sub-path (e.g. /app/employees, /app/dashboard). Auth is handled client-side
+| via the Sanctum token, so no server auth middleware here.
+*/
+Route::view('/app/{path?}', 'spa')->where('path', '.*')->name('spa');
 
 require __DIR__.'/auth.php';

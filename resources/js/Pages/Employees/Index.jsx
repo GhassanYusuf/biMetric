@@ -21,8 +21,9 @@ import SecondaryButton from '@/Components/SecondaryButton';
 import TableActionButton from '@/Components/TableActionButton';
 import TextInput from '@/Components/TextInput';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { useConfirm } from '@/Components/ConfirmDialog';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 function initials(name) {
     return name
@@ -48,6 +49,7 @@ const FINGER_LABELS = [
 ];
 
 export default function Index({ employees, binaryDevices }) {
+    const confirm = useConfirm();
     const [showModal, setShowModal] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState(null);
     const [busyEmployeeId, setBusyEmployeeId] = useState(null);
@@ -58,7 +60,18 @@ export default function Index({ employees, binaryDevices }) {
     const [cardEnrollEmployee, setCardEnrollEmployee] = useState(null);
     const [cardEnrolling, setCardEnrolling] = useState(false);
     const [profileEmployee, setProfileEmployee] = useState(null);
+    const [search, setSearch] = useState('');
     const primaryDevice = binaryDevices?.[0] ?? null;
+
+    const filteredEmployees = useMemo(() => {
+        const query = search.trim().toLowerCase();
+        if (!query) return employees;
+        return employees.filter((employee) =>
+            [employee.name, employee.employee_code, employee.department, employee.email]
+                .filter(Boolean)
+                .some((field) => field.toLowerCase().includes(query)),
+        );
+    }, [employees, search]);
 
     const { data, setData, post, put, processing, errors, reset } = useForm({
         name: '',
@@ -98,8 +111,15 @@ export default function Index({ employees, binaryDevices }) {
         }
     }
 
-    function destroy(employee) {
-        if (!confirm(`Remove employee "${employee.name}"?`)) return;
+    async function destroy(employee) {
+        const ok = await confirm({
+            title: `Remove employee "${employee.name}"?`,
+            body: 'Their attendance records in this app go with them. Their enrollment on the terminal is not affected.',
+            confirmLabel: 'Remove employee',
+            danger: true,
+        });
+        if (!ok) return;
+
         router.delete(route('employees.destroy', employee.id));
     }
 
@@ -120,9 +140,17 @@ export default function Index({ employees, binaryDevices }) {
         );
     }
 
-    function removeFromDevice(employee) {
+    async function removeFromDevice(employee) {
         if (!primaryDevice) return;
-        if (!confirm(`Remove "${employee.name}" from ${primaryDevice.name}? They will no longer be able to badge in/out until re-enrolled.`)) return;
+
+        const ok = await confirm({
+            title: `Remove "${employee.name}" from ${primaryDevice.name}?`,
+            body: 'They will no longer be able to badge in or out until re-enrolled.',
+            confirmLabel: 'Remove from device',
+            danger: true,
+        });
+        if (!ok) return;
+
         setBusyEmployeeId(employee.id);
         setBusyAction('remove');
         router.post(
@@ -244,6 +272,16 @@ export default function Index({ employees, binaryDevices }) {
                             .
                         </div>
                     )}
+                    <div className="mb-4">
+                        <TextInput
+                            type="search"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Search by name, code, department or email…"
+                            className="block w-full sm:max-w-sm"
+                            aria-label="Search employees"
+                        />
+                    </div>
                     <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -252,6 +290,8 @@ export default function Index({ employees, binaryDevices }) {
                                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Name</th>
                                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Employee Code</th>
                                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Department</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Fingerprints</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Card</th>
                                         <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Punches</th>
                                         <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Actions</th>
                                     </tr>
@@ -259,7 +299,7 @@ export default function Index({ employees, binaryDevices }) {
                                 <tbody className="divide-y divide-gray-100">
                                     {employees.length === 0 && (
                                         <tr>
-                                            <td colSpan={5} className="px-4 py-16">
+                                            <td colSpan={7} className="px-4 py-16">
                                                 <div className="flex flex-col items-center gap-2 text-center text-gray-500">
                                                     <InboxIcon className="h-8 w-8 text-gray-300" />
                                                     <p className="font-medium text-gray-600">No employees added yet</p>
@@ -268,7 +308,18 @@ export default function Index({ employees, binaryDevices }) {
                                             </td>
                                         </tr>
                                     )}
-                                    {employees.map((employee) => (
+                                    {employees.length > 0 && filteredEmployees.length === 0 && (
+                                        <tr>
+                                            <td colSpan={7} className="px-4 py-16">
+                                                <div className="flex flex-col items-center gap-2 text-center text-gray-500">
+                                                    <InboxIcon className="h-8 w-8 text-gray-300" />
+                                                    <p className="font-medium text-gray-600">No employees match “{search}”</p>
+                                                    <p className="text-xs">Try a different name, code, department or email.</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                    {filteredEmployees.map((employee) => (
                                         <tr
                                             key={employee.id}
                                             onClick={() => openProfile(employee)}
@@ -299,6 +350,35 @@ export default function Index({ employees, binaryDevices }) {
                                             </td>
                                             <td className="px-4 py-3 text-gray-600">
                                                 {employee.department ?? '—'}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {employee.fingerprint_count == null ? (
+                                                    <span className="text-gray-400" title="Not yet synced from a device">—</span>
+                                                ) : employee.fingerprint_count > 0 ? (
+                                                    <span className="inline-flex items-center gap-1.5 text-gray-700">
+                                                        <FingerprintIcon className="h-4 w-4 text-indigo-500" />
+                                                        <span className="tabular-nums font-medium">{employee.fingerprint_count}</span>
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400" title="Synced — no fingerprints enrolled">None</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {employee.enrollment_synced_at == null ? (
+                                                    <span className="text-gray-400" title="Not yet synced from a device">—</span>
+                                                ) : employee.has_card ? (
+                                                    <span
+                                                        className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
+                                                        title={`Card #${employee.card_number}`}
+                                                    >
+                                                        <CreditCardIcon className="h-3.5 w-3.5" />
+                                                        Yes
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+                                                        No
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-gray-600 tabular-nums">
                                                 {employee.attendance_logs_count}

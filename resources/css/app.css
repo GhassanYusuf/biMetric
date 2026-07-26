@@ -12,3 +12,82 @@
         transform: translateY(0);
     }
 }
+
+/*
+| Overlay entrances. Both start from an already-visible-ish state and use an
+| exponential ease-out so they settle rather than glide. The palette also
+| unblurs, which reads as it coming forward out of the page.
+*/
+@keyframes palette-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+        filter: blur(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+    }
+}
+
+/*
+| Toasts enter from the edge they live on and leave by shrinking away, so a stack
+| settling reads as one motion rather than several competing ones.
+*/
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes toast-out {
+    from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.96);
+    }
+}
+
+@media (min-width: 640px) {
+    @keyframes toast-in {
+        from {
+            opacity: 0;
+            transform: translateX(16px) scale(0.96);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+        }
+    }
+}
+
+@keyframes menu-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Respect the OS setting: keep the state change, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

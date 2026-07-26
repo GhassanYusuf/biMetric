@@ -2,6 +2,13 @@
 
 namespace App\Providers;
 
+use App\Models\Department;
+use App\Models\Device;
+use App\Models\Employee;
+use App\Models\Holiday;
+use App\Models\User;
+use App\Observers\AuditObserver;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -12,7 +19,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        /*
+         * Bind the biometric driver contract.
+         *
+         * App code depends on BiometricDeviceDriver, never on Zkteco\Protocol
+         * directly — that is what keeps the protocol package portable to other
+         * platforms instead of quietly re-acquiring Laravel assumptions.
+         *
+         * Supporting a second vendor means binding a different implementation here,
+         * not editing a controller.
+         */
+        $this->app->singleton(
+            \App\Contracts\BiometricDeviceDriver::class,
+            \App\Services\Devices\ZktecoDriver::class,
+        );
     }
 
     /**
@@ -21,6 +41,16 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Platform super-admins bypass every permission/policy check. Returning
+        // null for everyone else lets normal gates/policies decide.
+        Gate::before(fn (User $user) => $user->isSuperAdmin() ? true : null);
+
+        // Immutable audit trail for the primary domain records.
+        Employee::observe(AuditObserver::class);
+        Device::observe(AuditObserver::class);
+        Department::observe(AuditObserver::class);
+        Holiday::observe(AuditObserver::class);
 
         // App\Listeners\PublishPunchToMqtt is wired to App\Events\PunchRecorded
         // automatically by Laravel's event auto-discovery (its handle() method
