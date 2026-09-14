@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader } from '../../shared/ui';
-import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
+import { PROTOCOL_LABELS, SyncBadge, can, relativeTime } from './parts';
 import { SyncProgressRow } from './DevicesDesktop';
 
 // Mobile devices: stacked cards, actions as a full-width row of large tap
@@ -70,23 +70,32 @@ export default function DevicesMobile({
 
                                 {canSync && (
                                     <div className="mt-3 grid grid-cols-3 gap-2">
+                                        {/* Same capability gate as the desktop menu — rule 5
+                                            says the two presentations behave identically, and
+                                            rule 9 says an impossible action is hidden. */}
                                         <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'test-connection'} onClick={() => onTest(d)}>
                                             Test
                                         </Button>
-                                        <Button variant="soft" className="px-1 text-xs" disabled={!!running} loading={running === 'sync-attendance'} onClick={() => onSync(d)}>
-                                            Sync
-                                        </Button>
-                                        <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'import-employees'} onClick={() => onImport(d)}>
-                                            Import
-                                        </Button>
+                                        {can(d, 'attendance.read') && (
+                                            <Button variant="soft" className="px-1 text-xs" disabled={!!running} loading={running === 'sync-attendance'} onClick={() => onSync(d)}>
+                                                Sync
+                                            </Button>
+                                        )}
+                                        {can(d, 'user.read') && (
+                                            <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'import-employees'} onClick={() => onImport(d)}>
+                                                Import
+                                            </Button>
+                                        )}
                                         {/*
                                           | Full width on its own row rather than a fourth
                                           | cramped column — the same shape device detail
                                           | uses, and the label does not survive truncation.
                                         */}
-                                        <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'full-resync'} onClick={() => onFullResync(d)}>
-                                            Full re-read
-                                        </Button>
+                                        {can(d, 'attendance.read') && (
+                                            <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'full-resync'} onClick={() => onFullResync(d)}>
+                                                Full re-read
+                                            </Button>
+                                        )}
                                     </div>
                                 )}
 

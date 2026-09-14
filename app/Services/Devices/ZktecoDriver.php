@@ -13,6 +13,7 @@ use Promoseven\Biometric\Codec\RecordBuffer;
 use Promoseven\Biometric\Contracts\ProgressListener;
 use Promoseven\Biometric\Exception\DeviceException;
 use Promoseven\Biometric\Value\DeviceConfig;
+use Promoseven\Biometric\Value\DeviceUser;
 use Promoseven\Biometric\Value\Progress;
 
 /**
@@ -180,6 +181,21 @@ class ZktecoDriver implements BiometricDeviceDriver
      *
      * No network access — safe to call while rendering a list of devices.
      */
+    /**
+     * The roster, straight off the standalone protocol's user table.
+     *
+     * Deliberately the SAME call DeviceUserSyncService made inline before this
+     * method existed — `$d->users()->all($withFingerprints)` — so the F18 path is
+     * byte-for-byte what it was and nothing needed re-confirming against hardware
+     * (rule 15). All that changed is who owns the closure.
+     *
+     * @return list<DeviceUser>
+     */
+    public function readUsers(Device $device, bool $withFingerprints = false): array
+    {
+        return $this->run($device, fn (ProtocolDevice $d) => $d->users()->all($withFingerprints));
+    }
+
     public function capabilities(Device $device): CapabilitySet
     {
         $stored = $device->capabilities_cache;

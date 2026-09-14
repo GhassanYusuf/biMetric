@@ -103,8 +103,10 @@ export default function DeviceFormModal({ device, onSubmit, onClose }) {
     }
 
     // Reach out to the device and let it name itself, then select the matching
-    // model. Only works for a protocol the app drives (binary today); an inBIO/C3
-    // panel times out, and the API says so plainly rather than failing silently.
+    // model. Works on every protocol the app drives — binary terminals and C3/
+    // PullSDK panels alike — because it goes through the driver contract rather
+    // than a ZKTeco session. Picking the WRONG protocol here still fails, and that
+    // failure is the useful answer: it is how you learn which family a device is.
     async function detect() {
         if (!form.ip_address) {
             setErrors((e) => ({ ...e, ip_address: ['Enter the IP address first.'] }));

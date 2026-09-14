@@ -24,7 +24,7 @@ cannot see:
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
 | App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`, with a large uncommitted working tree and nothing recent pushed. |
-| **The whole C3 driver of 2026-09-14 is UNCOMMITTED, and half of it is OUTSIDE GIT** | The app half (`app/Services/Devices/C3/C3Driver.php`, the manager, the model constant, the form, the docs) is in this machine's working tree on branch `camelot`. **The protocol half is worse: `Promoseven\Biometric\C3` lives in `/var/biometric-protocol/`, which is not a git repository at all** — no history, no tags, no remote. Two dead panels became readable today and that work currently survives only on this box's filesystem. This is the same blocker as the row above, now carrying considerably more. |
+| ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
 Sequence to fix: **back up `vendor/promoseven/biometric-protocol/` first** → put it
@@ -319,6 +319,74 @@ wrap all exist already.
 ---
 
 ## Session log
+
+### 2026-09-14 — Everything committed; readUsers added to the contract; all operations verified on hardware
+
+Committed the C3 work (app `69748ae`), and **the library is finally a git repository**:
+`/var/biometric-protocol` now has history and a **`v2.3.0` tag**, 70 tracked files.
+That was the top blocker in this file for weeks — the protocol layer was running in
+production from one machine's filesystem with no history, no tags and no remote.
+It still has **no remote**; pushing it somewhere is the remaining half.
+
+**Two device rows were wrong, and it mattered.** Rows 13 and 14 had each other's
+`model`: `.61` was registered as a TF1700 and `.60` as an inBIO460, when it is the
+other way round. With the C3 driver that selects the wrong model class — and since
+the TF1700 needs `0x01` and the inBIO460 refuses it, a wrong pick means **zero
+records with no error**. Corrected by reading identity off the wire and anchoring on
+the IP, which is the only field that can be verified. Both are now protocol `c3`
+with their capability cache cleared (it had been resolved by the wrong driver).
+Their NAMES are still transposed and were deliberately left alone — see the terminal
+table.
+
+**`readUsers()` added to `BiometricDeviceDriver`, closing a real leak.** Reading a
+roster was expressed only as "call `run()` and use the ZKTeco `UserService` inside
+the closure", so it was hard-wired to one protocol. `CslHttpDriver` and `C3Driver`
+both throw on `run()`, which means **"Import staff" had been answering a 502 on CSL
+terminals while the capability said `confirmed`** — a latent bug that predates C3
+entirely. `DeviceHealthService::identify()` had the same leak, so "Read from device"
+on the add-device form could only ever identify a standalone terminal. Both now go
+through the contract. Only two `run()` calls remain in the app, both ZKTeco writes.
+
+**Rule 9 gap closed in the UI.** The device action menu offered all four actions on
+every device regardless of capability. It now reads the `usable` flag the API was
+already sending. `Test` stays ungated on purpose: reachability is how you find out
+what a device can do.
+
+**Every operation verified against real hardware**, read-only, nothing persisted
+(`tools/verify-devices.php`, run by three agents in parallel — one per device group,
+so no two commands ever hit the same device):
+
+| Device | ping | info | readUsers | readAttendance |
+|---|---|---|---|---|
+| F18 `.62` | 12 ms | ok | 18 | 10,529, 0 undecodable |
+| F22 `.63` | 15 ms | ok | 11 | 8,162, 0 undecodable |
+| inBIO460 `.61` | 310 ms | ok | **320** | **87,756**, 0 undecodable |
+| TF1700 `.60` | 443 ms | ok | **320** | **21,005**, 0 undecodable |
+
+The two binary terminals were the CONTROL for the contract change, and the F18 — the
+reference path — behaved identically. That is what makes the C3 numbers evidence
+about C3 rather than about the change (rule 15).
+
+**`USER_READ` promoted to `confirmed`** on both panels, on that evidence. Finger
+slots come back **null** meaning "not read", never "none enrolled" (rule 10).
+
+**"Read from device" now identifies all four**, across both protocols.
+
+**Import staff was RUN for real** — the owner asked for it. 286 employees created
+(56 → 342), 711 `employee_device_maps` rows. All 286 carried a real name from the
+device, so none are `Imported <code>` placeholders. Both panels hold the same 320-user
+roster, so the second import added nothing. The created ids are recorded in
+`storage/logs/imported-employee-ids-2026-09-14.json` so the whole thing can be undone
+with one query.
+
+**No attendance was synced, deliberately.** The owner asked for none. Every
+attendance read above went through the driver directly and persisted nothing — no
+`attendance_logs`, no `attendance_raw_logs`, no watermark moved. Note that C3 devices
+are excluded from the hourly automatic sync anyway (`routes/console.php:53` filters
+on `binary`), and **no cron entry runs `schedule:run` on this box at all**, so
+nothing syncs unless somebody presses the button.
+
+Tests: **257 passing**.
 
 ### 2026-09-14 — C3/PullSDK driver BUILT; both dead panels now read through the app
 
@@ -993,9 +1061,18 @@ npm run dev                                       # Vite on 5173
 | 2 | IT Room | `192.168.7.62:4370` | F18 | 420,004 B | LAN. Reads clean, windowed, 100%. |
 | 5 | Good Wheels | `46.184.163.106:4370` | ? | not measured | **Public IP.** Not yet re-tested. The most valuable untested control — a second remote device. |
 | 6 | On The Road | `192.168.7.63:4370` | **F22** | 326,124 B | LAN. Push reads fail; **windowed reads fixed it**, 6 of 6. |
-| 7 | Entrance | `192.168.7.61:4370` | **inBIO460** | **87,756 rows** | **WORKING 2026-09-14** through `C3Driver`. Session-less over TCP. Busiest terminal in the estate. Reads only; writes unbuilt. Device row not yet switched to protocol `c3`. |
-| 8 | Glass Door | `192.168.7.60:4370` | **TF1700** | **21,005 rows** | **WORKING 2026-09-14** through `C3Driver` — and it is a C3/PullSDK panel, NOT standalone. **Requires `0x01`**; without it it reports zero records without erroring. Reads only. Device row not yet switched to protocol `c3`. |
+| 13 | **"Glass Door"** ⚠ | `192.168.7.61:4370` | **inBIO460** | **87,756 rows / 320 users** | **WORKING** through `C3Driver`, protocol `c3`. Session-less over TCP. Busiest terminal in the estate. Reads only; writes unbuilt. ⚠ **The NAME is wrong** — see below. |
+| 14 | **"Entrance"** ⚠ | `192.168.7.60:4370` | **TF1700** | **21,005 rows / 320 users** | **WORKING** through `C3Driver`, protocol `c3`. A C3 panel, NOT standalone. **Requires `0x01`**; without it it reports zero records without erroring. ⚠ **The NAME is wrong** — see below. |
 | 9 | Camelot | `87.237.196.60:4370` | F18 | **1,664,804 B** | **Public IP.** Handshake solved 2026-09-13 (needs AUTH, key 0). Bulk read still fails — see *Where we stopped*. |
+
+**⚠ Device rows 13 and 14 still carry each other's NAME.** Their `model` and
+`protocol` were also transposed and were corrected on 2026-09-14 after reading
+identity off the wire, but the names were left alone because they are operator-facing
+labels and renaming them is the owner's call. As it stands, **"Glass Door" is the
+four-door entrance panel and "Entrance" is the glass door.** The vendor's own
+software calls `.61` "P7H ENTRANCE" and `.60` "GLASS_ENTRANCE", which is the
+opposite of this app — so the transposition is real, not a naming preference.
+**Owed to Ghassan:** swap them, or confirm they are deliberate.
 
 **All five reachable terminals now answer.** Two protocol families: the F18, F22 and
 Camelot speak the ZKTeco **standalone** protocol; Entrance and Glass Door speak

@@ -71,6 +71,18 @@ drivers throw `UnsupportedCommandException` for them rather than returning
 something session-shaped that cannot serve a command. Everything else —
 `ping`, `info`, `readAttendance`, `capabilities` — works uniformly.
 
+**`readUsers()` closed a leak in the contract.** Until 2026-09-14 reading a roster
+was expressed only as "call `run()` and use the ZKTeco `UserService` inside the
+closure", so every consumer of a roster was hard-wired to one protocol. Two drivers
+could not serve it — `CslHttpDriver` and `C3Driver` both throw on `run()` — which
+meant **"Import staff" answered a 502 on a CSL terminal while its capability said
+`confirmed`**. That was a latent bug, not a C3 one; C3 was simply the second victim.
+`DeviceHealthService::identify()` had the same leak, so "Read from device" on the
+add-device form could only ever identify a standalone terminal.
+
+Both now go through the contract. Only two `run()` calls remain in the app, both
+**writes** to a ZKTeco user record, both capability-gated.
+
 **The C3 driver is read-only.** Every write is `not_implemented`, which the UI
 hides (rule 9). That is deliberate and not an oversight: we know from the vendor
 SDK exactly which commands would write, and rule 16 requires the owner's go-ahead

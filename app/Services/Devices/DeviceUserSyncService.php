@@ -40,10 +40,7 @@ class DeviceUserSyncService
         $withFingerprints = $capabilities->supports(Capability::TEMPLATE_TABLE_READ);
 
         /** @var list<DeviceUser> $deviceUsers */
-        $deviceUsers = $this->driver->run(
-            $device,
-            fn (ProtocolDevice $d) => $d->users()->all(withFingerprints: $withFingerprints),
-        );
+        $deviceUsers = $this->driver->readUsers($device, $withFingerprints);
 
         $employeesByCode = Employee::query()->pluck('id', 'employee_code')->all();
 
@@ -132,10 +129,7 @@ class DeviceUserSyncService
         $canReadTemplates = $capabilities->supports(Capability::TEMPLATE_TABLE_READ);
 
         /** @var list<DeviceUser> $deviceUsers */
-        $deviceUsers = $this->driver->run(
-            $device,
-            fn (ProtocolDevice $d) => $d->users()->all($canReadTemplates),
-        );
+        $deviceUsers = $this->driver->readUsers($device, $canReadTemplates);
 
         $match = null;
         foreach ($deviceUsers as $user) {
@@ -198,7 +192,7 @@ class DeviceUserSyncService
         $this->driver->capabilities($device)->require(Capability::USER_READ);
 
         /** @var list<DeviceUser> $deviceUsers */
-        $deviceUsers = $this->driver->run($device, fn (ProtocolDevice $d) => $d->users()->all());
+        $deviceUsers = $this->driver->readUsers($device);
 
         $deviceByUserId = [];
         foreach ($deviceUsers as $user) {
@@ -285,7 +279,7 @@ class DeviceUserSyncService
         $this->driver->capabilities($device)->require(Capability::USER_READ);
 
         /** @var list<DeviceUser> $deviceUsers */
-        $deviceUsers = $this->driver->run($device, fn (ProtocolDevice $d) => $d->users()->all());
+        $deviceUsers = $this->driver->readUsers($device);
 
         $created = 0;
         $existed = 0;

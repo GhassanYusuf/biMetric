@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ActionMenu, Badge, Button, EmptyState, PageHeader, ProgressBar, TableShell, Thead } from '../../shared/ui';
 import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
 import { describeProgress } from '../../shared/useSyncProgress';
+import { can } from './parts';
 
 // Desktop devices: wide table, one row per unit, hardware actions inline.
 export default function DevicesDesktop({
@@ -106,7 +107,7 @@ export default function DevicesDesktop({
                                                         disabled: !!running,
                                                         onSelect: () => onTest(d),
                                                     },
-                                                    canSync && {
+                                                    canSync && can(d, 'attendance.read') && {
                                                         key: 'sync',
                                                         label: 'Sync punches',
                                                         description: 'Read everything recorded since the last watermark.',
@@ -115,7 +116,7 @@ export default function DevicesDesktop({
                                                         disabled: !!running,
                                                         onSelect: () => onSync(d),
                                                     },
-                                                    canSync && {
+                                                    canSync && can(d, 'attendance.read') && {
                                                         /*
                                                           | Directly under Sync punches because it is the
                                                           | same operation with the watermark ignored.
@@ -128,7 +129,7 @@ export default function DevicesDesktop({
                                                         disabled: !!running,
                                                         onSelect: () => onFullResync(d),
                                                     },
-                                                    canSync && {
+                                                    canSync && can(d, 'user.read') && {
                                                         key: 'import',
                                                         label: 'Import staff',
                                                         description: 'Pull the employee records the terminal holds.',

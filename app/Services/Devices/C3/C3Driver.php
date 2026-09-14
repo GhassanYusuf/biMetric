@@ -14,6 +14,7 @@ use Promoseven\Biometric\Client\Device as ProtocolDevice;
 use Promoseven\Biometric\Exception\DeviceException;
 use Promoseven\Biometric\Exception\UnsupportedCommandException;
 use Promoseven\Biometric\Value\DeviceConfig;
+use Promoseven\Biometric\Value\DeviceUser;
 use Promoseven\Biometric\Value\Progress;
 
 /**
@@ -124,7 +125,10 @@ class C3Driver implements BiometricDeviceDriver
             'serial' => $info['~SerialNumber'] ?? null,
             'platform' => null,
             'device_name' => $info['~DeviceName'] ?? null,
-            'mac_address' => $info['MAC'] ?? null,
+            // `mac`, not `mac_address`: this is the key ZktecoDriver already
+            // returns, and DeviceHealthService::identify() reads it. A second
+            // spelling would work everywhere except the one screen that matters.
+            'mac' => $info['MAC'] ?? null,
             'door_count' => isset($info['LockCount']) ? (int) $info['LockCount'] : null,
             'reader_count' => isset($info['ReaderCount']) ? (int) $info['ReaderCount'] : null,
             'user_count' => isset($info['MaxUserCount']) ? (int) $info['MaxUserCount'] : null,
@@ -172,6 +176,23 @@ class C3Driver implements BiometricDeviceDriver
         };
 
         return $this->attempt($device, fn (Panel $panel) => $panel->readAttendance($relay));
+    }
+
+    /**
+     * The panel's roster, from its `user` table.
+     *
+     * $withFingerprints is accepted and cannot be honoured: templates live in a
+     * separate `templatev10` table this library does not read yet, so every
+     * DeviceUser comes back with null finger slots. Null means "not read" and the
+     * UI must keep it distinct from "none enrolled" (rule 10) — reporting zero
+     * fingerprints for somebody who is enrolled is the specific lie this project
+     * has a rule about.
+     *
+     * @return list<DeviceUser>
+     */
+    public function readUsers(Device $device, bool $withFingerprints = false): array
+    {
+        return $this->attempt($device, fn (Panel $panel) => $panel->readUsers());
     }
 
     /**

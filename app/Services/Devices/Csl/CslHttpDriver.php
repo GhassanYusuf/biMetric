@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Log;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Capability\CapabilitySet;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Value\DeviceUser;
 use Promoseven\Biometric\Exception\DeviceException;
 use Promoseven\Biometric\Exception\UnsupportedCommandException;
 
@@ -140,6 +141,40 @@ class CslHttpDriver implements BiometricDeviceDriver
         // indeterminate bar instead, which is the truthful rendering of
         // "in progress, extent unknown" (rule 10).
         return $this->attempt($device, fn (CslWebPortalClient $c) => $c->downloadAttendance($from, now()));
+    }
+
+    /**
+     * The roster, from the web UI's enrolled-user export.
+     *
+     * THIS FIXES A LATENT BUG. CslHttpDriver has declared USER_READ as CONFIRMED
+     * since it was written, but the only way to read users went through run(),
+     * which this driver throws on — so "Import staff" on a CSL terminal answered a
+     * 502 while the capability gate said yes. The capability was not wrong; there
+     * was simply no contract method that could carry the answer. Now there is.
+     *
+     * The export lists enrolled UIDs and nothing else — no names, no cards, no
+     * privilege. Those come back empty and null rather than invented: an empty name
+     * lets the caller fall back to a placeholder, whereas a fabricated one would be
+     * indistinguishable from a real record. Finger slots are null, meaning "not
+     * read" — this firmware exposes no template endpoint at all (rule 10).
+     *
+     * @return list<DeviceUser>
+     */
+    public function readUsers(Device $device, bool $withFingerprints = false): array
+    {
+        $uids = $this->attempt($device, fn (CslWebPortalClient $c) => $c->fetchEnrolledUids());
+
+        return array_values(array_map(
+            fn ($uid) => new DeviceUser(
+                uid: (int) $uid,
+                userId: (string) $uid,
+                name: '',
+                privilege: 0,
+                cardNumber: null,
+                fingerSlots: null,
+            ),
+            $uids,
+        ));
     }
 
     /**

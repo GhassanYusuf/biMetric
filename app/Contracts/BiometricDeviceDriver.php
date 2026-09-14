@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Support\DeviceProgress;
 use Promoseven\Biometric\Capability\CapabilitySet;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Value\DeviceUser;
 
 /**
  * The seam between this application and any biometric protocol library.
@@ -95,6 +96,29 @@ interface BiometricDeviceDriver
      * @return list<array{user_id?:string,timestamp?:\DateTimeInterface,verify_method?:int,status?:int,raw?:string}>
      */
     public function readAttendance(Device $device, ?callable $onProgress = null): array;
+
+    /**
+     * Reads the device's user roster.
+     *
+     * VENDOR-NEUTRAL, for exactly the reason readAttendance() is. Until 2026-09-14
+     * reading users was expressed only as "call run() and use the ZKTeco UserService
+     * inside the closure", which meant every consumer of a roster was hard-wired to
+     * one protocol. Two drivers already could not serve it: CslHttpDriver and
+     * C3Driver both throw on run(), so "Import staff" failed on both while the
+     * capability gate cheerfully said yes.
+     *
+     * A driver returns DeviceUser objects however it can get them — a ZKTeco table,
+     * a C3 panel's `user` table, an HTML form — and the caller never learns which.
+     *
+     * $withFingerprints asks the driver to populate DeviceUser::$fingerSlots. It is
+     * a REQUEST, not a promise: a driver that cannot read the template table leaves
+     * the slots null, which means "not read". Null must never be rendered as "none
+     * enrolled" — that tells an operator somebody is unenrolled when they are not
+     * (rule 10).
+     *
+     * @return list<DeviceUser>
+     */
+    public function readUsers(Device $device, bool $withFingerprints = false): array;
 
     /**
      * What this device can do.

@@ -62,10 +62,13 @@ class DeviceController extends Controller
      * Reads a device's identity before it is saved, so the add-device form can
      * confirm the model instead of asking the operator to know it.
      *
-     * Nothing is persisted — a transient Device is built purely to open a session.
-     * A device that does not answer this protocol (an inBIO/C3 panel on the binary
-     * protocol, say) fails the read; that is a true "cannot identify", not a 500,
-     * so it comes back as a 502 with an honest message rather than an exception.
+     * Nothing is persisted — a transient Device is built purely to read identity.
+     * It goes through the driver contract, so it works for every protocol the app
+     * drives. A device that does not answer THIS protocol fails the read, and that
+     * is a true "cannot identify" rather than a 500 — it comes back as a 502 with
+     * an honest message. That failure is useful: trying the other protocol is how
+     * you discover which family a device belongs to, which is exactly how the
+     * TF1700 was found to be a C3 panel rather than a standalone terminal.
      */
     public function identify(IdentifyDeviceRequest $request): JsonResponse
     {
@@ -84,8 +87,9 @@ class DeviceController extends Controller
             $info = $this->health->identify($device);
         } catch (\Throwable $e) {
             return ApiResponse::error(
-                'No answer on the '.$data['protocol'].' protocol. If this is an inBIO/C3 '
-                .'access panel, it cannot be read automatically yet — choose the model by hand.',
+                'No answer on the '.$data['protocol'].' protocol. Try another one — a model name '
+                .'does not tell you the family: inBIO and C3 panels, and the TF1700, speak C3/PullSDK '
+                .'while F- and K-series terminals speak the binary protocol.',
                 ['detail' => $e->getMessage()],
                 502,
             );

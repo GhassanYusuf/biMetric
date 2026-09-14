@@ -1,5 +1,21 @@
 import { Badge } from '../../shared/ui';
 
+/*
+| Rule 9: the UI must HIDE an action the device cannot do. A button that returns
+| 502 teaches operators to distrust the whole screen.
+|
+| The API already sends a `usable` flag per capability — confirmed OR implemented,
+| which is exactly "offer it" — so this reads that rather than guessing from the
+| protocol. A device whose capabilities have never loaded returns false: hiding an
+| action that might work is recoverable, offering one that cannot is not.
+|
+| `Test` is deliberately NOT gated. Reachability is how you find out what a device
+| can do, so it must stay available on a device we know nothing about.
+*/
+export function can(device, capability) {
+    return device?.capabilities?.[capability]?.usable === true;
+}
+
 export const PROTOCOL_LABELS = {
     binary: 'Binary (UDP/TCP 4370)',
     csl_http: 'CSL HTTP',

@@ -405,6 +405,25 @@ Two models in one family with opposite session requirements is exactly why they 
 separate classes (`C3\Model\InBio460`, `C3\Model\Tf1700`) and not a shared file
 with a flag (rule 15).
 
+### Every operation, verified against real hardware — 2026-09-14
+
+Run through the app's own driver contract, read-only, nothing persisted
+(`tools/verify-devices.php`):
+
+| Device | Protocol | ping | info | readUsers | readAttendance |
+|---|---|---|---|---|---|
+| F18 `.62` | binary | 12 ms | ✓ | 18 | 10,529, 0 undecodable |
+| F22 `.63` | binary | 15 ms | ✓ | 11 | 8,162, 0 undecodable |
+| inBIO460 `.61` | **c3** | 310 ms | ✓ | **320** | **87,756**, 0 undecodable |
+| TF1700 `.60` | **c3** | 443 ms | ✓ | **320** | **21,005**, 0 undecodable |
+
+The two binary terminals are the CONTROL: a contract method (`readUsers`) was added
+that day, and the F18 is the reference path (rule 15). It behaved identically, which
+is what makes the C3 results a fact about C3 rather than about the change.
+
+**Both panels report the same 320-user roster.** That matches the vendor software's
+own `usercount` for both rows — they genuinely share a user set.
+
 ### The app driver — BUILT 2026-09-14
 
 `App\Services\Devices\C3\C3Driver`, the third implementation of
@@ -442,9 +461,12 @@ be counted instead of vanishing (rule 11).
 - **No realtime.** The vendor polls `GetRTLogExt` on a one-second thread with a
   documented backoff; we have not built it. `ATTENDANCE_REALTIME` is
   `not_implemented`.
-- **The roster has never been read.** `USER_READ` stays `implemented`, not
-  `confirmed`: the table is in both catalogues and the same code path would read it,
-  but it has not been run. "The same code should work" is not "it worked" (rule 10).
+- ~~The roster has never been read.~~ **Done 2026-09-14.** `readUsers()` ran on both
+  panels through the app's own driver: **320 users each, all named, 145 carrying a
+  card**. `USER_READ` is now `confirmed` on the inBIO460 and the TF1700. Finger
+  slots come back **null**, meaning "not read" — templates live in a separate
+  `templatev10` table this library does not read, and null must never be rendered as
+  "none enrolled" (rule 10). `TEMPLATE_TABLE_READ` stays `not_implemented`.
 - **The compressed path** (`flag != 0`) has never been seen and is not implemented.
 - **`GetDeviceDataCount`'s command number** could not be separated from payload bytes
   in the disassembly and was deliberately not guessed.

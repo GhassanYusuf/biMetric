@@ -94,6 +94,11 @@ class DeviceDriverManager implements BiometricDeviceDriver
         return $this->driverFor($device)->readAttendance($device, $onProgress);
     }
 
+    public function readUsers(Device $device, bool $withFingerprints = false): array
+    {
+        return $this->driverFor($device)->readUsers($device, $withFingerprints);
+    }
+
     /**
      * Deliberately does NOT throw for an unknown protocol.
      *

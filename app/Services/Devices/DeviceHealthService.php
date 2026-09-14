@@ -7,7 +7,6 @@ use App\Models\Device;
 use App\Models\DeviceStatusLog;
 use App\Services\Realtime\MqttPublisher;
 use App\Services\Realtime\TopicBuilder;
-use Promoseven\Biometric\Client\Device as ProtocolDevice;
 use Promoseven\Biometric\Exception\DeviceException;
 
 /**
@@ -98,7 +97,9 @@ class DeviceHealthService
      */
     public function readInfo(Device $device): array
     {
-        $info = $this->driver->run($device, fn (ProtocolDevice $d) => $d->info());
+        // Through the CONTRACT, not run(): every driver implements info(), while
+        // run() hands out a ZKTeco session that two of the three cannot serve.
+        $info = $this->driver->info($device);
 
         $device->forceFill(array_filter([
             'model' => $info['device_name'] ?: null,
@@ -139,7 +140,15 @@ class DeviceHealthService
      */
     public function identify(Device $device): array
     {
-        $info = $this->driver->run($device, fn (ProtocolDevice $d) => $d->info());
+        /*
+         * Through the CONTRACT, not run(). Until 2026-09-14 this reached for a
+         * ZKTeco protocol session, so "Read from device" on the add-device form
+         * could only ever identify a standalone terminal — a C3 panel or a CSL
+         * terminal threw, and the form told the operator to choose the model by
+         * hand. info() is implemented by every driver, so it now works for all
+         * three, which is the whole point of having a contract.
+         */
+        $info = $this->driver->info($device);
 
         return [
             'device_name' => $info['device_name'] ?: null,
