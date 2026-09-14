@@ -22,6 +22,7 @@ export const NAV_SECTIONS = [
             { to: '/employees', label: 'Employees', icon: 'users', permission: 'employees.view', mobileBar: true },
             { to: '/attendance', label: 'Attendance', icon: 'clock', permission: 'attendance.view', mobileBar: true },
             { to: '/holidays', label: 'Holidays', icon: 'calendar', permission: 'holidays.view' },
+            { to: '/reports', label: 'Reports', icon: 'report', permission: 'reports.view' },
         ],
     },
     {
@@ -84,6 +85,7 @@ export function Icon({ name, className = 'h-[18px] w-[18px]' }) {
         bolt: 'M13 3L5 14h5l-1 7 8-11h-5l1-7z',
         logout: 'M15 17l5-5-5-5M20 12H9M12 3H6a1 1 0 00-1 1v16a1 1 0 001 1h6',
         sliders: 'M4 8h10M18 8h2M4 16h4M12 16h8M15 5v6M9 13v6',
+        report: 'M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zM14 3v5h5M9 13h6M9 17h4',
     };
     return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

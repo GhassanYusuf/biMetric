@@ -1,6 +1,6 @@
 import { Badge, Button, Card, EmptyState, InlineAlert, PageHeader, TextField } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
-import { CardCell, FingerprintCell } from './enrollmentCells';
+import { CardCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
 
 /*
 | Mobile employees: search + stacked tap-friendly cards (no wide table).
@@ -96,6 +96,11 @@ export default function EmployeesMobile({
                             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3">
                                 <FingerprintCell employee={e} />
                                 <CardCell employee={e} />
+                            </div>
+
+                            {/* Rule 5: the desktop "Enrolled on" column, same data, stacked. */}
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                <TerminalsCell employee={e} />
                             </div>
 
                             {(canEnroll || canDelete) && (

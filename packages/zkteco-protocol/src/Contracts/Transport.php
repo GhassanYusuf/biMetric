@@ -43,6 +43,25 @@ interface Transport
     /** Overrides the read timeout for the duration of a bulk reassembly. */
     public function setReadTimeout(int $seconds, int $microseconds = 0): void;
 
+    /**
+     * The underlying stream, for readiness selection across several devices.
+     *
+     * Returns null when this transport cannot be selected on — a recorded fixture,
+     * or any future request/response transport with no persistent socket. Callers
+     * MUST handle null by falling back to polling each link in turn; it is not an
+     * error, just an absent optimisation.
+     *
+     * WHY THIS IS ON THE CONTRACT: a realtime listener watching several terminals
+     * has to block on all of them at once. Without this it would either need one
+     * process per device (no pcntl on Windows) or a busy-poll loop whose latency
+     * grows with the number of devices. The alternative — reaching past the
+     * contract for UdpTransport's private socket — is what makes a transport
+     * abstraction decorative.
+     *
+     * @return resource|null
+     */
+    public function selectableStream();
+
     public function sessionId(): int;
 
     public function setSessionId(int $sessionId): void;

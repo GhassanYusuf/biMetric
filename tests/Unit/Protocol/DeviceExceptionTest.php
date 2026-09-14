@@ -3,12 +3,12 @@
 namespace Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Zkteco\Protocol\Exception\ConnectionException;
-use Zkteco\Protocol\Exception\DeviceException;
-use Zkteco\Protocol\Exception\ProtocolException;
-use Zkteco\Protocol\Exception\TimeoutException;
-use Zkteco\Protocol\Exception\UnsupportedCommandException;
-use Zkteco\Protocol\Exception\VerificationException;
+use Promoseven\Biometric\Exception\ConnectionException;
+use Promoseven\Biometric\Exception\DeviceException;
+use Promoseven\Biometric\Exception\ProtocolException;
+use Promoseven\Biometric\Exception\TimeoutException;
+use Promoseven\Biometric\Exception\UnsupportedCommandException;
+use Promoseven\Biometric\Exception\VerificationException;
 
 /**
  * The retry classification.
@@ -89,7 +89,7 @@ class DeviceExceptionTest extends TestCase
         $failed = 0;
 
         foreach ([new TimeoutException('a'), new ConnectionException('b'), new VerificationException('c'),
-                  new ProtocolException('d'), new UnsupportedCommandException('e')] as $e) {
+            new ProtocolException('d'), new UnsupportedCommandException('e')] as $e) {
             /** @var DeviceException $e */
             $e->isRetryable() ? $retried++ : $failed++;
         }

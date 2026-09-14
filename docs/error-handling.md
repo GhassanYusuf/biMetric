@@ -49,6 +49,22 @@ Related and separate: writes also do not persist at all without
 `CMD_REFRESH_DATA` (1013) after them. That is not a failure mode, it is a required
 step, and every write path in the library does it.
 
+## A stalled windowed read resumes; it does not fail the transfer
+
+A `ProtocolException` "Windowed transfer stalled … after N window retries" means a
+single 16 KB window went silent and did not recover within `bulkWindowRetries`
+attempts at that offset. It is thrown only once retries are exhausted — a normal
+stall is re-requested at the same offset and never surfaces. Its context carries
+`window_offset`, `window_bytes`, `expected` and `received`.
+
+This is the fix for a device on a **lossy or high-latency link** (CONFIRMED on the
+Camelot F18 over a public IP, 2026-09-14): raise `attendance.device_window_retries`
+(env `DEVICE_WINDOW_RETRIES`) for such a device. It is distinct from the receive
+buffer, which stops the *kernel* dropping a burst and does nothing for a device that
+goes quiet mid-transfer. A `TimeoutException` on a `READ_BUFFER` request is treated
+as the same stall and retried; a `TimeoutException` releasing the buffer
+(`FREE_DATA`, command 1502) is swallowed and never fails an otherwise-complete read.
+
 ## Retries live on the row, not in the queue
 
 ```php
@@ -74,6 +90,171 @@ until it expires (600s).
 
 If commands are stuck queued and no worker is running, that is the cause. The lock
 self-expires; `cache_locks` can also be cleared manually.
+
+## Where a failure is RECORDED: `DeviceErrorReporter`
+
+Returning a tidy 502 and writing nothing down was, for a long time, the actual
+problem. The three inline read endpoints each caught `DeviceException`, built their
+own sentence, and threw away `context()` — the one field that makes a protocol bug
+reproducible. "The device errored again" left nothing behind to act on.
+
+`App\Support\DeviceErrorReporter` is now the single place a device failure is
+recorded. It does exactly two things:
+
+```php
+$message = $reporter->report($e, 'attendance sync', $device, ['command_id' => 12]);
+```
+
+1. writes **one** structured entry to the `device` log channel, and
+2. returns the **operator-facing sentence** the caller should surface.
+
+Both together, because rule 11 requires the two audiences to be served separately
+and splitting them across call sites is how they drifted apart before.
+
+### What the entry contains
+
+| Field | Why |
+|---|---|
+| `operation`, `device_id`, `device_name`, `device_ip` | which terminal, doing what |
+| `tenant_id`, `user_id` | who saw it — a queued command has no user, and that is itself informative |
+| `exception`, `message` | the concrete subclass, which already encodes the category |
+| `retryable` | `isRetryable()`, so "is this normal" is answerable without reading the message |
+| `context` | the library's structured `context()` — offsets, opcodes, counts |
+| `trace` | **only** for non-`DeviceException` throwables |
+
+The `trace`/`context` split is the useful signal. A `DeviceException` carries
+`context()` and its stack is noise. Anything else — a `TypeError` in a codec — is a
+bug in **our** code, has no context, and the frames are the informative part. The
+absence of `context` in an entry tells you which kind you are looking at.
+
+### Operator wording lives in one place
+
+`DeviceErrorReporter::operatorMessage()` owns every sentence. It previously existed
+twice — in `ProcessDeviceCommand` and, differently worded, in each controller catch
+— so the same timeout read as "Sync failed: read timed out" in one place and "The
+device did not respond in time." in another.
+
+A non-`DeviceException` never shows its raw message on screen. It would be
+meaningless to an operator and can leak internals; the detail is in the log.
+
+## Logging happens exactly once
+
+Two paths, and they cannot both fire for the same failure:
+
+- **Caught** — the call site (`DeviceController::deviceFailure()`,
+  `ProcessDeviceCommand`) calls the reporter itself, with a precise `operation`.
+- **Uncaught** — the `$exceptions->report()` hook in `bootstrap/app.php` catches
+  `DeviceException` and reports it, then **returns `false`** so Laravel does not
+  also write its own duplicate to the stack channel.
+
+An exception a controller catches never reaches the hook, so there is no overlap.
+
+## Status codes for device failures
+
+Set centrally in `bootstrap/app.php`, so an endpoint that forgets to catch still
+answers correctly instead of returning a bare `500 'Server error.'`:
+
+| Exception | Status | Meaning |
+|---|---|---|
+| `UnsupportedCommandException` | **501** | the firmware cannot do this, ever — rule 9 says the UI should have hidden it, so this means a mis-declared capability |
+| any other `DeviceException` | **502** | the request was fine; the terminal upstream of us was not |
+| anything else | 500 | a bug in our code — generic message, real detail in the log |
+
+502 responses carry `errors.retryable`, so a client can distinguish "try again" from
+"this will never work" without parsing the message.
+
+## Channels
+
+| Channel | File | Holds |
+|---|---|---|
+| `device` | `storage/logs/device.log` | every biometric/protocol failure, 30 days |
+| `client` | `storage/logs/client.log` | browser crashes reported by the SPA, 14 days |
+
+Separated from `laravel.log` so "the terminal misbehaved again" is one file to read
+rather than a grep through application noise.
+
+## Browser-side crashes
+
+A React render error used to blank the whole SPA to a white page, leaving nothing
+on the server. `resources/js/spa/shared/errors.jsx` closes that:
+
+- **`<ErrorBoundary>`** — catches render/lifecycle throws and shows a recovery
+  screen. Mounted **twice**: an outer one in `main.jsx` above the providers (an
+  `AuthProvider` that chokes is invisible to a boundary inside `App`), and an inner
+  one in `App.jsx` re-keyed on `location.pathname` so navigating away recovers.
+- **`installGlobalErrorHandlers()`** — a boundary only sees errors thrown during
+  render. A rejected `await api.post()` in a click handler reaches nothing, which is
+  the symptom operators describe as *"I clicked it and nothing happened"*. The
+  `unhandledrejection` and `error` window listeners catch those and raise a toast.
+- **`reportClientError()`** — POSTs to `/api/client-errors`. It never throws and
+  never retries; a reporter that can itself fail is a trap, and a retrying error
+  report is how a crash loop starts.
+
+Guards that matter: identical messages are sent **once per page load** (a crashing
+component re-throws every frame), the route is throttled to 20/min, every field is
+length-capped server-side, and `401`s are skipped — an expired session is not a
+crash, and reporting it would bury the real errors.
+
+Reports are logged, **not** stored in a table. The payload is attacker-controllable,
+a table invites unbounded growth and a UI nobody prunes, and a log channel already
+rotates. Rule 13: reuse before you add.
+
+## A stored `error` is an OBJECT, and rendering it crashed six screens
+
+`attendance_sync_runs.error` and `device_commands.error` are both cast to `array`
+(`AttendanceSyncRun::casts()`, `DeviceCommand::casts()`), and
+`AttendanceSyncRunResource` / `DeviceCommandResource` pass the field through
+untouched. So what reaches the browser is the reporter's structure, not a string:
+
+```json
+{
+  "exception": "Promoseven\\Biometric\\Exception\\ProtocolException",
+  "context": { "command": "ATTLOG_RRQ", "expected": 412084, "received": 162816 }
+}
+```
+
+Six screens rendered it as `{run.error}` / `{c.error}`. React refuses an object as
+a child:
+
+```
+Objects are not valid as a React child (found: object with keys {exception, context})
+```
+
+That throws during render, the `ErrorBoundary` catches it, and the **entire page**
+becomes the recovery screen. `/app/device-sync-runs` was unopenable for as long as
+any run in the list had failed — which, given the whole point of the screen, is
+whenever somebody needed it. OBSERVED on Firefox 155, two runs carrying
+`ProtocolException` from IT Room.
+
+### The fix: `<DeviceError>` in `pages/devices/statusParts.jsx`
+
+`formatDeviceError()` renders the technical half only — short exception class name,
+then `context` as `key=value` pairs:
+
+```
+ProtocolException — command=ATTLOG_RRQ, expected=412084, received=162816
+```
+
+The namespace is dropped because it is noise on screen and the class name already
+encodes the category. It tolerates a plain string (rows predating the `array` cast)
+and falls back to `JSON.stringify` for an unrecognised object — a formatter that
+throws would take the page down a second time.
+
+This sits **beside** `message`, never instead of it, because rule 11 keeps the
+operator sentence and the technical detail separate:
+
+```
+Incomplete transfer: got 162816 of 412084 bytes.        ← message,  slate
+ProtocolException — command=ATTLOG_RRQ, expected=412084 ← error,    rose
+```
+
+### Enforced mechanically
+
+`tests/Unit/FrontendConventionsTest::test_structured_device_errors_are_never_rendered_as_a_react_child`
+fails on any `{x.error}` interpolated as a JSX **child**. A prop value
+(`error={run.error}`) is fine — that hands the object to something that knows the
+shape. Six files shipped this bug simultaneously, which is the argument for a guard
+rather than a review.
 
 ## Failures reach the operator
 
@@ -128,6 +309,59 @@ Two rules came out of that:
    archive is what made recovering 2,823 records possible.
 
 A failure you can see is a bug. A failure you cannot see is a wrong payroll.
+
+## Diagnosing a short bulk transfer
+
+Two different failures share one symptom. Both raise `ProtocolException`, both say
+"we got less than we were promised", and the fix for one does nothing for the
+other — so the context is what tells them apart.
+
+| Message | Path | Meaning |
+|---|---|---|
+| `Incomplete transfer: got X of Y bytes.` | free-running push | The device streamed the table and we did not capture all of it. |
+| `Windowed transfer stalled: got X of Y bytes.` | windowed | A window we explicitly requested never arrived in full. |
+
+### `Incomplete transfer` — check the buffer figures first
+
+The context now carries them, so nobody has to reproduce the problem by hand:
+
+```json
+{
+  "command": "ATTLOG_RRQ",
+  "expected": 326124,
+  "received": 182764,
+  "receive_buffer_usable": 212992,
+  "receive_buffer_granted": 425984
+}
+```
+
+- `receive_buffer_usable` **below** `expected` → the socket buffer cannot hold the
+  table. Raise `net.core.rmem_max` **on the host**; inside an unprivileged LXC
+  container that file is read-only and the change cannot be made from within.
+  Note `granted` is Linux's doubled bookkeeping value — `usable` is the real one.
+- `receive_buffer_usable` **null** → `ext-sockets` is missing and the socket is on
+  the platform default. Install it.
+- Both fine and it still fails → the device is not sending, not the kernel
+  dropping. Confirm with `/proc/net/snmp`:
+
+  ```
+  awk '/^Udp:/{getline; print "RcvbufErrors", $5}' /proc/net/snmp
+  ```
+
+  Read it before and after a failing transfer. A delta of a few against a loss of
+  a hundred-odd datagrams means the kernel is innocent — which is exactly what was
+  measured on the F22, and why the windowed read exists.
+
+### `Windowed transfer stalled` — the device staged it and then did not deliver
+
+Context carries `window_offset` and `window_bytes`. This is not a race: the window
+was requested explicitly and the device had nothing else in flight. Retrying the
+whole read (which `BulkReader` does five times, restaging each time) is the only
+handling, and a persistent stall is a device-side problem.
+
+Neither exception ever returns a partial table. A short attendance read that
+"succeeded" would silently drop punches, which is the failure this project has
+already had once.
 
 ## Undecodable is not "no data"
 

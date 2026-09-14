@@ -1,0 +1,34 @@
+{
+    "label": "tf1700-all-192_168_7_60",
+    "host": "192.168.7.60",
+    "port": 4370,
+    "protocol": "zk-standalone-over-tcp",
+    "started_at": "2026-09-14T09:02:58+00:00",
+    "steps": [
+        {
+            "step": "tcp/4370 reachable",
+            "ok": true,
+            "errno": 0,
+            "error": null
+        },
+        {
+            "step": "udp/4370 answers CONNECT",
+            "ok": false,
+            "error": "ICMP port unreachable / closed"
+        },
+        {
+            "step": "tcp connect",
+            "ok": true,
+            "ms": 0.8
+        },
+        {
+            "step": "connect",
+            "ok": false,
+            "reply": null,
+            "code": null,
+            "session": 0,
+            "ms": 8008.1,
+            "error": "no reply"
+        }
+    ]
+}

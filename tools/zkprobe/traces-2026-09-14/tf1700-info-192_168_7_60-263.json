@@ -1,0 +1,23 @@
+{
+    "label": "tf1700-info-192_168_7_60",
+    "host": "192.168.7.60",
+    "port": 4370,
+    "protocol": "zk-standalone-over-tcp",
+    "started_at": "2026-09-14T10:47:29+00:00",
+    "steps": [
+        {
+            "step": "tcp connect",
+            "ok": true,
+            "ms": 0.9
+        },
+        {
+            "step": "connect",
+            "ok": false,
+            "reply": null,
+            "code": null,
+            "session": 0,
+            "ms": 8008.1,
+            "error": "no reply"
+        }
+    ]
+}

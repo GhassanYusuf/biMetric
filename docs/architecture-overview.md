@@ -3,13 +3,13 @@
 ## The one rule that shapes everything
 
 The protocol code is a **library**, not part of this application. It lives in
-`packages/zkteco-protocol`, depends on nothing but PHP, and could be installed
+`promoseven/biometric-protocol`, depends on nothing but PHP, and could be installed
 into a CLI tool or another platform tomorrow without carrying Laravel with it.
 
 Exactly one class in `app/` is allowed to know it exists. That boundary is
 enforced mechanically by `tests/Unit/ProtocolLibraryBoundaryTest.php`, which
 fails the build on an `Illuminate\` import inside the package, on a second class
-importing `Zkteco\Protocol`, or on a `require` entry beyond `php` in the
+importing `Promoseven\Biometric`, or on a `require` entry beyond `php` in the
 package's `composer.json`.
 
 ## The layers
@@ -34,7 +34,7 @@ package's `composer.json`.
 └───────────────────────────┬──────────────────────────────────┘
                             │ framework-agnostic PHP
 ┌───────────────────────────▼──────────────────────────────────┐
-│ packages/zkteco-protocol  (31 classes, zero Laravel)          │
+│ promoseven/biometric-protocol  (31 classes, zero Laravel)          │
 │                                                               │
 │  Client/Device          front door: Device::run($cfg, fn…)     │
 │  Client/DeviceClient    command dispatch, session hygiene      │

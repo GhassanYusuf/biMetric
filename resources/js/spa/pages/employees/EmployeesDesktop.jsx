@@ -1,6 +1,6 @@
 import { Button, EmptyState, InlineAlert, PageHeader, TableShell, TextField, Thead } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
-import { CardCell, FingerprintCell, syncedAgo } from './enrollmentCells';
+import { CardCell, FingerprintCell, TerminalsCell, syncedAgo } from './enrollmentCells';
 
 // Desktop employees: toolbar + wide data table.
 export default function EmployeesDesktop({ rows, search, onSearch, canCreate, canDelete, canEnroll, canReadDevice, readingDevice, total, perPage, onAdd, onDelete, onEnroll, onView, onReadFromDevice }) {
@@ -52,6 +52,7 @@ export default function EmployeesDesktop({ rows, search, onSearch, canCreate, ca
                         <th className="px-5 py-3 text-left">Department</th>
                         <th className="px-5 py-3 text-left">Fingerprints</th>
                         <th className="px-5 py-3 text-left">Card number</th>
+                        <th className="px-5 py-3 text-left">Enrolled on</th>
                         <th className="px-5 py-3 text-right">Punches</th>
                         {showActions && <th className="px-5 py-3" />}
                     </tr>
@@ -59,7 +60,7 @@ export default function EmployeesDesktop({ rows, search, onSearch, canCreate, ca
                 <tbody className="divide-y divide-slate-100">
                     {rows.length === 0 && (
                         <tr>
-                            <td colSpan={7}>
+                            <td colSpan={8}>
                                 <EmptyState
                                     title={searching ? 'No matches' : 'No employees yet'}
                                     hint={searching ? `Nothing matches "${search.trim()}".` : 'Add one by hand, or import the roster straight off a device.'}
@@ -92,6 +93,9 @@ export default function EmployeesDesktop({ rows, search, onSearch, canCreate, ca
                             </td>
                             <td className="px-5 py-3.5">
                                 <CardCell employee={e} />
+                            </td>
+                            <td className="px-5 py-3.5">
+                                <TerminalsCell employee={e} />
                             </td>
                             <td className="px-5 py-3.5 text-right font-medium tabular-nums text-slate-700">
                                 {(e.attendance_logs_count ?? 0).toLocaleString()}

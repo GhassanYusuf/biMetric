@@ -91,3 +91,20 @@
         transition-duration: 0.01ms !important;
     }
 }
+
+/*
+ * Indeterminate progress: a shuttle that sweeps the track.
+ *
+ * Used only when the device declared no total, so the bar must convey "working,
+ * extent unknown" without implying a position. Applied via motion-safe: in the
+ * component, so it stops entirely under prefers-reduced-motion — a permanently
+ * sweeping element is exactly the kind of thing that setting exists to silence.
+ */
+@keyframes progress-slide {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(300%);
+    }
+}

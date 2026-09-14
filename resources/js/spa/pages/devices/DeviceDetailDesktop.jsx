@@ -1,7 +1,8 @@
-import { Badge, Button, Card, EmptyState, PageHeader, SectionCard, TableShell, Thead } from '../../shared/ui';
+import { Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SectionCard, TableShell, Thead } from '../../shared/ui';
+import { describeProgress } from '../../shared/useSyncProgress';
 import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
 import {
-    CAPABILITY_LEVELS, CapabilityBadge, CommandStatusBadge, CountChips, Fact,
+    CAPABILITY_LEVELS, CapabilityBadge, CommandStatusBadge, CountChips, DeviceError, Fact,
     HealthBadge, RunStatusBadge, absoluteTime, commandLabel, formatDuration, shortTime,
 } from './statusParts';
 
@@ -14,6 +15,7 @@ import {
 */
 export default function DeviceDetailDesktop({
     device, runs, commands, history, dispatching,
+    syncRunning, syncProgress, syncStalled,
     canSync, onRefresh, onDispatch, onFullResync, onRetryCommand, onCancelCommand, onBack,
 }) {
     const caps = device.capabilities ?? {};
@@ -38,6 +40,8 @@ export default function DeviceDetailDesktop({
                     <Button variant="secondary" onClick={onRefresh}>Refresh</Button>
                 </PageHeader>
             </div>
+
+            {syncRunning && <SyncInFlightCard progress={syncProgress} stalled={syncStalled} />}
 
             {/* --- Four numbers that answer "is this thing working?" at a glance. */}
             <div className="grid grid-cols-4 gap-3">
@@ -143,7 +147,7 @@ export default function DeviceDetailDesktop({
                                         <div className="mt-2">
                                             <CountChips counts={run.counts} />
                                         </div>
-                                        {run.error && <p className="mt-1.5 text-xs text-rose-600">{run.error}</p>}
+                                        <DeviceError error={run.error} className="mt-1.5 text-xs text-rose-600" />
                                     </div>
                                 ))}
                             </div>
@@ -174,7 +178,7 @@ export default function DeviceDetailDesktop({
                                             <td className="px-5 py-3">
                                                 <CommandStatusBadge status={c.status} />
                                                 {c.message && <div className="mt-1 max-w-xs text-xs text-slate-600">{c.message}</div>}
-                                                {c.error && <div className="mt-1 max-w-xs text-xs text-rose-600">{c.error}</div>}
+                                                <DeviceError error={c.error} />
                                             </td>
                                             <td className="px-5 py-3 tabular-nums text-slate-600">
                                                 {c.attempts}/{c.max_attempts}
@@ -301,5 +305,36 @@ export default function DeviceDetailDesktop({
                 </p>
             )}
         </div>
+    );
+}
+
+/**
+ * The in-flight sync banner, shared by the desktop and mobile detail screens so
+ * they cannot drift (rule 5).
+ *
+ * A Card rather than an InlineAlert: this is neutral state, not a warning, and it
+ * disappears when the run ends. It is not a toast because it describes how things
+ * currently are rather than something that just happened (rule 2).
+ */
+export function SyncInFlightCard({ progress, stalled }) {
+    const { label, detail, percent } = describeProgress(progress);
+
+    return (
+        <Card className="p-4">
+            <ProgressBar
+                percent={percent}
+                label={label}
+                detail={detail}
+                tone={progress?.phase === 'importing' ? 'emerald' : 'violet'}
+            />
+            <p className="mt-2 text-xs text-slate-500">
+                {percent === null
+                    // Rule 10 in the UI: the device did not declare a size, so the
+                    // bar must not imply one. Say why instead of showing a fake 0%.
+                    ? 'This terminal did not announce a size, so only elapsed progress is known.'
+                    : 'The terminal is being read. You can leave this page — the sync keeps running.'}
+                {stalled && ' Lost contact with the progress feed; the sync may still be running.'}
+            </p>
+        </Card>
     );
 }

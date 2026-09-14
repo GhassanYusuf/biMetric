@@ -23,7 +23,7 @@ class FrontendConventionsTest extends TestCase
     /** @return list<string> every .js/.jsx file under resources/js */
     private function sourceFiles(): array
     {
-        $root = dirname(__DIR__, 2) . '/resources/js';
+        $root = dirname(__DIR__, 2).'/resources/js';
         $files = [];
 
         $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
@@ -78,19 +78,63 @@ class FrontendConventionsTest extends TestCase
             [],
             $offenders,
             "Native browser dialogs are banned (see CLAUDE.md).\n"
-            . "Use useConfirm() for confirmations and useToast() for results.\n\n"
-            . implode("\n", $offenders) . "\n"
+            ."Use useConfirm() for confirmations and useToast() for results.\n\n"
+            .implode("\n", $offenders)."\n"
         );
     }
 
     public function test_the_confirm_and_toast_providers_are_mounted(): void
     {
-        $spa = file_get_contents(dirname(__DIR__, 2) . '/resources/js/spa/main.jsx');
+        $spa = file_get_contents(dirname(__DIR__, 2).'/resources/js/spa/main.jsx');
         $this->assertStringContainsString('<ConfirmProvider>', $spa, 'SPA must mount ConfirmProvider');
         $this->assertStringContainsString('<ToastProvider>', $spa, 'SPA must mount ToastProvider');
 
-        $inertia = file_get_contents(dirname(__DIR__, 2) . '/resources/js/app.jsx');
+        $inertia = file_get_contents(dirname(__DIR__, 2).'/resources/js/app.jsx');
         $this->assertStringContainsString('<ConfirmProvider>', $inertia, 'Inertia app must mount ConfirmProvider');
+    }
+
+    /*
+     * `error` on AttendanceSyncRun and DeviceCommand is cast to `array`, so it
+     * reaches the browser as { exception, context } — an object. React throws
+     * "Objects are not valid as a React child" on render, and the ErrorBoundary
+     * turns that into a blank page.
+     *
+     * Six screens shipped this bug at once and it made the sync history page
+     * unopenable as soon as any run had failed, so it is worth a guard rather
+     * than a code review. Route these through <DeviceError /> from
+     * pages/devices/statusParts.jsx, which formats the object.
+     */
+    public function test_structured_device_errors_are_never_rendered_as_a_react_child(): void
+    {
+        $offenders = [];
+
+        foreach ($this->sourceFiles() as $path) {
+            $relative = substr($path, strpos($path, 'resources/js'));
+
+            // The formatter itself is the one place allowed to touch the shape.
+            if (str_contains($relative, 'pages/devices/statusParts.jsx')) {
+                continue;
+            }
+
+            foreach (explode("\n", file_get_contents($path)) as $number => $line) {
+                // {run.error} / {c.error} interpolated straight into JSX as a
+                // CHILD. The lookbehind for `=` is what separates a child from a
+                // prop value: `error={run.error}` hands the object to a component
+                // that knows the shape, which is the fix, not the bug.
+                if (preg_match('/(?<![=\w$])\{\s*[\w$]+(\?)?\.error\s*\}/', $line)) {
+                    $offenders[] = sprintf('%s:%d  %s', $relative, $number + 1, trim($line));
+                }
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $offenders,
+            "A device `error` is a structured object ({exception, context}), not a string.\n"
+            ."Rendering it as a React child throws and blanks the page via the ErrorBoundary.\n"
+            ."Use <DeviceError error={...} /> from pages/devices/statusParts.jsx instead.\n\n"
+            .implode("\n", $offenders)."\n"
+        );
     }
 
     public function test_every_file_using_the_hooks_also_imports_them(): void

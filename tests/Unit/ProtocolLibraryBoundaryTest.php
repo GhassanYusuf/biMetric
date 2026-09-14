@@ -7,16 +7,25 @@ use PHPUnit\Framework\TestCase;
 /**
  * Enforces CLAUDE.md rule 8: the protocol package stays a reusable library.
  *
- * These are the only guarantees that keep `packages/zkteco-protocol` installable by
- * another platform. A convention nobody can violate by accident beats one written
+ * These are the only guarantees that keep `promoseven/biometric-protocol` installable
+ * by another platform. A convention nobody can violate by accident beats one written
  * down and forgotten — and this particular boundary erodes silently, one innocent
  * `config()` call at a time, until the package is Laravel-only again.
+ *
+ * The library is no longer vendored in this repo: it is its own distributable
+ * package, resolved through composer. So these checks run against the INSTALLED
+ * copy, which is what a licensee actually receives. During development that is a
+ * symlink to the working tree, so editing the library still fails this suite
+ * immediately; installed from a registry it checks the published artifact.
  */
 class ProtocolLibraryBoundaryTest extends TestCase
 {
+    /** Where composer installs the library. A path repository symlinks it here. */
+    private const PACKAGE_PATH = 'vendor/promoseven/biometric-protocol';
+
     private function packagePath(string $suffix = ''): string
     {
-        return dirname(__DIR__, 2) . '/packages/zkteco-protocol' . $suffix;
+        return dirname(__DIR__, 2).'/'.self::PACKAGE_PATH.$suffix;
     }
 
     /** @return list<string> every PHP file in the library's src/ */
@@ -40,7 +49,7 @@ class ProtocolLibraryBoundaryTest extends TestCase
 
     private function relative(string $path): string
     {
-        $pos = strpos($path, 'packages/zkteco-protocol');
+        $pos = strpos($path, self::PACKAGE_PATH);
 
         return $pos === false ? $path : substr($path, $pos);
     }
@@ -113,8 +122,8 @@ class ProtocolLibraryBoundaryTest extends TestCase
             [],
             $offenders,
             "The protocol library must stay framework-agnostic (CLAUDE.md rule 8).\n"
-            . "Move framework concerns into App\\Services\\Devices\\ZktecoDriver instead.\n\n"
-            . implode("\n", $offenders) . "\n",
+            ."Move framework concerns into App\\Services\\Devices\\ZktecoDriver instead.\n\n"
+            .implode("\n", $offenders)."\n",
         );
     }
 
@@ -128,6 +137,33 @@ class ProtocolLibraryBoundaryTest extends TestCase
     {
         $allowed = [
             'app/Services/Devices/ZktecoDriver.php',
+            /*
+             * The second vendor, and the delegator that routes between them.
+             *
+             * CslHttpDriver speaks HTTP, not the ZKTeco protocol — yet it still has
+             * to import from the package, because Capability, CapabilitySet and
+             * DeviceException are the app's SHARED vocabulary and they live there.
+             * That is real debt: the vocabulary belongs in a vendor-neutral package
+             * and must move before a third vendor arrives. Recorded here so the next
+             * person meets it deliberately rather than by surprise.
+             */
+            'app/Services/Devices/Csl/CslHttpDriver.php',
+            'app/Services/Devices/Csl/CslWebPortalClient.php',
+            /*
+             * The third driver: ZKTeco C3 / PullSDK access panels (inBIO460,
+             * TF1700). It speaks the library's C3 namespace, which is the intended
+             * coupling — but it ALSO imports Capability, CapabilitySet and
+             * DeviceException for the same reason CslHttpDriver does.
+             *
+             * That is the debt above, now come due: rule 8 said the shared
+             * vocabulary must move to its own package "before a third vendor
+             * arrives". The third vendor has arrived. Moving it was deliberately
+             * not done in the same change as making two dead panels readable, so it
+             * is recorded here as the next structural job rather than quietly
+             * deferred again.
+             */
+            'app/Services/Devices/C3/C3Driver.php',
+            'app/Services/Devices/DeviceDriverManager.php',
             // These name library TYPES in signatures/guards through the contract,
             // which is the intended coupling: they never construct a transport or
             // speak a command.
@@ -142,11 +178,46 @@ class ProtocolLibraryBoundaryTest extends TestCase
             'app/Models/AccessCard.php',
             'app/Http/Controllers/Api/DeviceSyncController.php',
             'app/Http/Controllers/Api/DeviceEnrollmentController.php',
+            // These two name DeviceException ONLY to map a device failure onto a 502.
+            // They call services, never the protocol — which the companion test
+            // test_controllers_never_construct_a_device_session() enforces.
+            'app/Http/Controllers/Api/DeviceController.php',
+            'app/Http/Controllers/Api/EmployeeController.php',
+            /*
+             * The single place a device failure is RECORDED. Same category as the
+             * two controllers above: it names the exception types only, to read
+             * context() and isRetryable() and choose the operator's wording. It
+             * never opens a session, builds a config, or touches a transport.
+             *
+             * The library cannot log for itself — it is framework-agnostic by rule
+             * 8 and has no Log facade — so the app side has to name the exceptions
+             * it is reporting on. Doing it by string class-name to satisfy this
+             * test would trade a real type check for a typo waiting to happen.
+             */
+            'app/Support/DeviceErrorReporter.php',
             // Binds the contract to the driver — the one place allowed to name both.
             'app/Providers/AppServiceProvider.php',
+            /*
+             * The realtime listener. Reaches the device only through
+             * BiometricDeviceDriver::open(); it names ProtocolDevice to hold the
+             * returned session and Capability to gate on realtime support. It never
+             * builds a config or a transport.
+             */
+            'app/Console/Commands/ListenZkteco.php',
+            /*
+             * The protocol diagnostic, and the deliberate exception.
+             *
+             * Its entire job is to ask raw questions of unknown firmware — command
+             * numbers, byte offsets, what the codec makes of the answer — so it names
+             * Protocol\Command and TemplateCodec directly. Hiding that behind the
+             * contract would defeat the tool: the contract exposes what we already
+             * understand, and this exists for what we do not. It still opens sessions
+             * only via the driver, and it is strictly read-only.
+             */
+            'app/Console/Commands/ProbeFingerprintTemplates.php',
         ];
 
-        $root = str_replace('\\', '/', dirname(__DIR__, 2)) . '/app';
+        $root = str_replace('\\', '/', dirname(__DIR__, 2)).'/app';
         $offenders = [];
 
         $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
@@ -160,13 +231,13 @@ class ProtocolLibraryBoundaryTest extends TestCase
             // Relative to the project root, computed by LENGTH not by searching for
             // "app/" — the project directory is itself named `app`, so a search finds
             // the wrong one and yields "app/app/...".
-            $relative = 'app/' . substr($path, strlen($root) + 1);
+            $relative = 'app/'.substr($path, strlen($root) + 1);
 
             if (in_array($relative, $allowed, true)) {
                 continue;
             }
 
-            if (str_contains(file_get_contents($path), 'Zkteco\\Protocol')) {
+            if (str_contains(file_get_contents($path), 'Promoseven\\Biometric')) {
                 $offenders[] = $relative;
             }
         }
@@ -174,16 +245,16 @@ class ProtocolLibraryBoundaryTest extends TestCase
         $this->assertSame(
             [],
             $offenders,
-            "Only ZktecoDriver may import Zkteco\\Protocol (CLAUDE.md rule 8).\n"
-            . "These files should depend on App\\Contracts\\BiometricDeviceDriver instead:\n  "
-            . implode("\n  ", $offenders) . "\n",
+            "Only ZktecoDriver may import Promoseven\\Biometric (CLAUDE.md rule 8).\n"
+            ."These files should depend on App\\Contracts\\BiometricDeviceDriver instead:\n  "
+            .implode("\n  ", $offenders)."\n",
         );
     }
 
     /** Controllers must not construct or drive the protocol themselves. */
     public function test_controllers_never_construct_a_device_session(): void
     {
-        $root = str_replace('\\', '/', dirname(__DIR__, 2)) . '/app/Http/Controllers';
+        $root = str_replace('\\', '/', dirname(__DIR__, 2)).'/app/Http/Controllers';
         $offenders = [];
 
         $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
@@ -207,7 +278,7 @@ class ProtocolLibraryBoundaryTest extends TestCase
             [],
             $offenders,
             "Controllers must go through a service and the driver contract, never the protocol directly.\n  "
-            . implode("\n  ", $offenders) . "\n",
+            .implode("\n  ", $offenders)."\n",
         );
     }
 
@@ -221,9 +292,9 @@ class ProtocolLibraryBoundaryTest extends TestCase
         $composer = json_decode(file_get_contents($this->packagePath('/composer.json')), true);
 
         $this->assertSame(
-            'Zkteco\\Protocol\\',
+            'Promoseven\\Biometric\\',
             array_key_first($composer['autoload']['psr-4']),
-            'The library must own the Zkteco\\Protocol namespace.',
+            'The library must own the Promoseven\\Biometric namespace.',
         );
 
         $this->assertSame(

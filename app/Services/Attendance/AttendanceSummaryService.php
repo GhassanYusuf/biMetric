@@ -21,14 +21,33 @@ use Carbon\CarbonPeriod;
 class AttendanceSummaryService
 {
     /**
+     * The local-time window a (possibly absent) range actually means: no end
+     * date is today, and no start date is the 29 days before that end.
+     *
+     * Public because callers have to be able to STATE the window they got. A
+     * report that defaulted the range and then printed "all dates" on the cover
+     * would be describing a different document than the one it is.
+     *
+     * @return array{0:Carbon,1:Carbon}
+     */
+    public static function window(?string $from, ?string $to): array
+    {
+        $tz = config('attendance.timezone');
+
+        $toDate = $to ? Carbon::parse($to, $tz)->endOfDay() : now($tz)->endOfDay();
+        $fromDate = $from ? Carbon::parse($from, $tz)->startOfDay() : $toDate->copy()->subDays(29)->startOfDay();
+
+        return [$fromDate, $toDate];
+    }
+
+    /**
      * @return array{employee:array,from:string,to:string,daily:array,categories:array,total_punches:int,total_payroll_hours:float}
      */
     public function summary(Employee $employee, ?string $from = null, ?string $to = null): array
     {
         $tz = config('attendance.timezone');
 
-        $toDate = $to ? Carbon::parse($to, $tz)->endOfDay() : now($tz)->endOfDay();
-        $fromDate = $from ? Carbon::parse($from, $tz)->startOfDay() : $toDate->copy()->subDays(29)->startOfDay();
+        [$fromDate, $toDate] = self::window($from, $to);
 
         $logs = $employee->attendanceLogs()
             ->whereBetween('punched_at', [$fromDate->copy()->setTimezone('UTC'), $toDate->copy()->setTimezone('UTC')])

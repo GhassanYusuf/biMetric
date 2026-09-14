@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader, SelectField, TableShell, Thead } from '../../shared/ui';
-import { RUN_STATUSES, RunStatusBadge, absoluteTime, formatDuration } from './statusParts';
+import { DeviceError, RUN_STATUSES, RunStatusBadge, absoluteTime, formatDuration } from './statusParts';
 
 /*
 | Desktop sync history: one row per run, with all five record counts as their own
@@ -11,7 +11,7 @@ import { RUN_STATUSES, RunStatusBadge, absoluteTime, formatDuration } from './st
 | a decoder that is dropping records — and `undecodable` above zero is the one number
 | that always deserves someone's attention.
 */
-export default function SyncRunsDesktop({ runs, devices, meta, totals, filters, loading, onFilter, onRefresh }) {
+export default function SyncRunsDesktop({ runs, devices, meta, totals, filters, loading, clearing, canClear, onFilter, onRefresh, onClear }) {
     const attention = runs.filter((r) => r.needs_attention).length;
 
     return (
@@ -25,6 +25,22 @@ export default function SyncRunsDesktop({ runs, devices, meta, totals, filters, 
                 }
             >
                 <Button variant="secondary" loading={loading} onClick={onRefresh}>Refresh</Button>
+                {/*
+                  | Clearing follows the filters above, so the label says which it is.
+                  | Hidden without devices.delete, and disabled with nothing on screen
+                  | to clear — a destructive button that does nothing is still a button
+                  | somebody will press.
+                  */}
+                {canClear && (
+                    <Button
+                        variant="danger"
+                        loading={clearing}
+                        disabled={runs.length === 0}
+                        onClick={onClear}
+                    >
+                        {filters.device_id || filters.status ? 'Clear these runs' : 'Clear history'}
+                    </Button>
+                )}
             </PageHeader>
 
             <div className="flex flex-wrap items-end gap-3">
@@ -111,7 +127,7 @@ export default function SyncRunsDesktop({ runs, devices, meta, totals, filters, 
                                     {run.needs_attention && <Badge tone="amber">Check</Badge>}
                                 </div>
                                 {run.message && <div className="mt-1 max-w-xs text-xs text-slate-600">{run.message}</div>}
-                                {run.error && <div className="mt-1 max-w-xs text-xs text-rose-600">{run.error}</div>}
+                                <DeviceError error={run.error} />
                             </td>
                             <td className="px-4 py-3.5 text-right tabular-nums text-slate-700">{(run.counts?.read ?? 0).toLocaleString()}</td>
                             <td className={`px-4 py-3.5 text-right font-semibold tabular-nums ${run.counts?.imported > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>

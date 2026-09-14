@@ -11,8 +11,8 @@ Nothing but the autoloader:
 ```php
 require __DIR__ . '/vendor/autoload.php';
 
-use Zkteco\Protocol\Client\Device;
-use Zkteco\Protocol\Value\DeviceConfig;
+use Promoseven\Biometric\Client\Device;
+use Promoseven\Biometric\Value\DeviceConfig;
 
 $config = new DeviceConfig(host: '192.168.7.62', timezone: '+03:00');
 
@@ -31,9 +31,9 @@ foreach ($punches as $p) {
 <?php
 require __DIR__ . '/vendor/autoload.php';
 
-use Zkteco\Protocol\Client\Device;
-use Zkteco\Protocol\Exception\DeviceException;
-use Zkteco\Protocol\Value\DeviceConfig;
+use Promoseven\Biometric\Client\Device;
+use Promoseven\Biometric\Exception\DeviceException;
+use Promoseven\Biometric\Value\DeviceConfig;
 
 $config = new DeviceConfig(host: $argv[1] ?? '192.168.7.62');
 
@@ -134,5 +134,6 @@ If you write a native port, the things that will bite you are all in
 7. **Fail safe on template decoding.** Report "unknown", never "none".
 
 Reproduce the fixture tests against
-`tests/Fixtures/zkteco/fingerprint-template-table.bin` (a real 22,066-byte capture)
+`vendor/promoseven/biometric-protocol/tests/Fixtures/fingerprint-template-table.bin` (a real
+22,066-byte capture)
 and you will have covered the decoding that is hardest to get right.

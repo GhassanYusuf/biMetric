@@ -3,8 +3,8 @@
 namespace Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Zkteco\Protocol\Protocol\Command;
-use Zkteco\Protocol\Protocol\Packet;
+use Promoseven\Biometric\Protocol\Command;
+use Promoseven\Biometric\Protocol\Packet;
 
 /**
  * The packet encoder, byte for byte, with no device.
@@ -78,8 +78,8 @@ class PacketTest extends TestCase
         [$packet] = Packet::build(Command::CONNECT, sessionId: 9, replyId: 3, data: 'xyz');
         $parsed = Packet::parse($packet);
 
-        $overSent = pack('v4', $parsed['command'], 0, $parsed['sessionId'], $parsed['replyId']) . $parsed['data'];
-        $overOriginal = pack('v4', Command::CONNECT, 0, 9, 3) . 'xyz';
+        $overSent = pack('v4', $parsed['command'], 0, $parsed['sessionId'], $parsed['replyId']).$parsed['data'];
+        $overOriginal = pack('v4', Command::CONNECT, 0, 9, 3).'xyz';
 
         $this->assertSame(Packet::checksum($overOriginal), $parsed['checksum']);
         $this->assertNotSame(Packet::checksum($overSent), $parsed['checksum']);

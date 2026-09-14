@@ -31,6 +31,26 @@ final class DeviceConfig
          * applies.
          */
         public readonly string $timezone = '+03:00',
+
+        /**
+         * Socket receive buffer to ask the OS for, in bytes.
+         *
+         * MEASURED, and the single highest-leverage number in this class. The OS
+         * default is 64 KB; one attendance table on an F18 is 412 KB. This protocol
+         * has no flow control, so the moment the reader pauses — for a progress
+         * callback, a GC cycle, a scheduler slice — the device keeps blasting and
+         * anything past 64 KB is dropped by the kernel. That surfaces as
+         * "Incomplete transfer: got 89,088 of 412,084 bytes", which then burns all
+         * five whole-request retries.
+         *
+         * 4 MB holds a ~100,000-record table whole, so a stall costs latency
+         * instead of data. It is a REQUEST, not a guarantee: platforms clamp it,
+         * and the granted size is readable via receiveBufferBytes() for diagnosis.
+         *
+         * Requires ext-sockets. Without it the request is skipped silently and the
+         * library still works exactly as before — see UdpTransport::open().
+         */
+        public readonly int $receiveBufferBytes = 4 * 1024 * 1024,
     ) {
         if ($host === '') {
             throw new \InvalidArgumentException('Device host cannot be empty.');
@@ -40,7 +60,7 @@ final class DeviceConfig
         }
     }
 
-    /** @param array{host:string,port?:int,comm_key?:int,timeout?:float,timezone?:string} $data */
+    /** @param array{host:string,port?:int,comm_key?:int,timeout?:float,timezone?:string,receive_buffer_bytes?:int} $data */
     public static function fromArray(array $data): self
     {
         return new self(
@@ -49,6 +69,7 @@ final class DeviceConfig
             commKey: (int) ($data['comm_key'] ?? 0),
             timeout: (float) ($data['timeout'] ?? 8.0),
             timezone: $data['timezone'] ?? '+03:00',
+            receiveBufferBytes: (int) ($data['receive_buffer_bytes'] ?? 4 * 1024 * 1024),
         );
     }
 

@@ -2,56 +2,64 @@
 
 namespace App\Console\Commands;
 
+use App\Contracts\BiometricDeviceDriver;
 use App\Models\Device;
-use App\Services\Zkteco\DeviceSyncService;
-use App\Services\Zkteco\ZktecoDevice;
-use App\Services\Zkteco\ZktecoException;
+use App\Services\Devices\AttendanceSyncService;
+use App\Support\Tenancy;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
+use Promoseven\Biometric\Capability\Capability;
+use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Exception\DeviceException;
 
 /**
- * Stays connected to ZKTeco device(s) and records attendance punches live as
- * they happen (via the device's own realtime event stream), instead of
- * waiting for the manual "Read from Device" button or the 5-minute
- * scheduled sync to pick them up. Those two remain the fallback/backfill
- * path - this command is purely additive; if it isn't running (or a device
- * connection drops), attendance sync keeps working exactly as it did
- * before this command existed.
+ * Holds a session open to each terminal and records punches as they happen,
+ * instead of waiting for the hourly sync to notice them.
  *
- * Only devices with protocol=binary support this (the CSL/HTTP web-export
- * devices have no realtime mechanism); CSL devices are skipped with a note.
+ * PURELY ADDITIVE. If this is not running, or a link drops, the scheduled sync
+ * still imports everything — the device keeps its own table and the importer
+ * re-reads it. Nothing is lost by this command being down; punches just arrive
+ * late. That is why a connection failure here warns and retries rather than
+ * failing the command.
  *
- * No pcntl/multi-process on Windows, so multiple devices are handled in one
- * process via stream_select() across each device's raw socket.
+ * ONE PROCESS, MANY DEVICES. There is no pcntl on Windows, so instead of a
+ * process per device this blocks on every device's socket at once via
+ * stream_select(). That is what BiometricDeviceDriver::open() and
+ * Device::selectableStream() exist for — run() cannot express a session that
+ * outlives a single callback.
+ *
+ * Only binary-protocol devices have an event stream at all; CSL/HTTP terminals
+ * export over the web portal and are skipped with a note.
  */
 class ListenZkteco extends Command
 {
-    protected $signature = 'zkteco:listen {--device=* : Specific device IDs to listen on (default: all active binary-protocol devices)}';
+    protected $signature = 'zkteco:listen
+                            {--device=* : Specific device ids (default: every active binary-protocol device)}';
 
-    protected $description = 'Stay connected to ZKTeco device(s) and record attendance punches live as they happen';
+    protected $description = 'Hold a session open to ZKTeco terminals and record punches live as they happen';
 
-    /** @var array<int, ZktecoDevice> */
-    private array $connections = [];
+    /** Seconds before a dropped device is retried. */
+    private const RETRY_AFTER = 30;
 
-    /** @var array<int, int> device id => unix timestamp of next allowed reconnect attempt */
+    /** @var array<int, ProtocolDevice> device id => open session */
+    private array $sessions = [];
+
+    /** @var array<int, int> device id => unix time of next allowed reconnect */
     private array $nextRetryAt = [];
 
-    public function handle(DeviceSyncService $sync): int
+    public function handle(BiometricDeviceDriver $driver, AttendanceSyncService $attendance): int
     {
-        $query = Device::query()->where('is_active', true)->where('protocol', Device::PROTOCOL_BINARY);
+        /*
+         * Console context: no request, so no resolved tenant. Read across all of
+         * them, then set the tenant per device before storing anything — the same
+         * discipline ProcessDeviceCommand follows for the same reason.
+         */
+        Tenancy::spanAllTenants();
 
-        if ($ids = $this->option('device')) {
-            $query->whereIn('id', $ids);
-        }
+        $devices = $this->targetDevices();
 
-        $devices = $query->get()->keyBy('id');
-
-        $skipped = Device::query()
-            ->where('is_active', true)
-            ->where('protocol', Device::PROTOCOL_CSL_HTTP)
-            ->pluck('name');
-
-        foreach ($skipped as $name) {
-            $this->warn("Skipping {$name}: CSL/HTTP-protocol devices have no realtime event stream.");
+        foreach ($this->skippedDeviceNames() as $name) {
+            $this->warn("Skipping {$name}: CSL/HTTP terminals have no realtime event stream.");
         }
 
         if ($devices->isEmpty()) {
@@ -61,83 +69,196 @@ class ListenZkteco extends Command
         }
 
         foreach ($devices as $device) {
-            $this->connectDevice($device);
+            $this->connect($driver, $device);
         }
 
-        $this->info('Listening for realtime punches on: ' . $devices->pluck('name')->join(', '));
-        $this->info('(Manual sync and the scheduled sync remain the fallback if this stops - Ctrl+C to exit.)');
+        $this->info('Listening on: '.$devices->pluck('name')->join(', '));
+        $this->info('(The scheduled sync remains the fallback if this stops — Ctrl+C to exit.)');
 
-        while (true) {
-            foreach ($devices as $device) {
-                if (!isset($this->connections[$device->id]) && ($this->nextRetryAt[$device->id] ?? 0) <= time()) {
-                    $this->connectDevice($device);
+        try {
+            while (true) {
+                foreach ($devices as $device) {
+                    if (! isset($this->sessions[$device->id]) && ($this->nextRetryAt[$device->id] ?? 0) <= time()) {
+                        $this->connect($driver, $device);
+                    }
                 }
-            }
 
-            if ($this->connections === []) {
-                sleep(5);
+                if ($this->sessions === []) {
+                    sleep(5);
+
+                    continue;
+                }
+
+                $this->pollOnce($devices, $attendance);
+            }
+        } finally {
+            // open() hands us the session, so closing it is our job — including on
+            // Ctrl+C, which unwinds through here.
+            foreach ($this->sessions as $session) {
+                $session->close();
+            }
+        }
+    }
+
+    /** @return Collection<int, Device> */
+    private function targetDevices(): Collection
+    {
+        $query = Device::query()
+            ->where('is_active', true)
+            ->where('protocol', Device::PROTOCOL_BINARY);
+
+        if ($ids = $this->option('device')) {
+            $query->whereIn('id', $ids);
+        }
+
+        return $query->get()->keyBy('id');
+    }
+
+    /** @return Collection<int, string> */
+    private function skippedDeviceNames(): Collection
+    {
+        return Device::query()
+            ->where('is_active', true)
+            ->where('protocol', Device::PROTOCOL_CSL_HTTP)
+            ->pluck('name');
+    }
+
+    /**
+     * Waits for any device to push, then drains whichever ones did.
+     *
+     * @param  Collection<int, Device>  $devices
+     */
+    private function pollOnce(Collection $devices, AttendanceSyncService $attendance): void
+    {
+        $streams = [];
+
+        foreach ($this->sessions as $deviceId => $session) {
+            $stream = $session->selectableStream();
+
+            // Null means the transport cannot be selected on. Not expected for UDP,
+            // but the contract permits it, so fall back to polling that device
+            // rather than dropping it silently.
+            if ($stream === null) {
+                $this->drain($deviceId, $devices, $attendance, pollSeconds: 0.05);
 
                 continue;
             }
 
-            $this->pollOnce($devices, $sync);
+            $streams[$deviceId] = $stream;
         }
-    }
 
-    private function pollOnce($devices, DeviceSyncService $sync): void
-    {
-        $read = array_map(fn (ZktecoDevice $zk) => $zk->socket(), $this->connections);
-        $write = $except = [];
-
-        $changed = @stream_select($read, $write, $except, 1);
-
-        if ($changed === false || $changed === 0) {
+        if ($streams === []) {
             return;
         }
 
-        foreach ($this->connections as $deviceId => $zk) {
-            if (!in_array($zk->socket(), $read, true)) {
-                continue;
-            }
+        $read = $streams;
+        $write = $except = [];
 
-            $device = $devices->get($deviceId);
+        $ready = @stream_select($read, $write, $except, 1);
 
-            try {
-                $record = $zk->readNextRealtimeAttendance();
-            } catch (\Throwable $e) {
-                $this->warn("[{$device->name}] connection error: {$e->getMessage()} - will retry in 30s.");
-                unset($this->connections[$deviceId]);
-                $this->nextRetryAt[$deviceId] = time() + 30;
+        if ($ready === false || $ready === 0) {
+            return;
+        }
 
-                continue;
-            }
-
-            if ($record === null) {
-                continue;
-            }
-
-            $log = $sync->storeRealtimePunch($device, $record);
-
-            if ($log !== null) {
-                $this->line("[{$device->name}] punch recorded: {$record['user_id']} at {$record['timestamp']->format('Y-m-d H:i:s')}");
+        foreach ($streams as $deviceId => $stream) {
+            if (in_array($stream, $read, true)) {
+                $this->drain($deviceId, $devices, $attendance, pollSeconds: 0.0);
             }
         }
     }
 
-    private function connectDevice(Device $device): void
-    {
-        try {
-            $zk = ZktecoDevice::fromModel($device);
-            $zk->connect();
-            $zk->beginRealtimeListening();
+    /**
+     * Reads and stores one pending push from a device.
+     *
+     * @param  Collection<int, Device>  $devices
+     */
+    private function drain(
+        int $deviceId,
+        Collection $devices,
+        AttendanceSyncService $attendance,
+        float $pollSeconds,
+    ): void {
+        $device = $devices->get($deviceId);
+        $session = $this->sessions[$deviceId];
 
-            $this->connections[$device->id] = $zk;
+        try {
+            $record = $session->attendance()->nextRealtimePunch($pollSeconds);
+        } catch (DeviceException $e) {
+            $this->warn("[{$device->name}] link error: {$e->getMessage()} — retrying in ".self::RETRY_AFTER.'s.');
+            $this->drop($deviceId);
+
+            return;
+        }
+
+        if ($record === null) {
+            return;
+        }
+
+        // Scope writes to the device's own tenant. Without this the global scope
+        // would attribute a punch to whichever tenant happened to be set last.
+        Tenancy::set($device->tenant_id);
+
+        try {
+            $log = $attendance->recordRealtimePunch($device, $record);
+        } finally {
+            Tenancy::spanAllTenants();
+        }
+
+        if ($log === null) {
+            $this->warn("[{$device->name}] a realtime push would not decode — archived, not counted.");
+
+            return;
+        }
+
+        if (! $log->wasRecentlyCreated) {
+            return; // already imported by a sync; not worth a line of output
+        }
+
+        $this->line(sprintf(
+            '[%s] punch: %s at %s',
+            $device->name,
+            $record['user_id'] ?? '?',
+            $record['timestamp']->format('Y-m-d H:i:s'),
+        ));
+    }
+
+    private function connect(BiometricDeviceDriver $driver, Device $device): void
+    {
+        /*
+         * Capability gate, per rule 9: a terminal that cannot stream events must be
+         * skipped, not retried forever. Levels below `implemented` mean the library
+         * has no realtime path for this firmware.
+         */
+        if (! $driver->capabilities($device)->supports(Capability::ATTENDANCE_REALTIME)) {
+            $this->warn("Skipping {$device->name}: no realtime event stream on this firmware.");
+            $this->nextRetryAt[$device->id] = PHP_INT_MAX;
+
+            return;
+        }
+
+        try {
+            $session = $driver->open($device);
+            $session->attendance()->listen();
+
+            $this->sessions[$device->id] = $session;
             unset($this->nextRetryAt[$device->id]);
 
             $this->info("Connected to {$device->name} ({$device->ip_address}).");
-        } catch (ZktecoException $e) {
-            $this->warn("Could not connect to {$device->name}: {$e->getMessage()} - retrying in 30s.");
-            $this->nextRetryAt[$device->id] = time() + 30;
+        } catch (DeviceException $e) {
+            $this->warn("Could not connect to {$device->name}: {$e->getMessage()} — retrying in ".self::RETRY_AFTER.'s.');
+            $this->nextRetryAt[$device->id] = time() + self::RETRY_AFTER;
         }
+    }
+
+    private function drop(int $deviceId): void
+    {
+        try {
+            $this->sessions[$deviceId]->close();
+        } catch (\Throwable) {
+            // Already gone. Nothing to salvage, and the reconnect is what matters.
+        }
+
+        unset($this->sessions[$deviceId]);
+        $this->nextRetryAt[$deviceId] = time() + self::RETRY_AFTER;
     }
 }

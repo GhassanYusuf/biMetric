@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Jobs\ProcessDeviceCommand;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\DeviceGroup;
@@ -13,8 +14,8 @@ use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
+use Promoseven\Biometric\Capability\Capability;
 use Tests\TestCase;
-use Zkteco\Protocol\Capability\Capability;
 
 /**
  * The device layer's HTTP surface, with no hardware anywhere near it.
@@ -35,6 +36,7 @@ class DeviceQueueTest extends TestCase
     private const PASSWORD = 'test-password';
 
     private Tenant $acme;
+
     private Device $device;
 
     protected function setUp(): void
@@ -117,7 +119,62 @@ class DeviceQueueTest extends TestCase
             'status' => DeviceCommand::STATUS_QUEUED,
         ]);
 
-        Queue::assertPushed(\App\Jobs\ProcessDeviceCommand::class);
+        Queue::assertPushed(ProcessDeviceCommand::class);
+    }
+
+    public function test_a_full_resync_carries_the_flag_through_to_the_command_payload(): void
+    {
+        Queue::fake();
+
+        $this->asAdmin()->postJson("/api/devices/{$this->device->id}/commands", [
+            'command' => DeviceCommand::SYNC_ATTENDANCE,
+            'full' => true,
+        ])->assertOk();
+
+        // The payload is what DeviceCommandHandler reads to decide whether the
+        // watermark applies. If it were dropped here the button would look like it
+        // worked and quietly run an ordinary incremental sync.
+        $command = DeviceCommand::withoutGlobalScopes()->latest('id')->firstOrFail();
+
+        $this->assertTrue($command->payload['full']);
+    }
+
+    public function test_a_sync_defaults_to_incremental_when_full_is_not_asked_for(): void
+    {
+        Queue::fake();
+
+        $this->asAdmin()->postJson("/api/devices/{$this->device->id}/commands", [
+            'command' => DeviceCommand::SYNC_ATTENDANCE,
+        ])->assertOk();
+
+        $command = DeviceCommand::withoutGlobalScopes()->latest('id')->firstOrFail();
+
+        $this->assertFalse($command->payload['full']);
+    }
+
+    public function test_the_console_command_queues_a_full_sync_when_asked(): void
+    {
+        Queue::fake();
+
+        $this->artisan('app:sync-biometric-devices', ['--device' => [$this->device->id], '--full' => true])
+            ->assertSuccessful();
+
+        $command = DeviceCommand::withoutGlobalScopes()->latest('id')->firstOrFail();
+
+        $this->assertSame(DeviceCommand::SYNC_ATTENDANCE, $command->command);
+        $this->assertTrue($command->payload['full']);
+    }
+
+    public function test_the_console_command_is_incremental_by_default(): void
+    {
+        Queue::fake();
+
+        $this->artisan('app:sync-biometric-devices', ['--device' => [$this->device->id]])
+            ->assertSuccessful();
+
+        $command = DeviceCommand::withoutGlobalScopes()->latest('id')->firstOrFail();
+
+        $this->assertFalse($command->payload['full']);
     }
 
     public function test_a_queued_command_appears_in_the_history_with_its_device(): void
@@ -406,7 +463,7 @@ class DeviceQueueTest extends TestCase
         );
 
         $res->assertOk()->assertJsonPath('data.command', DeviceCommand::ENROLL_FINGERPRINT);
-        Queue::assertPushed(\App\Jobs\ProcessDeviceCommand::class);
+        Queue::assertPushed(ProcessDeviceCommand::class);
     }
 
     public function test_an_out_of_range_finger_slot_is_rejected(): void

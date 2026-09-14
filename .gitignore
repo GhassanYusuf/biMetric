@@ -24,3 +24,7 @@ Homestead.yaml
 Thumbs.db
 /debug-legacy*.php
 /docker/mosquitto/passwd
+
+# Vendor software dumps: employee PII, fingerprint templates, licensed binaries.
+# Analysed locally, never committed (rule 16).
+/draft

@@ -1,0 +1,41 @@
+{
+  "label": "camelot-fullread-diagnosis",
+  "host": "87.237.196.60",
+  "port": 4370,
+  "protocol": "zkteco-standalone-udp (windowed)",
+  "started_at": "2026-09-14T08:11:00.200290",
+  "capture": "tcpdump host 87.237.196.60 (udp or icmp), eth0; raw pcap kept in scratchpad only (PII)",
+  "table_size_bytes": 1664804,
+  "counter_deltas_over_run": {
+    "InDatagrams": 1869,
+    "NoPorts": 60,
+    "InErrors": 0,
+    "OutDatagrams": 127,
+    "RcvbufErrors": 0,
+    "SndbufErrors": 0,
+    "InCsumErrors": 0,
+    "IgnoredMulti": 1568,
+    "MemErrors": 0
+  },
+  "findings": {
+    "path": "windowed (PREPARE_BUFFER/READ_BUFFER) \u2014 CONFIRMED working on Camelot F18: 37 window requests, ~14 datagrams (16KB) each",
+    "kernel_drops": "NONE (RcvbufErrors delta 0, socket rx-queue max 0 throughout)",
+    "corruption": "NONE (InErrors/InCsumErrors delta 0)",
+    "noports_climb": 60,
+    "gap_buckets_ms": {
+      "<50": 1089,
+      "50-200": 825,
+      "200-1000": 3,
+      ">1000_stall": 7
+    },
+    "per_attempt": "each session reads ~1/3 of table (~545-588KB) then a >2s window stall throws, read() restages from zero; ~6 attempts, none complete",
+    "biggest_stall_ms": 8006,
+    "root_cause": "windowed reader has NO resume across a window stall: a single stalled 16KB window aborts the whole staged buffer and restarts at offset 0; over a public link stalls recur ~7x/read so a 1.66MB table never completes within MAX_ATTEMPTS=5"
+  },
+  "code_refs": {
+    "window_stall_budget": "MAX_EMPTY_POLLS_PER_WINDOW=10 x 0.2s = 2.0s (BulkReader.php:96,410)",
+    "request_timeout": "config attendance.device_timeout=8.0s",
+    "window_bytes": "16384 (BulkReader.php:87)",
+    "whole_transfer_attempts": "MAX_ATTEMPTS=5 (BulkReader.php:55) \u2014 each restages from zero (readWindowed throw -> read() retry -> FREE_DATA + PREPARE_BUFFER)"
+  }
+}

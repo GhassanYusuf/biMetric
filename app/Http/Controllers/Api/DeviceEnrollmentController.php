@@ -14,7 +14,7 @@ use App\Services\Devices\EnrollmentOrchestratorService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Zkteco\Protocol\Capability\Capability;
+use Promoseven\Biometric\Capability\Capability;
 
 /**
  * Enrollment sessions.
@@ -31,8 +31,7 @@ class DeviceEnrollmentController extends Controller
     public function __construct(
         private readonly DeviceCommandBus $bus,
         private readonly EnrollmentOrchestratorService $enrollment,
-    ) {
-    }
+    ) {}
 
     /** Session history, filterable by employee, device or state. */
     public function index(Request $request): JsonResponse
@@ -91,7 +90,7 @@ class DeviceEnrollmentController extends Controller
         if ($active = $this->activeSessionFor($employee, $device)) {
             return ApiResponse::error(
                 "An enrollment is already waiting at {$device->name} for {$employee->name}. "
-                . 'Cancel it before starting another, or wait for it to time out.',
+                .'Cancel it before starting another, or wait for it to time out.',
                 ['session_id' => [$active->id]],
                 409,
             );
@@ -105,7 +104,7 @@ class DeviceEnrollmentController extends Controller
         return ApiResponse::success(
             new DeviceCommandResource($command),
             "{$device->name} will beep and wait for a finger in slot {$data['finger_slot']}. "
-            . 'Ask them to present it now.',
+            .'Ask them to present it now.',
         );
     }
 

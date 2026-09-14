@@ -3,12 +3,12 @@
 namespace Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Zkteco\Protocol\Contracts\Transport;
-use Zkteco\Protocol\Exception\ConnectionException;
-use Zkteco\Protocol\Protocol\Command;
-use Zkteco\Protocol\Session\Session;
-use Zkteco\Protocol\Value\DeviceConfig;
-use Zkteco\Protocol\Value\Reply;
+use Promoseven\Biometric\Contracts\Transport;
+use Promoseven\Biometric\Exception\ConnectionException;
+use Promoseven\Biometric\Protocol\Command;
+use Promoseven\Biometric\Session\Session;
+use Promoseven\Biometric\Value\DeviceConfig;
+use Promoseven\Biometric\Value\Reply;
 
 /**
  * Session lifecycle and the dirty-tracking that fixed a real data bug.
@@ -65,7 +65,7 @@ class SessionLifecycleTest extends TestCase
 
     public function test_closing_says_goodbye_but_survives_a_device_that_has_already_gone(): void
     {
-        $transport = new FakeTransport();
+        $transport = new FakeTransport;
         $session = $this->session($transport);
         $session->open();
 
@@ -78,7 +78,7 @@ class SessionLifecycleTest extends TestCase
 
     public function test_closing_an_already_closed_session_is_a_no_op(): void
     {
-        $session = $this->session(new FakeTransport());
+        $session = $this->session(new FakeTransport);
 
         $session->close();   // never opened
 
@@ -89,7 +89,7 @@ class SessionLifecycleTest extends TestCase
 
     public function test_a_new_session_is_clean(): void
     {
-        $session = $this->session(new FakeTransport());
+        $session = $this->session(new FakeTransport);
         $session->open();
 
         $this->assertFalse($session->isDirty());
@@ -97,7 +97,7 @@ class SessionLifecycleTest extends TestCase
 
     public function test_mark_dirty_records_that_the_device_may_still_be_streaming(): void
     {
-        $session = $this->session(new FakeTransport());
+        $session = $this->session(new FakeTransport);
         $session->open();
 
         $session->markDirty();
@@ -111,7 +111,7 @@ class SessionLifecycleTest extends TestCase
      */
     public function test_ensure_clean_reopens_a_dirty_session(): void
     {
-        $transport = new FakeTransport();
+        $transport = new FakeTransport;
         $session = $this->session($transport);
         $session->open();
 
@@ -127,7 +127,7 @@ class SessionLifecycleTest extends TestCase
     /** The common path must stay cheap, or every command pays for a handshake. */
     public function test_ensure_clean_does_nothing_when_the_session_is_clean(): void
     {
-        $transport = new FakeTransport();
+        $transport = new FakeTransport;
         $session = $this->session($transport);
         $session->open();
 
@@ -157,7 +157,7 @@ class SessionLifecycleTest extends TestCase
      */
     public function test_two_bulk_reads_each_get_their_own_session(): void
     {
-        $transport = new FakeTransport();
+        $transport = new FakeTransport;
         $session = $this->session($transport);
         $session->open();
 
@@ -189,18 +189,20 @@ class SessionLifecycleTest extends TestCase
 class FakeTransport implements Transport
 {
     public int $openCount = 0;
+
     public bool $throwOnSend = false;
+
     /** @var list<int> */
     public array $sentCommands = [];
 
     private bool $open = false;
+
     private int $sessionId = 0;
 
     public function __construct(
         public int $sessionIdToIssue = 4242,
         private readonly int $connectReply = Command::ACK_OK,
-    ) {
-    }
+    ) {}
 
     public function open(): void
     {
@@ -235,17 +237,23 @@ class FakeTransport implements Transport
         );
     }
 
-    public function sendRaw(string $packet): void
-    {
-    }
+    public function sendRaw(string $packet): void {}
 
     public function readUnsolicited(float $pollSeconds = 0.5): ?Reply
     {
         return null;
     }
 
-    public function setReadTimeout(int $seconds, int $microseconds = 0): void
+    public function setReadTimeout(int $seconds, int $microseconds = 0): void {}
+
+    /**
+     * Null is the honest answer: there is no socket to select on here. The contract
+     * requires callers to fall back to polling rather than treating this as an
+     * error, and this fake is the reason that clause exists.
+     */
+    public function selectableStream()
     {
+        return null;
     }
 
     public function sessionId(): int

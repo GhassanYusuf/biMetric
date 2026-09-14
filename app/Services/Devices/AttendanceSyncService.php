@@ -3,15 +3,16 @@
 namespace App\Services\Devices;
 
 use App\Contracts\BiometricDeviceDriver;
+use App\Events\PunchRecorded;
 use App\Models\AttendanceLog;
 use App\Models\AttendanceRawLog;
 use App\Models\AttendanceSyncRun;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\EmployeeDeviceMap;
-use Zkteco\Protocol\Capability\Capability;
-use Zkteco\Protocol\Client\Device as ProtocolDevice;
-use Zkteco\Protocol\Exception\DeviceException;
+use Illuminate\Support\Carbon;
+use Promoseven\Biometric\Capability\Capability;
+use Promoseven\Biometric\Exception\DeviceException;
 
 /**
  * Imports attendance from a terminal into attendance_logs.
@@ -39,15 +40,13 @@ use Zkteco\Protocol\Exception\DeviceException;
  */
 class AttendanceSyncService
 {
-    public function __construct(private readonly BiometricDeviceDriver $driver)
-    {
-    }
+    public function __construct(private readonly BiometricDeviceDriver $driver) {}
 
     /**
      * Runs one sync.
      *
-     * @param bool $full ignore the watermark and reconsider every record. Slower,
-     *                   and the way to recover after a decoder fix.
+     * @param  bool  $full  ignore the watermark and reconsider every record. Slower,
+     *                      and the way to recover after a decoder fix.
      * @return array{message:string, raw:array<string,mixed>}
      */
     public function sync(Device $device, bool $full = false, ?DeviceCommand $command = null): array
@@ -69,17 +68,32 @@ class AttendanceSyncService
         $startedAt = microtime(true);
 
         try {
-            // Read raw first so the payload is preserved even if parsing explodes.
-            // ONE session for the transfer; decoding is pure and needs no connection,
-            // so it happens after the session closes rather than holding it open.
-            $raw = $this->driver->run($device, fn (ProtocolDevice $d) => $d->attendance()->raw());
+            /*
+             * Transfer and decode belong to the driver, because both are
+             * vendor-specific: a ZKTeco terminal streams a binary table over UDP, a
+             * CSL terminal returns tab-separated text from a web form. Everything
+             * below this line — watermarks, dedupe, archiving, counting — is
+             * identical for both, which is exactly why the seam is here.
+             *
+             * Each record carries its own raw payload, so the archive still holds
+             * what the device said even when parsing produced nothing usable.
+             */
+            /*
+             * The progress recorder is created per run and passed BOTH to the
+             * driver (which reports the transfer) and to ingest() (which reports
+             * the writes). One object so the throttle is shared: two independent
+             * throttles would let the phase change and the first import tick land
+             * as two writes in the same millisecond.
+             */
+            $progress = new SyncProgressRecorder($run);
 
-            $records = \Zkteco\Protocol\Codec\AttendanceCodec::decode(
-                $raw,
-                $device->timezone ?: config('attendance.device_timezone', '+03:00'),
-            );
+            $records = $this->driver->readAttendance($device, $progress);
 
-            $result = $this->ingest($device, $run, $records, $watermarkBefore);
+            $result = $this->ingest($device, $run, $records, $watermarkBefore, $progress);
+
+            // The final counters on the row are the authority from here on; a stale
+            // in-flight reading would make a finished run look like it is still going.
+            $progress->finish();
 
             $newWatermark = $result['newest'] ?? $watermarkBefore;
 
@@ -97,7 +111,7 @@ class AttendanceSyncService
                  */
                 'attendance_watermark' => $newWatermark === null
                     ? null
-                    : \Illuminate\Support\Carbon::instance($newWatermark)->utc(),
+                    : Carbon::instance($newWatermark)->utc(),
                 'attendance_imported_total' => $device->attendance_imported_total + $result['imported'],
                 'last_synced_at' => now(),
                 'last_sync_status' => 'success',
@@ -118,7 +132,7 @@ class AttendanceSyncService
                 'records_unmatched' => $result['unmatched'],
                 'watermark_after' => $newWatermark === null
                     ? null
-                    : \Illuminate\Support\Carbon::instance($newWatermark)->utc(),
+                    : Carbon::instance($newWatermark)->utc(),
                 'message' => $this->summarise($result),
             ])->save();
 
@@ -133,6 +147,10 @@ class AttendanceSyncService
                 ],
             ];
         } catch (DeviceException $e) {
+            // Clear the in-flight view: a failed run that still reads "6,200 of
+            // 10,302" looks like it is mid-transfer forever.
+            (new SyncProgressRecorder($run))->finish();
+
             $run->forceFill([
                 'status' => AttendanceSyncRun::STATUS_FAILED,
                 'finished_at' => now(),
@@ -151,13 +169,109 @@ class AttendanceSyncService
     }
 
     /**
+     * Stores ONE punch that arrived on the device's realtime event stream.
+     *
+     * The counterpart to ingest(): same dedupe authority, same employee mapping,
+     * same UTC rule — but one record at a time, and it DOES fire PunchRecorded,
+     * because here the punch genuinely just happened. That event is the whole point
+     * of the listener; the bulk importer deliberately stays silent (see ingest()).
+     *
+     * Returns null when the push could not be decoded, and the already-stored log
+     * when the punch was a duplicate — a later bulk sync re-reading the same record
+     * must not produce a second row. Callers can tell the two apart with
+     * wasRecentlyCreated.
+     *
+     * @param  array<string,mixed>  $record  as decoded by AttendanceCodec::decodeRealtime
+     */
+    public function recordRealtimePunch(Device $device, array $record): ?AttendanceLog
+    {
+        if (! isset($record['timestamp'])) {
+            return null; // undecodable push — never guess at a punch time
+        }
+
+        $deviceUserId = (string) ($record['user_id'] ?? '');
+
+        if ($deviceUserId === '') {
+            return null;
+        }
+
+        /*
+         * Employee resolution goes through EmployeeDeviceMap, NOT employee_code.
+         *
+         * The device's user id is only equal to the payroll code when nobody has
+         * ever been re-enrolled under a different slot. The map is the authority
+         * everywhere else in this service, and a realtime punch that attributed
+         * itself differently from the bulk import of the SAME record would produce
+         * two versions of one person's day.
+         */
+        $employeeId = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $deviceUserId)
+            ->value('employee_id');
+
+        /*
+         * Converted to UTC explicitly, for the same reason the bulk insert does it:
+         * the decoded value carries the device's local offset. firstOrCreate binds
+         * this value into a WHERE clause, and a local-time binding would fail to
+         * match the UTC row a bulk sync already wrote — producing the duplicate at a
+         * constant offset that rule 10 exists to prevent.
+         */
+        $punchedAtUtc = Carbon::instance($record['timestamp'])
+            ->utc()
+            ->format('Y-m-d H:i:s');
+
+        $log = AttendanceLog::query()->firstOrCreate(
+            [
+                'device_id' => $device->id,
+                'device_user_id' => $deviceUserId,
+                'punched_at' => $punchedAtUtc,
+                'verify_method' => (int) ($record['verify_method'] ?? 0),
+            ],
+            [
+                'tenant_id' => $device->tenant_id,
+                'employee_id' => $employeeId,
+                'status' => (int) ($record['status'] ?? 0),
+            ],
+        );
+
+        // Raw bytes preserved for a live punch too, so a decoder fix can be replayed
+        // over them exactly as it can over a bulk import. No run id: there is no run.
+        AttendanceRawLog::insert($this->rawRow(
+            $device,
+            run: null,
+            raw: $record['raw'] ?? null,
+            candidate: [
+                'device_user_id' => $deviceUserId,
+                'punched_at' => $record['timestamp'],
+                'verify_method' => (int) ($record['verify_method'] ?? 0),
+                'status' => (int) ($record['status'] ?? 0),
+            ],
+            decoded: true,
+            imported: $log->wasRecentlyCreated,
+            skipReason: $log->wasRecentlyCreated ? null : AttendanceRawLog::SKIP_DUPLICATE,
+        ));
+
+        if ($log->wasRecentlyCreated) {
+            $log->load(['employee', 'device']);
+            event(new PunchRecorded($log));
+        }
+
+        return $log;
+    }
+
+    /**
      * Stores raw records, then imports the ones that qualify.
      *
-     * @param list<array<string,mixed>> $records
-     * @return array{read:int,imported:int,duplicate:int,undecodable:int,unmatched:int,newest:?\Illuminate\Support\Carbon}
+     * @param  list<array<string,mixed>>  $records
+     * @return array{read:int,imported:int,duplicate:int,undecodable:int,unmatched:int,newest:?Carbon}
      */
-    private function ingest(Device $device, AttendanceSyncRun $run, array $records, ?\DateTimeInterface $watermark): array
-    {
+    private function ingest(
+        Device $device,
+        AttendanceSyncRun $run,
+        array $records,
+        ?\DateTimeInterface $watermark,
+        ?SyncProgressRecorder $progress = null,
+    ): array {
         $counts = ['read' => count($records), 'imported' => 0, 'duplicate' => 0, 'undecodable' => 0, 'unmatched' => 0];
         $newest = null;
 
@@ -230,6 +344,12 @@ class AttendanceSyncService
          */
         $before = AttendanceLog::query()->where('device_id', $device->id)->count();
 
+        // The read is only half the wait on a large table. Without this the bar
+        // would hit 100% and then sit there for the whole insert, which reads as a
+        // hang rather than as work.
+        $progress?->beginImport(count($candidates));
+        $written = 0;
+
         foreach (array_chunk($candidates, 500) as $chunk) {
             AttendanceLog::insertOrIgnore(array_map(fn (array $c) => [
                 'tenant_id' => $device->tenant_id,
@@ -250,7 +370,7 @@ class AttendanceSyncService
                  * a constant offset. A save() through the model would have converted
                  * for us; a bulk insert must do it here.
                  */
-                'punched_at' => \Illuminate\Support\Carbon::instance($c['punched_at'])
+                'punched_at' => Carbon::instance($c['punched_at'])
                     ->utc()
                     ->format('Y-m-d H:i:s'),
                 'verify_method' => $c['verify_method'],
@@ -258,6 +378,9 @@ class AttendanceSyncService
                 'created_at' => now(),
                 'updated_at' => now(),
             ], $chunk));
+
+            $written += count($chunk);
+            $progress?->importedSoFar($written, count($candidates));
         }
 
         $counts['imported'] = AttendanceLog::query()->where('device_id', $device->id)->count() - $before;
@@ -301,12 +424,12 @@ class AttendanceSyncService
     }
 
     /**
-     * @param array<string,mixed>|null $candidate
+     * @param  array<string,mixed>|null  $candidate
      * @return array<string,mixed>
      */
     private function rawRow(
         Device $device,
-        AttendanceSyncRun $run,
+        ?AttendanceSyncRun $run,
         ?string $raw,
         ?array $candidate,
         bool $decoded,
@@ -316,12 +439,14 @@ class AttendanceSyncService
         return [
             'tenant_id' => $device->tenant_id,
             'device_id' => $device->id,
-            'attendance_sync_run_id' => $run->id,
+            // Null for a realtime punch: it belongs to no sync run. The column is
+            // nullable precisely so the live path can archive raw bytes too.
+            'attendance_sync_run_id' => $run?->id,
             'raw' => $raw ?? '',
             'device_user_id' => $candidate['device_user_id'] ?? null,
             // Same UTC conversion as the punch insert: insert() bypasses casts too.
             'punched_at' => isset($candidate['punched_at'])
-                ? \Illuminate\Support\Carbon::instance($candidate['punched_at'])->utc()->format('Y-m-d H:i:s')
+                ? Carbon::instance($candidate['punched_at'])->utc()->format('Y-m-d H:i:s')
                 : null,
             'verify_method' => $candidate['verify_method'] ?? null,
             'status' => $candidate['status'] ?? null,
@@ -348,6 +473,6 @@ class AttendanceSyncService
             $parts[] = "{$counts['undecodable']} could not be decoded and were archived";
         }
 
-        return 'Sync complete: ' . implode(', ', $parts) . '.';
+        return 'Sync complete: '.implode(', ', $parts).'.';
     }
 }

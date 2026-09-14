@@ -11,8 +11,10 @@ import { useToast } from '../../shared/toast';
 | What the terminal holds for one employee: which finger slots have a template,
 | and which card is registered.
 |
-| READS FROM THE DATABASE. Enrollment is stored on the employee record by the
-| roster read, so this opens instantly with no hardware round trip. Touching the
+| READS FROM THE DATABASE, PER TERMINAL. Enrollment is stored per device in
+| employee_device_maps by the roster read, so this opens instantly with no
+| hardware round trip. Everything below the terminal picker describes THAT
+| terminal only — two devices routinely hold different fingers for one person. Touching the
 | terminal takes seconds, so it only happens when someone presses "Read from
 | device" — and that read is persisted, so it refreshes the roster too.
 |
@@ -181,18 +183,43 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
         }
     }
 
-    // Stored values are the default; a device read in this dialog overrides them.
-    const stored = {
-        slots: employee.fingerprint_slots,
-        count: employee.fingerprint_count,
-        card: employee.card_number,
-        syncedAt: employee.enrollment_synced_at,
-    };
+    /*
+     | Stored values are the default; a device read in this dialog overrides them.
+     |
+     | SCOPED TO THE SELECTED TERMINAL. This used to read the flat
+     | employees.fingerprint_slots / card_number columns, which hold whatever the
+     | LAST READ of ANY device wrote. With two terminals that showed one device's
+     | fingers while the dialog's header, its delete buttons and its "remove from
+     | terminal" action all pointed at another — so an operator could read "slots
+     | 1 and 6" off IT Room and press delete against Good Wheels, which holds 6
+     | and 7.
+     |
+     | No row for this device is NOT zero: it means we have never read that
+     | terminal for this person, so it falls through to `neverRead` rather than
+     | claiming they have nothing (rule 10).
+     */
+    const enrollments = Array.isArray(employee.enrollments) ? employee.enrollments : null;
+    const mine = enrollments?.find((e) => String(e.device_id) === String(deviceId)) ?? null;
+    const stored = enrollments
+        ? {
+            slots: mine?.fingerprint_slots ?? null,
+            count: mine?.fingerprint_count ?? null,
+            card: mine?.card_number ?? null,
+            syncedAt: mine?.synced_at ?? null,
+        }
+        : {
+            // Pre-`enrollments` fallback: the flat snapshot is all we have.
+            slots: employee.fingerprint_slots,
+            count: employee.fingerprint_count,
+            card: employee.card_number,
+            syncedAt: employee.enrollment_synced_at,
+        };
     const slots = live ? live.fingerprint_slots : stored.slots;
     const count = live ? live.fingerprint_count : stored.count;
     const cardNumber = live ? live.card_number : stored.card;
     const neverRead = !live && stored.syncedAt == null;
-    const freshness = live ? 'just now' : syncedAgo([employee]);
+    // Freshness is this terminal's read, not the roster's newest across all of them.
+    const freshness = live ? 'just now' : syncedAgo([{ enrollment_synced_at: stored.syncedAt }]);
 
     return (
         <div
@@ -234,11 +261,66 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                         </div>
                     )}
 
-                    {neverRead && !error && (
+                    {neverRead && (
                         <div className="mt-4">
                             <InlineAlert tone="info">
-                                Nothing stored for {employee.name} yet — read a terminal to fill this in.
+                                Nothing stored for {employee.name} on {device?.name ?? 'this terminal'} yet — read it
+                                to fill this in.
                             </InlineAlert>
+                        </div>
+                    )}
+
+                    {/*
+                      * Every terminal at once. The panels below show only the
+                      * SELECTED device, and switching between them one at a time
+                      * to find out where somebody is missing is exactly the
+                      * question this answers in one glance.
+                      *
+                      * Persistent page state, not an event, so it is content and
+                      * not a toast (rule 2).
+                      */}
+                    {enrollments && enrollments.length > 1 && (
+                        <div className="mt-4 rounded-xl border border-slate-200">
+                            <div className="border-b border-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Enrollment by terminal
+                            </div>
+                            <ul className="divide-y divide-slate-100">
+                                {enrollments.map((row) => {
+                                    const selected = String(row.device_id) === String(deviceId);
+                                    const unknown = row.fingerprint_slots == null;
+
+                                    return (
+                                        <li
+                                            key={row.device_id}
+                                            className={`flex items-center justify-between gap-3 px-4 py-2 text-sm ${
+                                                selected ? 'bg-violet-50/60' : ''
+                                            }`}
+                                        >
+                                            <span className="min-w-0 truncate font-medium text-slate-800">
+                                                {row.device_name ?? `Device ${row.device_id}`}
+                                                {selected && (
+                                                    <span className="ml-2 text-xs font-normal text-violet-700">shown below</span>
+                                                )}
+                                            </span>
+                                            <span className="flex shrink-0 items-center gap-3 text-xs">
+                                                <span className={unknown ? 'text-amber-700' : 'text-slate-600'}>
+                                                    {unknown ? 'fingerprints unknown' : `${row.fingerprint_slots.length} of 10 slots`}
+                                                </span>
+                                                <span className={row.card_number ? 'text-slate-600' : 'text-slate-500'}>
+                                                    {row.card_number ? (
+                                                        <span className="inline-flex items-center gap-1">
+                                                            <CardIcon className="h-3.5 w-3.5 text-slate-400" />
+                                                            <span className="font-mono tabular-nums">{row.card_number}</span>
+                                                        </span>
+                                                    ) : (
+                                                        'no card'
+                                                    )}
+                                                </span>
+                                            </span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
                         </div>
                     )}
 

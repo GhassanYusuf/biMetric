@@ -2,11 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Employee;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\Employee
+ * @mixin Employee
  */
 class EmployeeResource extends JsonResource
 {
@@ -33,6 +34,20 @@ class EmployeeResource extends JsonResource
             // each person's enrolled fingers. Null = unknown, [] = none.
             'fingerprint_slots' => $this->fingerprint_slots,
             'enrollment_synced_at' => $this->enrollment_synced_at?->toIso8601String(),
+            /*
+             * Per-terminal enrollment, so a screen can say WHICH device holds
+             * these fingerprints and this card.
+             *
+             * The four fields above are a flat snapshot of whichever terminal was
+             * read last; with two or more devices they cannot be attributed. These
+             * rows can, and callers should prefer them whenever present. Absent
+             * from the payload (rather than empty) when the relation was not
+             * loaded, so a consumer can tell "not asked for" from "not enrolled
+             * anywhere" — rule 10 again.
+             */
+            'enrollments' => EmployeeDeviceMapResource::collection(
+                $this->whenLoaded('deviceMaps')
+            ),
             'attendance_logs_count' => $this->whenCounted('attendanceLogs'),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

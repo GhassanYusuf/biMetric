@@ -5,12 +5,8 @@ namespace App\Services\Devices;
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\DeviceCommand;
 use App\Models\Employee;
-use App\Services\Devices\AttendanceSyncService;
-use App\Services\Devices\DeviceHealthService;
-use App\Services\Devices\DeviceUserSyncService;
-use App\Services\Devices\EnrollmentOrchestratorService;
-use Zkteco\Protocol\Client\Device as ProtocolDevice;
-use Zkteco\Protocol\Exception\ProtocolException;
+use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Exception\ProtocolException;
 
 /**
  * Routes a queued command to the service that performs it.
@@ -31,8 +27,7 @@ class DeviceCommandHandler
         private readonly DeviceUserSyncService $users,
         private readonly EnrollmentOrchestratorService $enrollment,
         private readonly DeviceHealthService $health,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{message:string, raw?:array<string,mixed>}
@@ -137,7 +132,7 @@ class DeviceCommandHandler
      * withoutGlobalScopes is safe here because ProcessDeviceCommand has already
      * restored the tenant, and the id came from a command row inside that tenant.
      *
-     * @param array<string,mixed> $payload
+     * @param  array<string,mixed>  $payload
      */
     private function employee(array $payload): Employee
     {

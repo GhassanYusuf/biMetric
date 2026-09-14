@@ -31,11 +31,26 @@ route except login runs `auth:sanctum` then `tenant`.
 | 403 | permission denied |
 | 409 | an enrollment is already active for this employee + device |
 | 422 | validation failure **or a capability refusal** |
+| 500 | a bug on our side — generic message; the detail is in the log, not the response |
+| 501 | the firmware does not support this operation at all |
 | 502 | the device was reached and reported a real error |
 
 A 422 on a device action usually means the firmware cannot do it — the message
 names the capability and its level. See
 [device-capabilities.md](device-capabilities.md).
+
+**502 responses carry `errors.retryable`**, so a client can tell "try again" from
+"this will never work" without parsing the message:
+
+```json
+{ "success": false, "message": "Attendance sync failed: could not reach the device. Check it is powered on and on the network.", "errors": { "retryable": true } }
+```
+
+A **501** means the capability was mis-declared — rule 9 requires the UI to hide
+unsupported actions, so a client should never provoke one. Both are set centrally
+in `bootstrap/app.php`, so an endpoint that forgets to catch still answers
+correctly rather than returning a bare 500. See
+[error-handling.md](error-handling.md).
 
 ---
 
@@ -46,6 +61,25 @@ names the capability and its level. See
 | POST | `/api/auth/login` *(throttled 10/min)* |
 | GET | `/api/auth/me` |
 | POST | `/api/auth/logout` |
+
+## Diagnostics
+
+| Method | Path |
+|---|---|
+| POST | `/api/client-errors` *(auth only, throttled 20/min)* |
+
+Crash reports from the SPA's `ErrorBoundary` and global handlers. Deliberately
+outside the `tenant` group — the screen that crashed may be the one that was
+resolving the tenant. Returns **202**; the client must not retry, because a
+retrying error report is how a crash loop starts.
+
+```json
+{ "message": "x is not a function", "kind": "render", "stack": "…", "component_stack": "…", "url": "…" }
+```
+
+`kind` is one of `render`, `unhandledrejection`, `window.onerror`. Every field is
+length-capped server-side and written to the `client` log channel — there is no
+table behind this endpoint.
 
 ## Devices
 
@@ -75,6 +109,56 @@ Beyond the obvious fields:
   skipping punches.
 - `has_comm_key` / `has_web_credentials` — booleans, so the UI can show that a
   secret is set without the secret ever leaving the server.
+
+### Forcing a full re-read
+
+`POST /api/devices/{device}/sync-attendance` accepts an optional body:
+
+```json
+{ "full": true }
+```
+
+Omitted or false, it is an ordinary incremental sync — unchanged. True, it ignores
+the watermark and reconsiders every record the terminal holds.
+
+`full` does **not** change what is transferred: the protocol always returns the
+whole table, so this only affects what is imported. Safe to repeat — the unique
+punch index prevents duplicates. The response's `mode` field says which ran.
+
+The queued equivalent is `POST /api/devices/{device}/commands` with
+`{"command":"sync_attendance","full":true}`, and the console equivalent is
+`php artisan app:sync-biometric-devices --full`.
+
+### Live sync progress
+
+`GET /api/devices/{device}/sync-progress` — polled about once a second while a
+sync runs. Cheap by design: one indexed row, no eager loads.
+
+```json
+{
+  "running": true,
+  "run_id": 62,
+  "status": "running",
+  "progress": { "phase": "reading", "read": 3251, "total": 10302,
+                "unit": "records", "percent": 32, "attempt": 1 },
+  "counts": { "read": 0, "imported": 0, "duplicate": 0, "undecodable": 0, "unmatched": 0 }
+}
+```
+
+- `progress` is **null once the run has finished** — `counts` is the authority then.
+- `percent` is **null, never 0**, when the device declared no total. Render an
+  indeterminate bar; do not invent a denominator.
+- `unit` is `records` or `bytes`. **Check it.** A byte total shown as records tells
+  an operator there are 412,084 punches to read.
+- `phase` is `reading` (off the device) or `importing` (into the database). They
+  are separate because the read is network-bound and can stall or retry; the import
+  cannot.
+- `attempt` above 1 means the transfer restarted, so the bar legitimately went
+  backwards.
+
+Progress is coarse on purpose — see the throttle section in
+[attendance-sync-flow.md](attendance-sync-flow.md). Reporting more often measurably
+breaks the transfer.
 
 ## The command queue
 
@@ -122,11 +206,18 @@ Deleting a group never deletes its devices.
 |---|---|---|
 | GET | `/api/device-sync-runs` | `?device_id= &status= &per_page=` |
 | GET | `/api/device-sync-runs/{run}` | |
+| DELETE | `/api/device-sync-runs` | `?device_id= &status=` — clears history for that filter |
 
 Statuses: `running`, `succeeded`, `partial`, `failed`. Each run carries five
 counts — `read`, `imported`, `duplicate`, `unmatched`, `undecodable` — because
 `imported: 0` alone cannot distinguish a healthy incremental sync from a decoder
 that is dropping records. See [attendance-sync-flow.md](attendance-sync-flow.md).
+
+`DELETE` needs `devices.delete`, not `devices.sync`. It deletes the matching runs
+and the raw payloads those runs archived, keeps any run that is still `running`,
+and touches neither imported punches nor the incremental watermark. It answers with
+`{ runs_deleted, raw_logs_deleted, runs_kept_running }` and writes a
+`syncrun.cleared` audit entry.
 
 ## Enrollment
 
@@ -178,6 +269,14 @@ that the employee has no fingerprints.
 | GET | `/api/employees/{employee}/devices/{device}/enrollment` | live read from the terminal |
 | POST | `/api/employees/{employee}/waivers` | |
 
+`GET /api/employees` and `GET /api/employees/{employee}` include `enrollments`:
+one entry per terminal the employee is mapped to, each carrying `device_id`,
+`device_name`, `fingerprint_slots`, `fingerprint_count`, `card_number` and
+`synced_at`. Prefer it over the flat `fingerprint_count` / `card_number` fields,
+which are only a snapshot of whichever device was read last and cannot be
+attributed to a terminal. The key is **absent** when the relation was not loaded,
+never `[]` — see docs/enrollment-flow.md.
+
 `enroll-fingerprint`, `enroll-card`, `fingerprints/{slot}` and `card` under
 `/devices/{device}/` are the **direct, blocking** predecessors of the queued
 `enrollment/*` routes above. Prefer the queued ones.
@@ -193,6 +292,51 @@ that the employee has no fingerprints.
 | GET | `/api/audit-logs` |
 | GET | `/api/departments` (+ full resource) |
 | GET | `/api/notifications` · `/unread-count` · POST `/{notification}/read` · `/read-all` |
+
+### Date filters are OFFICE-LOCAL dates
+
+`from` / `to` on `/api/attendance`, `/api/reports/attendance` and the exports are
+dates in `config('attendance.timezone')`, not UTC and not the caller's timezone.
+`punched_at` is stored UTC, so `App\Services\Attendance\PunchLogQuery` converts
+each bound before it hits the column: `from` becomes that local day's 00:00 and
+`to` that local day's 23:59:59.
+
+Both conversions matter. Comparing the bare strings — which this endpoint used to
+do — shifted every boundary by the office offset and made `to` mean midnight, so
+`to=2026-09-14` silently excluded the whole of the 14th.
+
+## PDF exports
+
+| Method | Path | Permission |
+|---|---|---|
+| GET | `/api/exports/attendance` | `attendance.view`, or `attendance.view.self` for own rows |
+| GET | `/api/exports/employees/{employee}/attendance` | `employees.view` |
+| GET | `/api/exports/payroll` | `reports.view` |
+
+Rendered synchronously with dompdf (`barryvdh/laravel-dompdf`) and returned as
+`application/pdf` with a `Content-Disposition` filename. These are read-only
+queries, so rule 11's "queue it" applies to device work, not to these.
+
+Query parameters mirror the screen each one exports: `employee_id`, `device_id`,
+`from`, `to` for the punch log; `from`, `to` for one employee; `from`, `to`,
+`department_id` for payroll.
+
+Three properties every export holds to, all enforced in `ExportController`:
+
+- **One source of truth.** Rows come from `PunchLogQuery`,
+  `AttendanceSummaryService` and `PayrollReport` — the same classes the screens
+  read. A PDF is the copy that gets filed, so it must not be computed twice.
+- **The same permissions.** An export re-applies the rule of the list it mirrors.
+  A self-only user exporting `?employee_id=<somebody else>` gets their own rows,
+  not a 403 and not the other person's.
+- **The page states what it is.** Tenant, range, active filters, timezone and
+  generation time print in the fixed header/footer of every page. The punch log
+  caps at 5,000 rows and prints a warning naming the true total when it truncates
+  — a short attendance record otherwise reads as absence.
+
+Known limit: dompdf's bundled DejaVu Sans does not shape right-to-left scripts,
+so Arabic names render as disjoint glyphs. A shaping font has to be registered
+with dompdf before that can work.
 
 ## MQTT topics
 

@@ -4,7 +4,7 @@ namespace Tests\Unit\Protocol;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Zkteco\Protocol\Codec\Timestamp;
+use Promoseven\Biometric\Codec\Timestamp;
 
 /**
  * The timestamp codec.
@@ -42,7 +42,6 @@ class TimestampTest extends TestCase
      *
      * Every one of these was silently discarded by the original decoder. If this
      * test ever fails, attendance data is being lost again.
-     *
      */
     #[DataProvider('singleDigitComponents')]
     public function test_single_digit_components_decode_rather_than_being_discarded(
@@ -54,7 +53,7 @@ class TimestampTest extends TestCase
             $decoded,
             sprintf(
                 'A punch at %04d-%02d-%02d %02d:%02d:%02d decoded to null. '
-                . 'This is the 34%% data-loss bug returning.',
+                .'This is the 34%% data-loss bug returning.',
                 2026, $month, $day, $hour, $minute, $second,
             ),
         );

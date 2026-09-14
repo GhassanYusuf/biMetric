@@ -7,6 +7,8 @@ import { useDeviceClass } from '../../shared/useDeviceClass';
 import { useMqtt } from '../../shared/useMqtt';
 import { useToast } from '../../shared/toast';
 import { Skeleton, SkeletonCards } from '../../shared/ui';
+import { useSyncProgress } from '../../shared/useSyncProgress';
+import { FULL_RESYNC_CONFIRM } from './parts';
 import DeviceDetailDesktop from './DeviceDetailDesktop';
 import DeviceDetailMobile from './DeviceDetailMobile';
 
@@ -93,15 +95,8 @@ export default function DeviceDetail() {
     }
 
     async function fullResync() {
-        const ok = await confirm({
-            title: 'Re-read the entire attendance log?',
-            body: [
-                'This ignores the sync watermark and reads every record the terminal still holds, which can be tens of thousands.',
-                'Existing punches are recognised and skipped, so nothing is duplicated — but it takes considerably longer than a normal sync.',
-            ],
-            confirmLabel: 'Read everything',
-        });
-        if (ok) dispatch('sync_attendance', { full: true });
+        // Same wording as the devices list — see FULL_RESYNC_CONFIRM.
+        if (await confirm(FULL_RESYNC_CONFIRM)) dispatch('sync_attendance', { full: true });
     }
 
     async function retryCommand(command) {
@@ -123,6 +118,19 @@ export default function DeviceDetail() {
             toast.error(err instanceof ApiError ? err.message : 'Could not cancel that command.');
         }
     }
+
+    /*
+     * Watch ANY in-flight sync on this device, not only one this operator started.
+     * Syncs here go through the command queue, so the same read may have been fired
+     * by the schedule or by somebody else — a detail page that only reported its
+     * own clicks would show nothing while the terminal was visibly busy.
+     *
+     * Stays ABOVE the early returns below: hooks must run in the same order on
+     * every render, and the skeleton/not-found paths return before this point. It
+     * is a no-op while the device id is null, which is exactly those renders.
+     */
+    const syncRunning = runs.some((r) => r.status === 'running') || dispatching === 'sync_attendance';
+    const { progress: syncProgress, stalled: syncStalled } = useSyncProgress(device?.id ?? null, syncRunning);
 
     if (notFound) {
         return (
@@ -154,6 +162,9 @@ export default function DeviceDetail() {
             commands={commands}
             history={history}
             dispatching={dispatching}
+            syncRunning={syncRunning}
+            syncProgress={syncProgress}
+            syncStalled={syncStalled}
             canSync={can('devices.sync')}
             canUpdate={can('devices.update')}
             onRefresh={load}

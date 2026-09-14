@@ -4,12 +4,13 @@ namespace App\Jobs;
 
 use App\Models\DeviceCommand;
 use App\Services\Devices\DeviceCommandHandler;
+use App\Support\DeviceErrorReporter;
 use App\Support\Tenancy;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
-use Zkteco\Protocol\Exception\DeviceException;
+use Promoseven\Biometric\Exception\DeviceException;
 
 /**
  * Executes ONE queued device command.
@@ -57,9 +58,7 @@ class ProcessDeviceCommand implements ShouldQueue
      */
     public int $timeout = 300;
 
-    public function __construct(public readonly int $commandId)
-    {
-    }
+    public function __construct(public readonly int $commandId) {}
 
     /**
      * One device at a time.
@@ -85,7 +84,7 @@ class ProcessDeviceCommand implements ShouldQueue
         ];
     }
 
-    public function handle(DeviceCommandHandler $handler): void
+    public function handle(DeviceCommandHandler $handler, DeviceErrorReporter $errors): void
     {
         // withoutGlobalScopes: tenancy is not established yet, so a scoped query
         // would find nothing. We restore it from the row immediately below.
@@ -120,7 +119,17 @@ class ProcessDeviceCommand implements ShouldQueue
             $command->markSucceeded($result['message'], $result['raw'] ?? null);
         } catch (DeviceException $e) {
             // A device/protocol failure: expected, structured, often retryable.
-            $command->markFailed($this->operatorMessage($e), [
+            //
+            // The row carries what the operator sees; the reporter writes the
+            // diagnostic entry to the `device` channel. Both, not either: the row
+            // is per-command and gets pruned, the log is what you read when the
+            // question is "how often does this terminal do this".
+            $message = $errors->report($e, "command {$command->command}", $command->device, [
+                'command_id' => $command->id,
+                'attempt' => $command->attempts,
+            ]);
+
+            $command->markFailed($message, [
                 'exception' => $e::class,
                 'message' => $e->getMessage(),
                 'retryable' => $e->isRetryable(),
@@ -131,16 +140,13 @@ class ProcessDeviceCommand implements ShouldQueue
         } catch (\Throwable $e) {
             // A bug, not a device problem. Record it and do NOT retry — retrying a
             // logic error just burns attempts and hides the cause.
-            Log::error('Device command failed unexpectedly', [
+            $message = $errors->report($e, "command {$command->command}", $command->device, [
                 'command_id' => $command->id,
-                'command' => $command->command,
-                'device_id' => $command->device_id,
-                'exception' => $e::class,
-                'message' => $e->getMessage(),
+                'attempt' => $command->attempts,
             ]);
 
             $command->markFailed(
-                'Something went wrong running this command. The technical detail has been logged.',
+                $message,
                 ['exception' => $e::class, 'message' => $e->getMessage()],
             );
         } finally {
@@ -165,27 +171,6 @@ class ProcessDeviceCommand implements ShouldQueue
         $command->forceFill(['status' => DeviceCommand::STATUS_QUEUED])->save();
 
         self::dispatch($command->id)->delay(now()->addSeconds(max($delay, 5)));
-    }
-
-    /**
-     * Turns a protocol exception into something an operator can act on.
-     *
-     * The technical detail is preserved separately in the error column; this is the
-     * sentence that appears on screen.
-     */
-    private function operatorMessage(DeviceException $e): string
-    {
-        return match (true) {
-            $e instanceof \Zkteco\Protocol\Exception\TimeoutException =>
-                'The device did not respond in time. It may be offline, busy, or nobody was at the terminal.',
-            $e instanceof \Zkteco\Protocol\Exception\ConnectionException =>
-                'Could not reach the device. Check it is powered on and on the network.',
-            $e instanceof \Zkteco\Protocol\Exception\UnsupportedCommandException =>
-                'This device or firmware does not support that operation.',
-            $e instanceof \Zkteco\Protocol\Exception\VerificationException =>
-                'The device accepted the change but did not keep it. This firmware occasionally drops writes — try again.',
-            default => $e->getMessage(),
-        };
     }
 
     /** Called when the queue itself gives up on the job. */

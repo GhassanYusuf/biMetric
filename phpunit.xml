@@ -11,6 +11,15 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <!--
+            The protocol library's own tests run here too, so `php artisan test`
+            covers the whole repository. They need no Laravel and no device — the
+            codecs are exercised against captured fixtures. The package also carries
+            its own phpunit.xml so a reuser can run them standalone.
+        -->
+        <testsuite name="Protocol">
+            <directory>vendor/promoseven/biometric-protocol/tests</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

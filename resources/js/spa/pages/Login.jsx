@@ -18,6 +18,13 @@ export default function Login() {
 
     if (user) return <Navigate to="/dashboard" replace />;
 
+    // Seeded owner account (database/seeders/DatabaseSeeder.php). Shown only in a
+    // dev build — `import.meta.env.DEV` is false for `vite build`, so Vite strips
+    // this branch and the credentials never reach a production bundle.
+    const seeded = import.meta.env.DEV
+        ? { email: 'g.yusuf@promoseven.com', password: 'Gha$$an1983' }
+        : null;
+
     async function onSubmit(e) {
         e.preventDefault();
         setSubmitting(true);
@@ -75,6 +82,35 @@ export default function Login() {
                         {submitting ? <Spinner /> : 'Sign in'}
                     </Button>
                 </form>
+
+                {seeded && (
+                    <div className="mt-6 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                            Development build — seeded account
+                        </p>
+                        <dl className="mt-1.5 space-y-0.5 text-sm text-slate-700">
+                            <div className="flex gap-2">
+                                <dt className="w-20 shrink-0 text-slate-500">Email</dt>
+                                <dd className="font-mono break-all">{seeded.email}</dd>
+                            </div>
+                            <div className="flex gap-2">
+                                <dt className="w-20 shrink-0 text-slate-500">Password</dt>
+                                <dd className="font-mono break-all">{seeded.password}</dd>
+                            </div>
+                        </dl>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            className="mt-2.5 w-full"
+                            onClick={() => {
+                                setEmail(seeded.email);
+                                setPassword(seeded.password);
+                            }}
+                        >
+                            Fill these in
+                        </Button>
+                    </div>
+                )}
             </Card>
         </div>
     );

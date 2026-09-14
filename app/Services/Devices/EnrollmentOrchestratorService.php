@@ -12,9 +12,9 @@ use App\Models\EmployeeDeviceMap;
 use App\Models\EnrollmentSession;
 use App\Services\Realtime\MqttPublisher;
 use App\Services\Realtime\TopicBuilder;
-use Zkteco\Protocol\Capability\Capability;
-use Zkteco\Protocol\Client\Device as ProtocolDevice;
-use Zkteco\Protocol\Value\EnrollmentResult;
+use Promoseven\Biometric\Capability\Capability;
+use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Value\EnrollmentResult;
 
 /**
  * Runs a credential capture and keeps its state durable.
@@ -33,8 +33,7 @@ class EnrollmentOrchestratorService
         private readonly BiometricDeviceDriver $driver,
         private readonly DeviceUserSyncService $users,
         private readonly MqttPublisher $mqtt,
-    ) {
-    }
+    ) {}
 
     /**
      * Captures a fingerprint into a slot.
@@ -120,7 +119,7 @@ class EnrollmentOrchestratorService
         return [
             'message' => count($remaining) === 0
                 ? "Deleted slot {$fingerSlot}. {$employee->name} now has no fingerprints on {$device->name}."
-                : "Deleted slot {$fingerSlot}. " . count($remaining) . ' fingerprint(s) remain.',
+                : "Deleted slot {$fingerSlot}. ".count($remaining).' fingerprint(s) remain.',
             'raw' => ['remaining_slots' => $remaining],
         ];
     }
@@ -270,7 +269,7 @@ class EnrollmentOrchestratorService
     /**
      * Runs the capture, mapping the library's result onto session state.
      *
-     * @param \Closure(ProtocolDevice):EnrollmentResult $capture
+     * @param  \Closure(ProtocolDevice):EnrollmentResult  $capture
      * @return array{message:string, raw:array<string,mixed>}
      */
     private function runCapture(
@@ -342,7 +341,7 @@ class EnrollmentOrchestratorService
         $what = $session->type === EnrollmentSession::TYPE_CARD ? 'card' : 'finger';
 
         $message = "No {$what} was presented at {$device->name} within {$session->timeout_seconds} seconds "
-            . "for {$employee->name}. The device beeped — check somebody was there to respond.";
+            ."for {$employee->name}. The device beeped — check somebody was there to respond.";
 
         $session->transitionTo(EnrollmentSession::TIMEOUT, $message);
         $this->publish($session);
@@ -354,7 +353,7 @@ class EnrollmentOrchestratorService
     private function finishRejected(EnrollmentSession $session, EnrollmentResult $result): array
     {
         $message = "The device rejected the capture (error code {$result->errorCode}). "
-            . 'Ask them to present it again — a poor read or an already-enrolled finger both report this.';
+            .'Ask them to present it again — a poor read or an already-enrolled finger both report this.';
 
         $session->forceFill(['device_error_code' => $result->errorCode])->save();
         $session->transitionTo(EnrollmentSession::FAILED, $message);

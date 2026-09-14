@@ -2,17 +2,37 @@
 
 namespace App\Models;
 
+use App\Contracts\BiometricDeviceDriver;
 use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Promoseven\Biometric\Capability\CapabilitySet;
 
 class Device extends Model
 {
-    use HasFactory, BelongsToTenant;
+    use BelongsToTenant, HasFactory;
 
     public const PROTOCOL_BINARY = 'binary';
+
     public const PROTOCOL_CSL_HTTP = 'csl_http';
+
+    /**
+     * ZKTeco C3 / PullSDK access-control panels — the inBIO and C3 ranges.
+     *
+     * A SEPARATE FAMILY, not a dialect of PROTOCOL_BINARY: different transport
+     * (TCP only), frame, checksum and session model. And the model name does not
+     * tell you which family a device is in — the TF1700 is sold as a standalone
+     * fingerprint terminal and speaks this. Read the device, do not infer.
+     */
+    public const PROTOCOL_C3 = 'c3';
+
+    /** @return list<string> every protocol a driver is registered for. */
+    public static function protocols(): array
+    {
+        return [self::PROTOCOL_BINARY, self::PROTOCOL_CSL_HTTP, self::PROTOCOL_C3];
+    }
 
     protected $fillable = [
         'tenant_id',
@@ -52,8 +72,11 @@ class Device extends Model
     ];
 
     public const HEALTH_ONLINE = 'online';
+
     public const HEALTH_OFFLINE = 'offline';
+
     public const HEALTH_DEGRADED = 'degraded';
+
     public const HEALTH_UNKNOWN = 'unknown';
 
     protected $hidden = [
@@ -86,9 +109,9 @@ class Device extends Model
      * Reads the cached flags — no network access — so it is safe in a list view.
      * Falls back to the library's declared baseline when nothing has been probed.
      */
-    public function capabilitySet(): \Zkteco\Protocol\Capability\CapabilitySet
+    public function capabilitySet(): CapabilitySet
     {
-        return app(\App\Contracts\BiometricDeviceDriver::class)->capabilities($this);
+        return app(BiometricDeviceDriver::class)->capabilities($this);
     }
 
     /** Whether the UI should offer an action, e.g. Capability::TEMPLATE_DELETE. */
@@ -120,7 +143,7 @@ class Device extends Model
         );
     }
 
-    public function groups(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    public function groups(): BelongsToMany
     {
         return $this->belongsToMany(DeviceGroup::class, 'device_group_members');
     }

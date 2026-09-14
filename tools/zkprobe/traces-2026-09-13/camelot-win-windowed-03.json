@@ -1,0 +1,29 @@
+{
+    "label": "camelot-win",
+    "host": "87.237.196.60",
+    "mode": "windowed",
+    "run": 3,
+    "started_at": "2026-09-13T14:52:57+00:00",
+    "granted_rcvbuf": 425984,
+    "result": {
+        "ok": false,
+        "size": 1664804,
+        "got": 0,
+        "ms": 8022,
+        "windows": [
+            {
+                "start": 0,
+                "want": 16384,
+                "got": 0,
+                "err": "UNKNOWN(0)"
+            }
+        ]
+    },
+    "udp_counter_delta": {
+        "InDatagrams": 8,
+        "NoPorts": 18,
+        "OutDatagrams": 10,
+        "IgnoredMulti": 44
+    },
+    "arrivals": []
+}

@@ -1,13 +1,14 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader } from '../../shared/ui';
 import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
+import { SyncProgressRow } from './DevicesDesktop';
 
 // Mobile devices: stacked cards, actions as a full-width row of large tap
 // targets rather than a cramped table.
 export default function DevicesMobile({
-    rows, busy,
+    rows, busy, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync,
 }) {
     return (
         <div className="space-y-4">
@@ -56,6 +57,17 @@ export default function DevicesMobile({
                                     <p className="mt-2 text-xs text-rose-600">{d.last_sync_error}</p>
                                 )}
 
+                                {/*
+                                  | Same bar, same words as the desktop table — rule 5
+                                  | says the two presentations must behave identically,
+                                  | and both render it from describeProgress().
+                                */}
+                                {syncingId === d.id && (
+                                    <div className="mt-3 rounded-xl bg-violet-50/60 p-3">
+                                        <SyncProgressRow progress={syncProgress} stalled={syncStalled} />
+                                    </div>
+                                )}
+
                                 {canSync && (
                                     <div className="mt-3 grid grid-cols-3 gap-2">
                                         <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'test-connection'} onClick={() => onTest(d)}>
@@ -66,6 +78,14 @@ export default function DevicesMobile({
                                         </Button>
                                         <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'import-employees'} onClick={() => onImport(d)}>
                                             Import
+                                        </Button>
+                                        {/*
+                                          | Full width on its own row rather than a fourth
+                                          | cramped column — the same shape device detail
+                                          | uses, and the label does not survive truncation.
+                                        */}
+                                        <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'full-resync'} onClick={() => onFullResync(d)}>
+                                            Full re-read
                                         </Button>
                                     </div>
                                 )}

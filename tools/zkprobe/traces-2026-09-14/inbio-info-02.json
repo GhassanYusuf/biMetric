@@ -1,0 +1,78 @@
+{
+    "label": "inbio-info",
+    "host": "192.168.7.61",
+    "port": 4370,
+    "protocol": "c3-pullsdk-tcp",
+    "started_at": "2026-09-14T12:32:21+00:00",
+    "steps": [
+        {
+            "step": "tcp connect",
+            "ok": true,
+            "ms": 3.2,
+            "error": null
+        },
+        {
+            "step": "connect probe (0x76)",
+            "ok": false,
+            "command": 201,
+            "command_name": "ERROR (0xC9)",
+            "declared_size": 1,
+            "received": 4,
+            "raw": "aa01c90100f313d955",
+            "payload_hex": "f3",
+            "ms": 13.3,
+            "sent_hex": "aa01760000e02655"
+        },
+        {
+            "step": "connect probe (0x01)",
+            "ok": false,
+            "command": 201,
+            "command_name": "ERROR (0xC9)",
+            "declared_size": 1,
+            "received": 4,
+            "raw": "aa01c901009ed23455",
+            "payload_hex": "9e",
+            "ms": 8.9,
+            "sent_hex": "aa01010000503c55"
+        },
+        {
+            "step": "getparam (0x04)",
+            "ok": true,
+            "command": 200,
+            "command_name": "OK (0xC8)",
+            "declared_size": 177,
+            "received": 180,
+            "raw": "aa01c8b1007e53657269616c4e756d6265723d414b324a3138333836303037332c4c6f636b436f756e743d342c417578496e436f756e743d342c4175784f7574436f756e743d342c4669726d5665723d41432056657220352e322e342041707220313920323031362c4465766963654e616d653d2c7e4465766963654e616d653d696e42494f3436302c4950416464726573733d3139322e3136382e372e36312c4d41433d30303a31373a36313a31323a33343a3942857b55",
+            "payload_hex": "7e53657269616c4e756d6265723d414b324a3138333836303037332c4c6f636b436f756e743d342c417578496e436f756e743d342c4175784f7574436f756e743d342c4669726d5665723d41432056657220352e322e342041707220313920323031362c4465766963654e616d653d2c7e4465766963654e616d653d696e42494f3436302c4950416464726573733d3139322e3136382e372e36312c4d41433d30303a31373a36313a31323a33343a3942",
+            "ms": 217.4,
+            "sent_hex": "aa01045b007e53657269616c4e756d6265722c4c6f636b436f756e742c417578496e436f756e742c4175784f7574436f756e742c4669726d5665722c4465766963654e616d652c7e4465766963654e616d652c4950416464726573732c4d414376ab55"
+        },
+        {
+            "step": "parsed parameters",
+            "ok": true,
+            "values": {
+                "~SerialNumber": "AK2J183860073",
+                "LockCount": "4",
+                "AuxInCount": "4",
+                "AuxOutCount": "4",
+                "FirmVer": "AC Ver 5.2.4 Apr 19 2016",
+                "DeviceName": "",
+                "~DeviceName": "inBIO460",
+                "IPAddress": "192.168.7.61",
+                "MAC": "00:17:61:12:34:9B"
+            }
+        },
+        {
+            "step": "disconnect (0x02)",
+            "ok": true,
+            "command": 200,
+            "command_name": "OK (0xC8)",
+            "declared_size": 0,
+            "received": 3,
+            "raw": "aa01c80000800255",
+            "payload_hex": "",
+            "ms": 12.3,
+            "sent_hex": "aa01020000a03c55"
+        }
+    ]
+}

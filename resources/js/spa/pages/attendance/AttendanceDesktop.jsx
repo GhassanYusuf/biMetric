@@ -1,8 +1,9 @@
+import { FOCUS } from '../../shared/theme';
 import { Button, Card, EmptyState, PageHeader, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
 import { Pager, formatPunch, verifyLabel } from './parts';
 
 // Desktop attendance: filter bar + wide punch table + pager.
-export default function AttendanceDesktop({ rows, devices, filters, onFilter, loading, pagination, onPage }) {
+export default function AttendanceDesktop({ rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting }) {
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
     }
@@ -22,6 +23,16 @@ export default function AttendanceDesktop({ rows, devices, filters, onFilter, lo
             >
                 {/* Refetches keep the table in place; this only says work is happening. */}
                 {loading && <Spinner className="h-5 w-5 text-violet-600" />}
+                {/* Exports everything matching the filters, not the visible page. */}
+                <Button
+                    variant="secondary"
+                    loading={exporting}
+                    disabled={exporting}
+                    onClick={onExport}
+                    title="Download these punches as a PDF"
+                >
+                    {exporting ? 'Preparing…' : 'Export PDF'}
+                </Button>
             </PageHeader>
 
             <Card className="p-4">
@@ -71,10 +82,36 @@ export default function AttendanceDesktop({ rows, devices, filters, onFilter, lo
                     )}
                     {rows.map((log) => {
                         const { date, time } = formatPunch(log.punched_at);
+                        // A punch the sync could not attribute to anybody has no
+                        // employee to show, so that row is not a link.
+                        const openable = !!log.employee_id;
+
                         return (
-                            <tr key={log.id} className="transition-colors duration-150 hover:bg-slate-50/70">
+                            <tr
+                                key={log.id}
+                                onClick={openable ? () => onSelect(log) : undefined}
+                                onKeyDown={openable ? (event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault();
+                                        onSelect(log);
+                                    }
+                                } : undefined}
+                                tabIndex={openable ? 0 : undefined}
+                                role={openable ? 'button' : undefined}
+                                aria-label={openable ? `View ${log.employee_name || 'employee'} details` : undefined}
+                                className={`transition-colors duration-150 ${
+                                    openable ? `cursor-pointer hover:bg-violet-50/40 ${FOCUS}` : 'hover:bg-slate-50/70'
+                                }`}
+                            >
                                 <td className="px-5 py-3 font-medium text-slate-900">
-                                    {log.employee_name || <span className="font-normal text-slate-500">Unmatched</span>}
+                                    {log.employee_name || (
+                                        <span
+                                            className="font-normal text-slate-500"
+                                            title="This punch is not linked to an employee record"
+                                        >
+                                            Unmatched
+                                        </span>
+                                    )}
                                 </td>
                                 <td className="px-5 py-3 font-mono text-xs text-slate-600">{log.employee_code || '—'}</td>
                                 <td className="px-5 py-3 text-slate-600">{log.device_name || '—'}</td>

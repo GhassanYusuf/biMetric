@@ -1,15 +1,64 @@
 # Change log and roadmap
 
+> This file is the retrospective: what changed in the rebuild, and what is planned.
+> For **where the work stopped and what is in flight right now**, read
+> `docs/PROJECT-STATE.md` (CLAUDE.md rule 14).
+
 ## What changed in this rebuild
 
 ### The protocol became a library
 
 Device code was spread through controllers and services. It is now
-`packages/zkteco-protocol` — 31 classes, zero framework dependencies, installable
+`promoseven/biometric-protocol` — 31 classes, zero framework dependencies, installable
 into a CLI tool or another platform.
 
-Exactly one class in `app/` imports it, and
-`tests/Unit/ProtocolLibraryBoundaryTest.php` fails the build if that changes.
+Only `ZktecoDriver` may *speak* the protocol; a documented allowlist in
+`tests/Unit/ProtocolLibraryBoundaryTest.php` covers the classes that merely *name*
+its types, and the build fails if either changes.
+
+As of 2026-09-02 the library is no longer in this repository at all — it is its own
+repo, licensed separately, consumed through composer. See `docs/PROJECT-STATE.md`.
+
+### The duplicate protocol implementation was retired
+
+`app/Services/Zkteco/` held a SECOND, older implementation of the same binary
+protocol — `ZktecoDevice`, `ZktecoProtocol`, `ZktecoConnection` — plus
+`DeviceSyncService`, which was still the engine behind the legacy Inertia screens
+and the SPA's own device endpoints. Roughly 2,700 lines, live, in parallel with the
+library. It is gone.
+
+What moved where:
+
+| Was | Now |
+|---|---|
+| `ZktecoDevice` / `ZktecoProtocol` / `ZktecoConnection` | `promoseven/biometric-protocol` (already existed) |
+| `DeviceSyncService` attendance | `AttendanceSyncService` |
+| `DeviceSyncService` users/enrollment reads | `DeviceUserSyncService` |
+| `DeviceSyncService` captures and deletions | `EnrollmentOrchestratorService` |
+| `DeviceSyncService::testConnection` | `DeviceHealthService::check` |
+| `CslWebPortalClient` | `App\Services\Devices\Csl\CslWebPortalClient`, behind `CslHttpDriver` |
+
+Two seams were added to make the port possible without reaching around the
+contract: `Transport::selectableStream()` in the library, so one process can wait
+on many terminals; and `BiometricDeviceDriver::open()`, a session the caller owns,
+for the realtime listener alone.
+
+### A second vendor, for real
+
+`CslHttpDriver` implements the same contract over the CSL web firmware, and
+`DeviceDriverManager` dispatches by `devices.protocol`. Nothing above the contract
+changed to gain it — no service, controller or route. `AttendanceSyncService` gave
+up knowing how a device is read (`driver->readAttendance()`) and works for both.
+
+### The legacy Inertia app was retired
+
+Devices, Employees, Attendance, Holidays and the dashboard existed twice: once in
+the SPA and once in Inertia, on two different device stacks. The Inertia versions
+are deleted. `/` and `/dashboard` redirect to `/app`.
+
+Auth and profile remain on Inertia, because the SPA has no password-reset,
+email-verification or account-deletion screen yet. That is the last piece to
+migrate.
 
 ### Device work became queued and visible
 
@@ -50,6 +99,51 @@ run before this fix understated hours.
   from 6,432 to 6 (genuine in/out punches).
 - The sync watermark had the same bug: `17:59+00:00` where the truth was `14:59`,
   which would have skipped three hours of real punches on every sync.
+
+### Bulk reads became flow-controlled (2026-09-13)
+
+A second terminal (**F22**, device 6) could not complete an attendance read. The
+326,124-byte table arrived 54-75% of the time and then the device went silent.
+
+The receive-buffer fix that solved this on the F18 did nothing here, and
+measurement said why: `/proc/net/snmp` counted **three** kernel drops across a read
+that lost ~145,000 bytes. Nothing was being dropped — the device was stopping.
+
+`BulkReader` now prefers the protocol's windowed read (`CMD_PREPARE_BUFFER` /
+`CMD_READ_BUFFER`), requesting one 16 KB window at a time so there is no burst to
+race, and falls back to the push envelope when a device will not stage a table.
+Support turned out to be **per table**: the same F22 stages attendance and
+templates but refuses users.
+
+Attendance on that device went from 0 of 3 to 6 of 6; 18 of 18 library reads across
+all three tables. Two supporting changes came out of the same investigation: the
+read timeout is no longer re-applied per datagram, and reassembly can take a
+datagram's payload without building a `Reply` (`Contracts\SupportsRawDrain`) — worth
+67% → 100% capture in isolation.
+
+### Windowed reads resume across a stall on a public link (2026-09-14)
+
+The **Camelot F18** (device 9, public IP, 1,664,804-byte attendance table) could not
+complete a read. A packet capture of the failing read settled the cause: **not** the
+receive buffer (`RcvbufErrors` delta 0, socket rx-queue never backed up) and **not**
+corruption (`InErrors` 0) — the device streamed ~490 KB smoothly, then a 16 KB window
+went silent for >8 s. The reader used to throw the whole transfer away on that first
+silence and restart from offset 0, so across five whole-request attempts it read ~⅓
+of the table and never finished.
+
+`BulkReader` now **resumes** instead of restarting, in two escalating steps gated on
+`DeviceConfig::$bulkWindowRetries` (default 4, env `DEVICE_WINDOW_RETRIES`): re-request
+the stalled window at the same offset; and if that is spent — because a stall wedges
+the whole staged session on this firmware — reopen the session (with a backoff, since
+Camelot refuses an immediate reconnect), re-stage, and continue from the same offset.
+A `READ_BUFFER` request timeout counts as a stall; a `FREE_DATA` release timeout no
+longer fails a completed read. This is the ninth new library test group; see
+`WindowedReadTest`. It also produced the first CONFIRMED evidence that the **F18
+supports windowed reads**, not only the F22.
+
+Recorded as library **2.1.0** (`CHANGELOG.md`). The raw packet capture stays out of
+the repo (attendance PII, rule 16); the structural summary is in
+`tools/zkprobe/traces-2026-09-14/`.
 
 ### Session hygiene fixed the template reads
 

@@ -24,36 +24,15 @@ export default function AuthenticatedLayout({ header, children }) {
                                 </Link>
                             </div>
 
+                            {/*
+                                Devices, Employees, Attendance and Holidays now live
+                                in the SPA. This layout only wraps the account pages
+                                that have not migrated yet, so its nav is a way back
+                                to the app rather than a second set of modules.
+                            */}
                             <div className="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                                <NavLink
-                                    href={route('dashboard')}
-                                    active={route().current('dashboard')}
-                                >
-                                    Dashboard
-                                </NavLink>
-                                <NavLink
-                                    href={route('devices.index')}
-                                    active={route().current('devices.index')}
-                                >
-                                    Devices
-                                </NavLink>
-                                <NavLink
-                                    href={route('employees.index')}
-                                    active={route().current('employees.index')}
-                                >
-                                    Employees
-                                </NavLink>
-                                <NavLink
-                                    href={route('attendance.index')}
-                                    active={route().current('attendance.index')}
-                                >
-                                    Attendance
-                                </NavLink>
-                                <NavLink
-                                    href={route('holidays.index')}
-                                    active={route().current('holidays.index')}
-                                >
-                                    Holidays
+                                <NavLink href="/app/dashboard" active={false}>
+                                    Back to app
                                 </NavLink>
                             </div>
                         </div>
@@ -153,35 +132,8 @@ export default function AuthenticatedLayout({ header, children }) {
                     }
                 >
                     <div className="space-y-1 pb-3 pt-2">
-                        <ResponsiveNavLink
-                            href={route('dashboard')}
-                            active={route().current('dashboard')}
-                        >
-                            Dashboard
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            href={route('devices.index')}
-                            active={route().current('devices.index')}
-                        >
-                            Devices
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            href={route('employees.index')}
-                            active={route().current('employees.index')}
-                        >
-                            Employees
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            href={route('attendance.index')}
-                            active={route().current('attendance.index')}
-                        >
-                            Attendance
-                        </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            href={route('holidays.index')}
-                            active={route().current('holidays.index')}
-                        >
-                            Holidays
+                        <ResponsiveNavLink href="/app/dashboard" active={false}>
+                            Back to app
                         </ResponsiveNavLink>
                     </div>
 

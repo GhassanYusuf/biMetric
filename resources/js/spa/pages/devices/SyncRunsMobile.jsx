@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader, SelectField } from '../../shared/ui';
-import { CountChips, RUN_STATUSES, RunStatusBadge, formatDuration, shortTime } from './statusParts';
+import { CountChips, DeviceError, RUN_STATUSES, RunStatusBadge, formatDuration, shortTime } from './statusParts';
 
 /*
 | Mobile sync history: one card per run.
@@ -9,7 +9,7 @@ import { CountChips, RUN_STATUSES, RunStatusBadge, formatDuration, shortTime } f
 | they are only meaningful read against each other, and splitting them across a narrow
 | screen would lose the comparison that makes them worth showing.
 */
-export default function SyncRunsMobile({ runs, devices, meta, filters, loading, onFilter, onRefresh }) {
+export default function SyncRunsMobile({ runs, devices, meta, filters, loading, clearing, canClear, onFilter, onRefresh, onClear }) {
     return (
         <div className="space-y-4">
             <PageHeader
@@ -20,6 +20,18 @@ export default function SyncRunsMobile({ runs, devices, meta, filters, loading, 
                 <Button variant="secondary" className="min-h-[38px] px-3 text-xs" loading={loading} onClick={onRefresh}>
                     Refresh
                 </Button>
+                {/* Same affordance as desktop, same gating — rule 5. */}
+                {canClear && (
+                    <Button
+                        variant="danger"
+                        className="min-h-[38px] px-3 text-xs"
+                        loading={clearing}
+                        disabled={runs.length === 0}
+                        onClick={onClear}
+                    >
+                        {filters.device_id || filters.status ? 'Clear these' : 'Clear'}
+                    </Button>
+                )}
             </PageHeader>
 
             <div className="grid grid-cols-2 gap-2">
@@ -70,7 +82,7 @@ export default function SyncRunsMobile({ runs, devices, meta, filters, loading, 
                                 <CountChips counts={run.counts} />
                             </div>
                             {run.message && <p className="mt-2 text-xs text-slate-600">{run.message}</p>}
-                            {run.error && <p className="mt-1 text-xs text-rose-600">{run.error}</p>}
+                            <DeviceError error={run.error} className="mt-1 text-xs text-rose-600" />
                         </Card>
                     ))}
                 </div>

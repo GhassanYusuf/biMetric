@@ -2,18 +2,23 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
     /**
-     * A basic test example.
+     * `/` used to render the Inertia welcome page. That app is retired, so the root
+     * URL now hands off to the SPA shell — a redirect is the correct answer here,
+     * not a regression.
      */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_the_root_url_hands_off_to_the_spa(): void
     {
-        $response = $this->get('/');
+        $this->get('/')->assertRedirect(route('spa'));
+    }
 
-        $response->assertStatus(200);
+    /** The SPA shell itself is public: authentication happens client-side. */
+    public function test_the_spa_shell_is_served(): void
+    {
+        $this->get('/app/dashboard')->assertStatus(200);
     }
 }

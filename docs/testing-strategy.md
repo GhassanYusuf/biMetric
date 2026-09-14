@@ -64,9 +64,10 @@ decoder bug was recoverable rather than permanent.
 
 ### Fingerprints unknown ≠ no fingerprints
 
-`FingerprintTemplateDecodingTest` runs against a real device capture at
-`tests/Fixtures/zkteco/fingerprint-template-table.bin` — 22,066 bytes read off the
-reference F18. Truncation, overrun, a slot outside 0–9, and trailing bytes all
+`TemplateCodecTest` (in the library, at
+`vendor/promoseven/biometric-protocol/tests/`) runs against a real device capture at
+`vendor/promoseven/biometric-protocol/tests/Fixtures/fingerprint-template-table.bin` — 22,066
+bytes read off the reference F18. Truncation, overrun, a slot outside 0–9, and trailing bytes all
 abandon the read and report **unknown** rather than a plausible subset.
 
 ### Capability honesty
@@ -83,7 +84,7 @@ deliberate commit that names the device and firmware that proved it.
 
 `ProtocolLibraryBoundaryTest` fails the build on an `Illuminate\` import inside the
 package, a `config()`/`now()`/`app()` call, a second class in `app/` importing
-`Zkteco\Protocol`, a controller constructing a session, or a `require` entry beyond
+`Promoseven\Biometric`, a controller constructing a session, or a `require` entry beyond
 `php`.
 
 This one was verified to actually bite: injecting a deliberate violator file made

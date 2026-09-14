@@ -10,7 +10,10 @@
 // Body and secondary text sit at slate-500 or darker (4.76:1 on white).
 // slate-400 fails AA at body size and is reserved for icons and hairlines.
 
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ELEVATION, FOCUS, TREND } from './theme';
+import { useEscapeKey } from './useEscapeKey';
 
 export function Card({ children, className = '', as: Tag = 'div', ...props }) {
     return (
@@ -75,6 +78,230 @@ export function CircleButton({ children, tone = 'slate', className = '', label, 
         >
             {children}
         </button>
+    );
+}
+
+/*
+| ActionMenu — one trigger and a list, for rows that had grown a strip of small
+| competing buttons. Six of them side by side forces every label down to a size
+| that cannot be read, and it parks Delete a pixel away from Sync punches.
+|
+| Why it is PORTALLED to the body: TableShell clips (`overflow-hidden` on the
+| card, `overflow-x-auto` on the scroller), so a panel positioned inside a cell
+| is cut off at the table edge. Fixed coordinates taken from the trigger's rect
+| are the only thing that survives that.
+|
+| Why the trigger changes: collapsing the strip loses the per-button spinner, and
+| the operator must still be able to see WHICH command is in flight. That is page
+| state, not an event, so it is content and not a toast (rule 2).
+|
+| Items: { key, label, description?, onSelect, tone?: 'default'|'primary'|'danger',
+|          loading?, disabled?, hidden? } or { separator: true, key }.
+| Falsy entries are dropped, so a permission flag can gate an item inline.
+*/
+const MENU_WIDTH = 268;
+
+export function ActionMenu({ label = 'Actions', items = [], align = 'right', className = '' }) {
+    const entries = items.filter(Boolean).filter((i) => !i.hidden);
+    const navCount = entries.filter((i) => !i.separator).length;
+    const busy = entries.find((i) => i.loading);
+
+    const [open, setOpen] = useState(false);
+    const [box, setBox] = useState(null);
+    const [active, setActive] = useState(-1);
+    const triggerRef = useRef(null);
+    const panelRef = useRef(null);
+    const itemRefs = useRef([]);
+
+    const close = useCallback((focusTrigger = true) => {
+        setOpen(false);
+        setActive(-1);
+        if (focusTrigger) triggerRef.current?.focus();
+    }, []);
+
+    useEscapeKey(close, open);
+
+    // Measured rather than guessed, and re-measured on scroll/resize so the
+    // panel cannot drift away from the row it belongs to.
+    const place = useCallback(() => {
+        const rect = triggerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        const below = window.innerHeight - rect.bottom - 16;
+        const above = rect.top - 16;
+        const dropUp = below < 240 && above > below;
+        const left = align === 'right' ? rect.right - MENU_WIDTH : rect.left;
+
+        setBox({
+            left: Math.max(12, Math.min(left, window.innerWidth - MENU_WIDTH - 12)),
+            top: dropUp ? undefined : rect.bottom + 8,
+            bottom: dropUp ? window.innerHeight - rect.top + 8 : undefined,
+            maxHeight: Math.max(180, dropUp ? above : below),
+        });
+    }, [align]);
+
+    useLayoutEffect(() => {
+        if (!open) return undefined;
+        place();
+        window.addEventListener('scroll', place, true);
+        window.addEventListener('resize', place);
+        return () => {
+            window.removeEventListener('scroll', place, true);
+            window.removeEventListener('resize', place);
+        };
+    }, [open, place]);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        function onDown(e) {
+            if (triggerRef.current?.contains(e.target)) return;
+            if (panelRef.current?.contains(e.target)) return;
+            close(false);
+        }
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [open, close]);
+
+    useEffect(() => {
+        if (open && active >= 0) itemRefs.current[active]?.focus();
+    }, [open, active]);
+
+    function move(delta) {
+        if (navCount === 0) return;
+        setActive((cur) => {
+            const base = cur < 0 ? (delta > 0 ? -1 : 0) : cur;
+            return (base + delta + navCount) % navCount;
+        });
+    }
+
+    function onTriggerKey(e) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            setOpen(true);
+            setActive(e.key === 'ArrowDown' ? 0 : navCount - 1);
+        }
+    }
+
+    // Arrow keys, Home/End and Tab are what a menu is expected to answer to;
+    // Enter and Space are the buttons' own (rule 7).
+    function onPanelKey(e) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+        else if (e.key === 'Home') { e.preventDefault(); setActive(0); }
+        else if (e.key === 'End') { e.preventDefault(); setActive(navCount - 1); }
+        else if (e.key === 'Tab') close();
+    }
+
+    function select(item) {
+        if (item.disabled || item.loading) return;
+        // Focus goes home first so a dialog opened by the action can take it
+        // from there, and a plain action leaves the keyboard where it started.
+        close();
+        item.onSelect?.();
+    }
+
+    const tones = {
+        default: 'text-slate-700 hover:bg-slate-50 focus-visible:bg-slate-50',
+        primary: 'text-violet-700 hover:bg-violet-50 focus-visible:bg-violet-50',
+        danger: 'text-rose-600 hover:bg-rose-50 focus-visible:bg-rose-50',
+    };
+
+    let navIndex = -1;
+
+    return (
+        <>
+            <button
+                ref={triggerRef}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-label={busy ? `${busy.label} in progress` : undefined}
+                onClick={() => (open ? close() : setOpen(true))}
+                onKeyDown={onTriggerKey}
+                className={`inline-flex min-h-[34px] items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors duration-150 ${
+                    busy
+                        ? 'border-violet-200 bg-violet-50 text-violet-700'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100'
+                } ${FOCUS} ${className}`}
+            >
+                {busy ? (
+                    <>
+                        <Spinner className="h-3.5 w-3.5" />
+                        {busy.label}
+                    </>
+                ) : (
+                    <>
+                        {label}
+                        <svg
+                            className={`h-3 w-3 text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                        >
+                            <path d="M6 9l6 6 6-6" />
+                        </svg>
+                    </>
+                )}
+            </button>
+
+            {open && box && createPortal(
+                <div
+                    ref={panelRef}
+                    role="menu"
+                    aria-label={label}
+                    onKeyDown={onPanelKey}
+                    style={{
+                        position: 'fixed',
+                        left: box.left,
+                        top: box.top,
+                        bottom: box.bottom,
+                        width: MENU_WIDTH,
+                        maxHeight: box.maxHeight,
+                        animation: 'menu-in 160ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    }}
+                    className={`z-50 overflow-y-auto rounded-2xl bg-white p-1.5 ${ELEVATION.overlay}`}
+                >
+                    {entries.map((item) => {
+                        if (item.separator) {
+                            return <div key={item.key} role="separator" className="my-1 h-px bg-slate-100" />;
+                        }
+
+                        navIndex += 1;
+                        const index = navIndex;
+                        const blocked = !!item.disabled || !!item.loading;
+
+                        return (
+                            <button
+                                key={item.key}
+                                ref={(el) => { itemRefs.current[index] = el; }}
+                                type="button"
+                                role="menuitem"
+                                // aria-disabled rather than disabled: a disabled button
+                                // drops out of the focus order and breaks arrow-key
+                                // travel through the menu.
+                                aria-disabled={blocked || undefined}
+                                tabIndex={-1}
+                                onClick={() => select(item)}
+                                onMouseEnter={() => setActive(index)}
+                                className={`flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left transition-colors duration-150 ${
+                                    tones[item.tone] || tones.default
+                                } ${blocked ? 'cursor-not-allowed opacity-45' : ''} ${FOCUS}`}
+                            >
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-sm font-semibold">{item.label}</span>
+                                    {item.description && (
+                                        <span className="mt-0.5 block text-xs font-normal leading-snug text-slate-500">
+                                            {item.description}
+                                        </span>
+                                    )}
+                                </span>
+                                {item.loading && <Spinner className="mt-0.5 h-4 w-4 shrink-0" />}
+                            </button>
+                        );
+                    })}
+                </div>,
+                document.body,
+            )}
+        </>
     );
 }
 
@@ -146,7 +373,61 @@ export function InlineAlert({ tone = 'info', children, onDismiss }) {
     );
 }
 
-export function Badge({ children, tone = 'slate', className = '' }) {
+/**
+ * A determinate-or-indeterminate progress bar.
+ *
+ * `percent` of NULL is not 0 — it means the device never declared a total, and the
+ * bar goes indeterminate rather than sitting at zero pretending to know. That
+ * distinction is the same one rule 10 draws for fingerprint counts: "we were not
+ * told" and "none" lead to opposite conclusions, so they must never render alike.
+ *
+ * Elevation is declared once (a ring, no shadow) per rule 7. The number is repeated
+ * as text beside the bar because a bar alone is unreadable to a screen reader and
+ * imprecise to everyone else.
+ */
+export function ProgressBar({ percent = null, label, detail, tone = 'violet', className = '' }) {
+    const indeterminate = percent === null || percent === undefined;
+    const clamped = indeterminate ? 0 : Math.max(0, Math.min(100, percent));
+
+    const tones = {
+        violet: 'bg-violet-600',
+        emerald: 'bg-emerald-600',
+        amber: 'bg-amber-500',
+    };
+
+    return (
+        <div className={className}>
+            {(label || detail) && (
+                <div className="mb-1.5 flex items-baseline justify-between gap-3 text-xs">
+                    {label && <span className="font-medium text-slate-700">{label}</span>}
+                    {detail && <span className="tabular-nums text-slate-500">{detail}</span>}
+                </div>
+            )}
+
+            <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                // Omitted entirely when indeterminate — that is what tells assistive
+                // tech "in progress, extent unknown" instead of "0 percent".
+                aria-valuenow={indeterminate ? undefined : clamped}
+                aria-label={label || 'Progress'}
+                className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200"
+            >
+                {indeterminate ? (
+                    <div className={`h-full w-1/3 rounded-full ${tones[tone]} motion-safe:animate-[progress-slide_1.4s_ease-in-out_infinite]`} />
+                ) : (
+                    <div
+                        className={`h-full rounded-full transition-[width] duration-500 ease-out ${tones[tone]}`}
+                        style={{ width: `${clamped}%` }}
+                    />
+                )}
+            </div>
+        </div>
+    );
+}
+
+export function Badge({ children, tone = 'slate', className = '', title }) {
     const tones = {
         slate: 'bg-slate-100 text-slate-700',
         emerald: 'bg-emerald-50 text-emerald-700',
@@ -156,7 +437,10 @@ export function Badge({ children, tone = 'slate', className = '' }) {
         blue: 'bg-blue-50 text-blue-700',
     };
     return (
-        <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${tones[tone]} ${className}`}>
+        <span
+            className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${tones[tone]} ${className}`}
+            title={title}
+        >
             {children}
         </span>
     );

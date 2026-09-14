@@ -1,0 +1,100 @@
+{
+    "label": "tf1700-info-192_168_7_62",
+    "host": "192.168.7.62",
+    "port": 4370,
+    "protocol": "zk-standalone-over-tcp",
+    "started_at": "2026-09-14T08:26:11+00:00",
+    "steps": [
+        {
+            "step": "tcp connect",
+            "ok": true,
+            "ms": 0.3
+        },
+        {
+            "step": "connect",
+            "ok": false,
+            "reply": "ACK_UNAUTH",
+            "code": 2005,
+            "session": 54827,
+            "ms": 5.4
+        },
+        {
+            "step": "auth (comm key 0)",
+            "ok": true,
+            "reply": "ACK_OK",
+            "code": 2000,
+            "ms": 72.6
+        },
+        {
+            "step": "version",
+            "ok": true,
+            "firmware": "Ver 6.60 Apr 26 2016",
+            "reply": "ACK_OK",
+            "ms": 145
+        },
+        {
+            "step": "param ~DeviceName",
+            "ok": true,
+            "value": "F18/ID"
+        },
+        {
+            "step": "param ~SerialNumber",
+            "ok": true,
+            "value": "AIOR204860846"
+        },
+        {
+            "step": "param ~ZKFPVersion",
+            "ok": true,
+            "value": "10"
+        },
+        {
+            "step": "param ~Platform",
+            "ok": true,
+            "value": "ZMM210_TFT"
+        },
+        {
+            "step": "param ~OS",
+            "ok": true,
+            "value": "1"
+        },
+        {
+            "step": "param DeviceID",
+            "ok": true,
+            "value": "1"
+        },
+        {
+            "step": "param MAC",
+            "ok": true,
+            "value": "00:17:61:10:be:00"
+        },
+        {
+            "step": "param ~ExtendFmt",
+            "ok": false,
+            "value": null
+        },
+        {
+            "step": "param FaceFunOn",
+            "ok": true,
+            "value": "0"
+        },
+        {
+            "step": "device time",
+            "ok": true,
+            "encoded": 858251809,
+            "ms": 144.3
+        },
+        {
+            "step": "free sizes",
+            "ok": true,
+            "bytes": 92,
+            "counters": {
+                "users": 18,
+                "fingers": 16,
+                "records": 10511,
+                "user_capacity": 3000,
+                "finger_capacity": 5000,
+                "record_capacity": 100000
+            }
+        }
+    ]
+}

@@ -5,7 +5,8 @@ import { useAuth } from '../shared/auth';
 import { useLastSync, shortAgo } from '../shared/useLastSync';
 import { TopBarSlot } from '../shared/topbar';
 import { ELEVATION, FOCUS } from '../shared/theme';
-import { Spinner } from '../shared/ui';
+import { ProgressBar, Spinner } from '../shared/ui';
+import { useSyncProgress, describeProgress } from '../shared/useSyncProgress';
 import { Icon } from './nav';
 
 /*
@@ -136,8 +137,18 @@ function LastSyncPill({ sync }) {
 function SyncNowButton({ onDone }) {
     const [state, setState] = useState({ running: false, message: null, tone: 'info' });
 
+    /*
+     * Which terminal is being read RIGHT NOW, and how far through the list we are.
+     * The global sync walks devices one at a time, so a single bar would be a lie —
+     * the operator needs to know it is on 2 of 5, not that "syncing" is 40% done.
+     */
+    const [current, setCurrent] = useState(null);
+
+    const { progress, stalled } = useSyncProgress(current?.id ?? null, !!current);
+
     async function run() {
         setState({ running: true, message: null, tone: 'info' });
+        setCurrent(null);
         try {
             const { data: devices } = await api.get('/devices');
             const active = (devices ?? []).filter((d) => d.is_active);
@@ -149,7 +160,8 @@ function SyncNowButton({ onDone }) {
 
             let imported = 0;
             let failed = 0;
-            for (const device of active) {
+            for (const [index, device] of active.entries()) {
+                setCurrent({ id: device.id, name: device.name, index: index + 1, of: active.length });
                 try {
                     const res = await api.post(`/devices/${device.id}/sync-attendance`);
                     imported += res.data?.imported ?? 0;
@@ -157,6 +169,7 @@ function SyncNowButton({ onDone }) {
                     failed += 1;
                 }
             }
+            setCurrent(null);
 
             setState({
                 running: false,
@@ -167,6 +180,7 @@ function SyncNowButton({ onDone }) {
             });
             onDone?.();
         } catch {
+            setCurrent(null);
             setState({ running: false, message: 'Could not read the device list.', tone: 'error' });
         }
     }
@@ -192,7 +206,28 @@ function SyncNowButton({ onDone }) {
                 <span className="hidden xl:inline">{state.running ? 'Syncing…' : 'Sync now'}</span>
             </button>
 
-            {state.message && (
+            {/*
+              | Live progress while the walk is running. Content, not a toast: it
+              | describes how things currently ARE and stops being true the moment
+              | the sync ends (rule 2). The outcome that follows IS a toast.
+            */}
+            {current && (
+                <div
+                    role="status"
+                    className={`absolute right-0 top-12 z-30 w-72 rounded-xl bg-white p-3 ${ELEVATION.raised}`}
+                >
+                    <ProgressBar
+                        {...describeProgress(progress, { deviceName: current.name })}
+                        tone={progress?.phase === 'importing' ? 'emerald' : 'violet'}
+                    />
+                    <p className="mt-2 text-[11px] text-slate-500">
+                        Device {current.index} of {current.of}
+                        {stalled && ' · lost contact with the progress feed'}
+                    </p>
+                </div>
+            )}
+
+            {state.message && !current && (
                 <div
                     role="status"
                     className={`absolute right-0 top-12 z-30 w-72 rounded-xl bg-white p-3 text-xs ${toneClass} ${ELEVATION.raised}`}

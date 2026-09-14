@@ -1,0 +1,52 @@
+{
+    "label": "inbio-info",
+    "host": "192.168.7.62",
+    "port": 4370,
+    "protocol": "c3-pullsdk-tcp",
+    "started_at": "2026-09-14T12:32:44+00:00",
+    "steps": [
+        {
+            "step": "tcp connect",
+            "ok": true,
+            "ms": 0.3,
+            "error": null
+        },
+        {
+            "step": "connect probe (0x76)",
+            "ok": false,
+            "error": "no header",
+            "raw": "aa000000",
+            "ms": 7.6,
+            "sent_hex": "aa01760000e02655"
+        },
+        {
+            "step": "connect probe (0x01)",
+            "ok": false,
+            "error": "no header",
+            "raw": "",
+            "ms": 0,
+            "sent_hex": "aa01010000503c55"
+        },
+        {
+            "step": "getparam (0x04)",
+            "ok": false,
+            "error": "no header",
+            "raw": "",
+            "ms": 0,
+            "sent_hex": "aa01045b007e53657269616c4e756d6265722c4c6f636b436f756e742c417578496e436f756e742c4175784f7574436f756e742c4669726d5665722c4465766963654e616d652c7e4465766963654e616d652c4950416464726573732c4d414376ab55"
+        },
+        {
+            "step": "parsed parameters",
+            "ok": false,
+            "values": []
+        },
+        {
+            "step": "disconnect (0x02)",
+            "ok": false,
+            "error": "no header",
+            "raw": "",
+            "ms": 0,
+            "sent_hex": "aa01020000a03c55"
+        }
+    ]
+}

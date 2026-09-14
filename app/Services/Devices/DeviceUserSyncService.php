@@ -8,9 +8,9 @@ use App\Models\BiometricTemplate;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
-use Zkteco\Protocol\Capability\Capability;
-use Zkteco\Protocol\Client\Device as ProtocolDevice;
-use Zkteco\Protocol\Value\DeviceUser;
+use Promoseven\Biometric\Capability\Capability;
+use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Value\DeviceUser;
 
 /**
  * Keeps employees and device user records in step, and reports where they disagree.
@@ -22,9 +22,7 @@ use Zkteco\Protocol\Value\DeviceUser;
  */
 class DeviceUserSyncService
 {
-    public function __construct(private readonly BiometricDeviceDriver $driver)
-    {
-    }
+    public function __construct(private readonly BiometricDeviceDriver $driver) {}
 
     /**
      * Reads the device and refreshes the stored mapping + credential state.
@@ -82,7 +80,7 @@ class DeviceUserSyncService
             count($deviceUsers),
             $device->name,
             $matched,
-            $unmatched === [] ? '' : ', ' . count($unmatched) . ' unknown to the system',
+            $unmatched === [] ? '' : ', '.count($unmatched).' unknown to the system',
             $withFingerprints && ! $fingerprintsKnown
                 ? ", but this firmware's fingerprint table could not be decoded so counts are left unknown"
                 : '',
@@ -109,6 +107,92 @@ class DeviceUserSyncService
      *
      * @return array{message:string, raw:array<string,mixed>}
      */
+    /**
+     * Live read of ONE employee's enrollment on a terminal.
+     *
+     * Powers the enrollment dialog's hand picker, so it runs when that dialog opens
+     * — never on a list render, which would mean one device conversation per row.
+     *
+     * THE THREE STATES MATTER HERE MORE THAN ANYWHERE (rule 10):
+     *   on_device false              → they are not on this terminal at all
+     *   fingerprint_slots null       → the template table would not decode: UNKNOWN
+     *   fingerprint_slots []         → the table decoded and they have no fingers
+     *
+     * A null must never be rendered as 0. The stored columns are only overwritten
+     * when the table decoded, so an unreadable read leaves the last known answer
+     * standing rather than erasing it.
+     *
+     * @return array<string,mixed>
+     */
+    public function readEnrollment(Device $device, Employee $employee): array
+    {
+        $capabilities = $this->driver->capabilities($device);
+        $capabilities->require(Capability::USER_READ);
+
+        $canReadTemplates = $capabilities->supports(Capability::TEMPLATE_TABLE_READ);
+
+        /** @var list<DeviceUser> $deviceUsers */
+        $deviceUsers = $this->driver->run(
+            $device,
+            fn (ProtocolDevice $d) => $d->users()->all($canReadTemplates),
+        );
+
+        $match = null;
+        foreach ($deviceUsers as $user) {
+            if ($user->userId === (string) $employee->employee_code) {
+                $match = $user;
+                break;
+            }
+        }
+
+        $stored = [
+            'fingerprint_slots' => $employee->fingerprint_slots,
+            'fingerprint_count' => $employee->fingerprint_count,
+            'card_number' => $employee->card_number,
+            'synced_at' => $employee->enrollment_synced_at?->toIso8601String(),
+        ];
+
+        if ($match === null) {
+            return [
+                'on_device' => false,
+                'fingerprint_slots' => null,
+                'fingerprint_count' => null,
+                'card_number' => null,
+                'card_count' => 0,
+                'stored' => $stored,
+                'synced_at' => $stored['synced_at'],
+            ];
+        }
+
+        // null here means the table did not decode, NOT that there are no fingers.
+        $slots = $canReadTemplates ? $match->fingerSlots : null;
+        $cardNumber = $match->hasCard() ? $match->cardNumber : null;
+
+        $attributes = [
+            'card_number' => $cardNumber,
+            'enrollment_synced_at' => now(),
+        ];
+
+        if ($slots !== null) {
+            $attributes['fingerprint_slots'] = $slots;
+            $attributes['fingerprint_count'] = count($slots);
+        }
+
+        $employee->update($attributes);
+
+        return [
+            'on_device' => true,
+            'fingerprint_slots' => $slots,
+            'fingerprint_count' => $slots === null ? null : count($slots),
+            'card_number' => $cardNumber,
+            // The device's user record holds exactly one card field, so this is
+            // structurally 0 or 1 — not a limit this application imposes.
+            'card_count' => $cardNumber === null ? 0 : 1,
+            'stored' => $stored,
+            'synced_at' => $employee->fresh()->enrollment_synced_at?->toIso8601String(),
+        ];
+    }
+
     public function reconcile(Device $device): array
     {
         $this->driver->capabilities($device)->require(Capability::USER_READ);
@@ -377,7 +461,7 @@ class DeviceUserSyncService
     /**
      * Flags mappings whose employee is no longer on the device.
      *
-     * @param list<DeviceUser> $deviceUsers
+     * @param  list<DeviceUser>  $deviceUsers
      */
     private function markMissingOnDevice(Device $device, array $deviceUsers): void
     {
@@ -393,8 +477,8 @@ class DeviceUserSyncService
     }
 
     /**
-     * @param list<array<string,mixed>> $onlyInSystem
-     * @param list<array<string,mixed>> $mismatched
+     * @param  list<array<string,mixed>>  $onlyInSystem
+     * @param  list<array<string,mixed>>  $mismatched
      */
     private function applyReconciliationStatuses(Device $device, array $onlyInSystem, array $mismatched): void
     {

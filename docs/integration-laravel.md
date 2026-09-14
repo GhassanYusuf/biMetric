@@ -19,7 +19,7 @@ interface BiometricDeviceDriver
 ```
 
 `ZktecoDriver` implements it and is **the only class in `app/` that imports
-`Zkteco\Protocol`**. Everything else depends on the interface.
+`Promoseven\Biometric`**. Everything else depends on the interface.
 
 ```php
 // app/Providers/AppServiceProvider.php
@@ -53,6 +53,32 @@ public function run(Device $device, \Closure $callback): mixed
 
 Config lookup, Eloquent, logging and the capability set all live here. None of it
 crosses into the package.
+
+### Three drivers, one contract
+
+`DeviceDriverManager` picks by `Device::$protocol` and forwards. Adding the C3
+panel driver touched **the manager, the model constant, the request rules and the
+form** — no service, no job, no controller, no route.
+
+| Protocol | Driver | Speaks |
+|---|---|---|
+| `binary` | `ZktecoDriver` | ZKTeco standalone, UDP/TCP 4370 |
+| `csl_http` | `Csl\CslHttpDriver` | a reseller web UI over HTTP |
+| `c3` | `C3\C3Driver` | ZKTeco C3 / PullSDK panels, TCP 4370 |
+
+`run()` and `open()` hand out a standalone protocol session, so both non-ZKTeco
+drivers throw `UnsupportedCommandException` for them rather than returning
+something session-shaped that cannot serve a command. Everything else —
+`ping`, `info`, `readAttendance`, `capabilities` — works uniformly.
+
+**The C3 driver is read-only.** Every write is `not_implemented`, which the UI
+hides (rule 9). That is deliberate and not an oversight: we know from the vendor
+SDK exactly which commands would write, and rule 16 requires the owner's go-ahead
+and a terminal out of service before any of them is probed.
+
+**There is no cursor on a C3 panel.** `readAttendance()` returns the whole table
+every time, so `AttendanceSyncService` owns the watermark and the dedupe — the same
+way it already does for the CSL driver's overlapping date windows.
 
 ## Never call the driver from a controller
 
@@ -177,6 +203,33 @@ One envelope everywhere, via `Support\ApiResponse`:
 Paginators are unwrapped so pagination lands in `meta.pagination` rather than
 inside `data`.
 
+## Recording a device failure
+
+The library is framework-agnostic and cannot log for itself (rule 8), so the app
+side owns that. `App\Support\DeviceErrorReporter` is the only place that does it:
+
+```php
+} catch (\Throwable $e) {
+    $message = $this->errors->report($e, 'attendance sync', $device);
+
+    return ApiResponse::error($message, [], 502);
+}
+```
+
+`report()` writes one structured entry to the `device` channel — including the
+exception's `context()` and `isRetryable()` — and returns the operator-facing
+sentence. Never build that sentence at the call site: the wording lives in
+`operatorMessage()` so it stays consistent across the queue and the API.
+
+**Catch `\Throwable`, not just `DeviceException`.** A bug in a codec is not a
+`DeviceException`, and it used to escape as a bare 500 `'Server error.'`. The
+reporter tells the two apart — protocol `context()` for one, a stack for the other
+— and refuses to put an internal message on an operator's screen.
+
+Anything that escapes uncaught is handled by the `$exceptions->report()` hook in
+`bootstrap/app.php`, which reports it and returns `false` so it is not logged
+twice. Full detail: [error-handling.md](error-handling.md).
+
 ## Scheduling
 
 ```php
@@ -198,7 +251,8 @@ with `is_online: false` — rendered as **"Stale"**.
 2. Handle it in `DeviceCommandHandler`.
 3. Gate it on a `Capability` in the controller — 422 before queueing.
 4. Expose it through `BiometricDeviceDriver`, not by importing the library.
-5. Record its outcome on the command row (message *and* error).
+5. Record its outcome on the command row (message *and* error), and report
+   failures through `DeviceErrorReporter` — never a bare `Log::error`.
 6. Publish progress over MQTT if it is long-running, non-fatally.
 7. Add the UI action behind both the permission and the capability.
 8. Write the doc — see rule 12 in `CLAUDE.md`.

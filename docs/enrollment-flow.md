@@ -156,3 +156,81 @@ The trigger is confirmed — the device beeps, and the trail proves the command
 lands. The capture completing is not. `fingerprint.enroll` is marked `confirmed`
 for the trigger path only; treat a first successful capture as the thing that
 validates the rest.
+
+
+## Enrollment belongs to ONE terminal
+
+`employees.fingerprint_count`, `fingerprint_slots`, `card_number` and
+`enrollment_synced_at` are a **flat snapshot of whichever device was read last**.
+They answer "how many fingers" and never "on which terminal", and with two active
+devices that is not a rounding error — it is a different answer.
+
+Observed on this installation, employee `akram`:
+
+| Terminal | Fingerprint slots | Card |
+|---|---|---|
+| IT Room | `[1, 6]` | 7553651 |
+| Good Wheels | `[6, 7]` | none |
+
+The flat columns held IT Room's `[1, 6]` and its card. Read as global, that claims
+a card the person does not have on Good Wheels and names two fingers, one of which
+Good Wheels does not hold — exactly the overclaim rule 10 forbids.
+
+The per-device truth is `employee_device_maps` (one row per employee per device,
+written by the roster read). `EmployeeDeviceMapResource::fingerprintCount()`
+returns `null` rather than `0` when `fingerprint_slots` is null, so "unknown"
+survives the trip.
+
+### `enrollments` on the employee payload
+
+`EmployeeResource` exposes the rows as `enrollments`, eager-loaded by
+`EmployeeController::index()` and `show()` via `deviceMaps.device:id,name`:
+
+```json
+"enrollments": [
+  { "device_id": 2, "device_name": "IT Room",
+    "fingerprint_slots": [1, 6], "fingerprint_count": 2,
+    "card_number": 7553651, "synced_at": "2026-08-03T13:37:00+00:00" },
+  { "device_id": 5, "device_name": "Good Wheels",
+    "fingerprint_slots": [6, 7], "fingerprint_count": 2,
+    "card_number": null, "synced_at": "2026-09-02T08:16:11+00:00" }
+]
+```
+
+The field is **absent** when the relation was not loaded, rather than `[]`. A
+consumer must be able to tell "not asked for" from "enrolled nowhere"; collapsing
+them is the same class of lie as `0` for unknown. Frontend helpers treat
+`Array.isArray(employee.enrollments)` as the test, and fall back to the flat
+columns when it is false.
+
+### What the UI does with it
+
+- **Roster** — an `Enrolled on` column (`TerminalsCell`), one badge per terminal
+  with its finger count and a card glyph when a card is present. Compact on
+  purpose: a stacked hand diagram per terminal would double the height of every
+  row, and the per-finger detail is one click away. Amber is a terminal that holds
+  the person but no usable biometrics, or one whose template table would not
+  decode — both mean "cannot clock in yet", never "broken".
+- **Roster, fingerprint and card cells** — sourced from the most recently read
+  per-device row (`rosterEnrollment()`), and labelled with that terminal. They
+  must NOT read the flat columns first: those are not written by every read path,
+  so an employee imported from a second terminal has real slots in
+  `employee_device_maps` while `enrollment_synced_at` stays null. Checking the
+  flat snapshot first rendered "—" for every Good Wheels-only employee even though
+  their map row held slots `[6, 7]`. The glyph and its label must come from the
+  SAME row; drawing flat slots under the newest device name attributed one
+  terminal's data to another. `syncedAgo()` spans both sources for the same
+  reason — it reported the roster as last read in July while a terminal had been
+  read that morning.
+- **Detail dialog** — an `Enrollment by terminal` panel lists every device at
+  once, and everything below the terminal picker is scoped to the **selected**
+  device's map row.
+
+### The bug this closed
+
+The dialog previously showed the flat snapshot while its device picker, its
+per-slot `Delete` buttons and its `Remove from terminal` action all addressed the
+selected device. With the terminals above, an operator could read "slot 1, slot 6"
+off IT Room's snapshot with Good Wheels selected and press `Delete` on slot 1 —
+against a terminal that holds slots 6 and 7. No row for the selected device now
+falls through to "never read" rather than rendering as zero.

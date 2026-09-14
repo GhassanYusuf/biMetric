@@ -4,6 +4,7 @@ namespace Zkteco\Protocol\Client;
 
 use Zkteco\Protocol\Codec\RecordBuffer;
 use Zkteco\Protocol\Codec\Timestamp;
+use Zkteco\Protocol\Contracts\ProgressListener;
 use Zkteco\Protocol\Exception\ConnectionException;
 use Zkteco\Protocol\Exception\ProtocolException;
 use Zkteco\Protocol\Protocol\Command;
@@ -33,8 +34,26 @@ class DeviceClient
 {
     private ?BulkReader $bulkReader = null;
 
-    public function __construct(private readonly Session $session)
+    private ?ProgressListener $progress = null;
+
+    public function __construct(private readonly Session $session) {}
+
+    /**
+     * Attaches a listener that receives byte counts while bulk tables stream in.
+     *
+     * Optional by design: every existing caller keeps working untouched and pays
+     * nothing, because BulkReader::emit() returns immediately when this is null.
+     *
+     * Must be set BEFORE the first bulk read — the reader is built once and cached,
+     * so attaching afterwards would silently do nothing. Setting it discards any
+     * cached reader so the listener always takes effect.
+     */
+    public function onProgress(?ProgressListener $listener): self
     {
+        $this->progress = $listener;
+        $this->bulkReader = null;
+
+        return $this;
     }
 
     /** Convenience constructor for the common single-device case. */
@@ -173,13 +192,13 @@ class DeviceClient
     /** Raw bytes of the user table. */
     public function readUsersRaw(): string
     {
-        return $this->bulk()->read(Command::USERTEMP_RRQ);
+        return $this->bulk()->read(Command::USERTEMP_RRQ, operation: 'users');
     }
 
     /** Raw bytes of the attendance table. */
     public function readAttendanceRaw(): string
     {
-        return $this->bulk()->read(Command::ATTLOG_RRQ);
+        return $this->bulk()->read(Command::ATTLOG_RRQ, operation: 'attendance');
     }
 
     /**
@@ -191,7 +210,7 @@ class DeviceClient
      */
     public function readTemplatesRaw(): string
     {
-        return $this->bulk()->read(Command::DB_RRQ, pack('C', Command::FCT_FINGERTMP));
+        return $this->bulk()->read(Command::DB_RRQ, pack('C', Command::FCT_FINGERTMP), 'templates');
     }
 
     /**
@@ -205,7 +224,7 @@ class DeviceClient
      */
     public function probeTemplateSlot(int $uid, int $fingerIndex): array
     {
-        $reply = $this->send(Command::USERTEMP_RRQ, pack('v', $uid) . pack('C', $fingerIndex));
+        $reply = $this->send(Command::USERTEMP_RRQ, pack('v', $uid).pack('C', $fingerIndex));
 
         $exists = $reply->isPreparingData() || $reply->isInlineData();
 
@@ -290,7 +309,7 @@ class DeviceClient
         $this->withDeviceDisabled(function () use ($uid, $fingerIndex) {
             $reply = $this->send(
                 Command::DELETE_USERTEMP,
-                pack('v', $uid) . pack('C', $fingerIndex),
+                pack('v', $uid).pack('C', $fingerIndex),
             );
 
             if (! $reply->isAccepted()) {
@@ -406,6 +425,18 @@ class DeviceClient
         return $reply->data;
     }
 
+    /**
+     * The link's stream, so a caller listening to several devices can block on all
+     * of them at once instead of polling each in turn. Null when the transport is
+     * not selectable — poll with readRealtimeRaw() in that case.
+     *
+     * @return resource|null
+     */
+    public function selectableStream()
+    {
+        return $this->session->transport()->selectableStream();
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /** Sends one command on the live session. */
@@ -478,7 +509,7 @@ class DeviceClient
 
     private function bulk(): BulkReader
     {
-        return $this->bulkReader ??= new BulkReader($this->session);
+        return $this->bulkReader ??= new BulkReader($this->session, $this->progress);
     }
 
     /** Runs an info read, returning '' rather than failing the whole info sweep. */

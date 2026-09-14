@@ -5,7 +5,7 @@ ZKTeco biometric terminals — talking to the hardware directly over the network
 with no vendor DLL, OCX or SDK anywhere in the stack.
 
 - **Backend:** Laravel 12 · SQLite · Sanctum (token auth) · spatie/laravel-permission (teams = tenants)
-- **Device layer:** [`packages/zkteco-protocol`](packages/zkteco-protocol) — 31 classes, **zero framework dependencies**, usable from any PHP context
+- **Device layer:** `promoseven/biometric-protocol` — a separate, separately-licensed composer package (36 classes, **zero runtime dependencies**, PHP 8.2+), installed at `vendor/promoseven/biometric-protocol`. This app is one consumer of it, not its owner.
 - **Real-time:** MQTT (php-mqtt) publish → browser MQTT-over-WebSocket subscribe
 - **Frontend:** React SPA (Vite) consuming the JSON API — mobile-first, separate mobile/desktop presentation files
 - **Legacy:** the original Inertia screens remain during cut-over; the SPA is the target
@@ -85,7 +85,7 @@ would leave the SPA without a workspace or a live MQTT topic.
 - **Permissions** — spatie, team = tenant; authorize on permissions (not role names) via policies + controller checks.
 - **Real-time** — domain events → listeners → `MqttPublisher` (fail-safe) on tenant-scoped topics; notifications are DB-persisted first (`NotificationService`).
 - **Audit** — `AuditObserver` records create/update/delete of core models (secrets redacted).
-- **Devices** — the protocol lives in `packages/zkteco-protocol`. Exactly **one** class in `app/` may import it (`Services\Devices\ZktecoDriver`), behind the `Contracts\BiometricDeviceDriver` seam. `tests/Unit/ProtocolLibraryBoundaryTest.php` fails the build if that changes.
+- **Devices** — the protocol lives in the external `promoseven/biometric-protocol` package. Only `Services\Devices\ZktecoDriver` may *speak* it (open a session, touch a transport, issue a command); a documented allowlist of classes may *name* its types (`Capability`, `DeviceException`) through the `Contracts\BiometricDeviceDriver` seam. `tests/Unit/ProtocolLibraryBoundaryTest.php` fails the build if either changes.
 - **Queued device work** — every device operation writes a `device_commands` row and returns its id; nothing blocks on hardware. A fingerprint capture waits up to 30 seconds for a person, which is why it must never hold a web worker.
 - **Capabilities** — four levels (`confirmed` / `implemented` / `not_implemented` / `unknown`) gate every device action, refusing at the API with 422 before anything is queued. An unproven feature is offered and labelled *"unproven"* rather than being claimed or hidden.
 

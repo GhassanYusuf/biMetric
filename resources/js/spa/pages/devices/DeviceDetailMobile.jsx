@@ -3,9 +3,10 @@ import { Badge, Button, Card, EmptyState, PageHeader, SectionCard } from '../../
 import { FOCUS } from '../../shared/theme';
 import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
 import {
-    CAPABILITY_LEVELS, CapabilityBadge, CommandStatusBadge, CountChips, Fact,
+    CAPABILITY_LEVELS, CapabilityBadge, CommandStatusBadge, CountChips, DeviceError, Fact,
     HealthBadge, RunStatusBadge, commandLabel, formatDuration, shortTime,
 } from './statusParts';
+import { SyncInFlightCard } from './DeviceDetailDesktop';
 
 /*
 | Mobile device detail: tabs instead of columns.
@@ -25,6 +26,7 @@ const TABS = [
 
 export default function DeviceDetailMobile({
     device, runs, commands, history, dispatching,
+    syncRunning, syncProgress, syncStalled,
     canSync, onRefresh, onDispatch, onFullResync, onRetryCommand, onCancelCommand, onBack,
 }) {
     const [tab, setTab] = useState('runs');
@@ -48,6 +50,9 @@ export default function DeviceDetailMobile({
                     {!device.is_active && <Badge tone="amber">Disabled</Badge>}
                 </div>
             </div>
+
+            {/* Same banner and the same words as the desktop screen — rule 5. */}
+            {syncRunning && <SyncInFlightCard progress={syncProgress} stalled={syncStalled} />}
 
             <div className="grid grid-cols-2 gap-3">
                 <Card className="p-4">
@@ -118,7 +123,7 @@ export default function DeviceDetailMobile({
                                 <div className="mt-2 text-xs text-slate-500">
                                     {run.mode} · {formatDuration(run.duration_ms)}
                                 </div>
-                                {run.error && <p className="mt-1.5 text-xs text-rose-600">{run.error}</p>}
+                                <DeviceError error={run.error} className="mt-1.5 text-xs text-rose-600" />
                             </Card>
                         ))}
                     </div>
@@ -142,7 +147,7 @@ export default function DeviceDetailMobile({
                                     <CommandStatusBadge status={c.status} />
                                 </div>
                                 {c.message && <p className="mt-2 text-xs text-slate-600">{c.message}</p>}
-                                {c.error && <p className="mt-1 text-xs text-rose-600">{c.error}</p>}
+                                <DeviceError error={c.error} className="mt-1 text-xs text-rose-600" />
                                 {canSync && (c.can_retry || !c.is_finished) && (
                                     <div className="mt-3 flex gap-2">
                                         {c.can_retry && (

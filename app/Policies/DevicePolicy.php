@@ -32,6 +32,17 @@ class DevicePolicy
         return $user->can('devices.delete');
     }
 
+    /*
+     * Erasing sync history is a class-level, device-less action, so it cannot use
+     * delete() — that one needs an instance. It rides on devices.delete rather than
+     * devices.sync deliberately: an operator who may trigger a sync should not be
+     * able to destroy the record of every sync that came before it.
+     */
+    public function clearHistory(User $user): bool
+    {
+        return $user->can('devices.delete');
+    }
+
     public function sync(User $user, Device $device): bool
     {
         return $user->can('devices.sync');

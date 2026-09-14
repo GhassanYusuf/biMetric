@@ -2,8 +2,10 @@
 
 namespace Zkteco\Protocol\Client;
 
+use Zkteco\Protocol\Capability\Capability;
 use Zkteco\Protocol\Capability\CapabilityResolver;
 use Zkteco\Protocol\Capability\CapabilitySet;
+use Zkteco\Protocol\Contracts\ProgressListener;
 use Zkteco\Protocol\Service\AttendanceService;
 use Zkteco\Protocol\Service\EnrollmentService;
 use Zkteco\Protocol\Service\TemplateService;
@@ -33,9 +35,13 @@ use Zkteco\Protocol\Value\DeviceConfig;
 final class Device
 {
     private ?UserService $users = null;
+
     private ?AttendanceService $attendance = null;
+
     private ?EnrollmentService $enrollment = null;
+
     private ?TemplateService $templates = null;
+
     private ?CapabilitySet $capabilities = null;
 
     public function __construct(
@@ -55,7 +61,8 @@ final class Device
      * Opens a session, runs the callback, always closes — the idiomatic entry point.
      *
      * @template T
-     * @param \Closure(self):T $callback
+     *
+     * @param  \Closure(self):T  $callback
      * @return T
      */
     public static function run(DeviceConfig $config, \Closure $callback, ?CapabilitySet $capabilities = null): mixed
@@ -85,6 +92,23 @@ final class Device
         return $this->client;
     }
 
+    /**
+     * Watches bulk transfers on this device.
+     *
+     * ->onProgress($listener)->attendance()->all() reports byte counts as the table
+     * streams in, which is the only honest basis for a progress bar: the device
+     * declares the total up front and the reassembler counts what arrived.
+     *
+     * Pass null to stop watching. Attach BEFORE the read — see
+     * DeviceClient::onProgress().
+     */
+    public function onProgress(?ProgressListener $listener): self
+    {
+        $this->client->onProgress($listener);
+
+        return $this;
+    }
+
     public function users(): UserService
     {
         return $this->users ??= new UserService($this->client);
@@ -103,6 +127,20 @@ final class Device
     public function templates(): TemplateService
     {
         return $this->templates ??= new TemplateService($this->client);
+    }
+
+    /**
+     * The link's stream, for waiting on several devices in one process.
+     *
+     * Only meaningful on a session held open for realtime listening — see
+     * AttendanceService::listen(). Null means the transport cannot be selected on,
+     * and the caller should poll nextRealtimePunch() instead.
+     *
+     * @return resource|null
+     */
+    public function selectableStream()
+    {
+        return $this->client->selectableStream();
     }
 
     /**
@@ -144,7 +182,7 @@ final class Device
     /** Sets the device clock. Capability-gated: IMPLEMENTED, not confirmed. */
     public function syncTime(?\DateTimeInterface $to = null): void
     {
-        $this->capabilities()->require(\Zkteco\Protocol\Capability\Capability::SET_TIME);
+        $this->capabilities()->require(Capability::SET_TIME);
 
         $this->client->setTime($to ?? new \DateTimeImmutable('now', new \DateTimeZone($this->config()->timezone)));
     }
@@ -152,7 +190,7 @@ final class Device
     /** Reboots the device. Capability-gated and never automatic. */
     public function restart(): void
     {
-        $this->capabilities()->require(\Zkteco\Protocol\Capability\Capability::RESTART);
+        $this->capabilities()->require(Capability::RESTART);
 
         $this->client->restart();
     }

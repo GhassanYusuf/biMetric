@@ -1,8 +1,32 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import laravel from 'laravel-vite-plugin';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+// The dev server must be reachable from other machines on the LAN, because the
+// Laravel server is bound to 0.0.0.0 and operators open the app from their own
+// desks (see APP_URL). laravel-vite-plugin writes public/hot from, in order:
+// server.hmr.host, then server.host, then whatever address Node resolved. Left
+// alone that last branch wins and it is "[::1]" — IPv6 loopback — so every
+// asset URL in the page is unreachable from anywhere but this box.
+//
+// So: bind every interface, and pin the *advertised* host to a real address.
+// VITE_DEV_HOST overrides; otherwise the hostname from APP_URL is used, which
+// is already the address operators type.
+function devServerHost(mode) {
+    const env = loadEnv(mode, process.cwd(), '');
+
+    if (env.VITE_DEV_HOST) {
+        return env.VITE_DEV_HOST;
+    }
+
+    try {
+        return new URL(env.APP_URL).hostname;
+    } catch {
+        return 'localhost';
+    }
+}
+
+export default defineConfig(({ mode }) => ({
     plugins: [
         laravel({
             // Two entries during cut-over: the legacy Inertia app (app.jsx) and
@@ -13,4 +37,12 @@ export default defineConfig({
         }),
         react(),
     ],
-});
+    server: {
+        host: '0.0.0.0',
+        port: 5173,
+        strictPort: true,
+        hmr: {
+            host: devServerHost(mode),
+        },
+    },
+}));

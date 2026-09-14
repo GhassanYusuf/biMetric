@@ -19,13 +19,29 @@ class AttendanceSyncRun extends Model
     use BelongsToTenant;
 
     public const MODE_FULL = 'full';
+
     public const MODE_INCREMENTAL = 'incremental';
 
     public const STATUS_RUNNING = 'running';
+
     public const STATUS_SUCCEEDED = 'succeeded';
+
     public const STATUS_FAILED = 'failed';
+
     /** Completed, but some records could not be decoded or matched. */
     public const STATUS_PARTIAL = 'partial';
+
+    /*
+     * In-flight phases. Distinct from `status`, which is the run's OUTCOME —
+     * a run is `running` for the whole time and passes through both of these.
+     *
+     * They are separate because the two halves fail and feel different: reading is
+     * network-bound and can stall or retry, importing is disk-bound and cannot. A
+     * single bar covering both would sit at 100% for the entire insert.
+     */
+    public const PHASE_READING = 'reading';
+
+    public const PHASE_IMPORTING = 'importing';
 
     protected $fillable = [
         'tenant_id', 'device_id', 'device_command_id', 'mode', 'status',
@@ -33,6 +49,8 @@ class AttendanceSyncRun extends Model
         'records_read', 'records_imported', 'records_duplicate',
         'records_undecodable', 'records_unmatched',
         'watermark_before', 'watermark_after', 'message', 'error',
+        'progress_phase', 'progress_read', 'progress_total', 'progress_unit',
+        'progress_attempt', 'progress_updated_at',
     ];
 
     protected function casts(): array
@@ -49,6 +67,41 @@ class AttendanceSyncRun extends Model
             'records_duplicate' => 'integer',
             'records_undecodable' => 'integer',
             'records_unmatched' => 'integer',
+            'progress_read' => 'integer',
+            'progress_total' => 'integer',
+            'progress_attempt' => 'integer',
+            'progress_updated_at' => 'datetime',
+        ];
+    }
+
+    /**
+     * The in-flight view, or null once the run is over.
+     *
+     * `percent` is null — never 0 — when the device declared no total. Rule 10:
+     * "we were not told how much there is" and "there is none" are different
+     * answers, and a bar that invents a denominator cannot be checked by anyone
+     * looking at it.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function progress(): ?array
+    {
+        if ($this->progress_phase === null) {
+            return null;
+        }
+
+        $total = $this->progress_total;
+
+        return [
+            'phase' => $this->progress_phase,
+            'read' => $this->progress_read,
+            'total' => $total,
+            'unit' => $this->progress_unit,
+            'percent' => $total > 0
+                ? (int) round(min(1.0, $this->progress_read / $total) * 100)
+                : null,
+            'attempt' => $this->progress_attempt,
+            'updated_at' => $this->progress_updated_at?->toIso8601String(),
         ];
     }
 

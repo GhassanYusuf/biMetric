@@ -4,16 +4,21 @@ namespace App\Services\Devices;
 
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\Device;
+use App\Support\DeviceProgress;
 use Illuminate\Support\Facades\Log;
-use Zkteco\Protocol\Capability\CapabilitySet;
-use Zkteco\Protocol\Client\Device as ProtocolDevice;
-use Zkteco\Protocol\Exception\DeviceException;
-use Zkteco\Protocol\Value\DeviceConfig;
+use Promoseven\Biometric\Capability\CapabilitySet;
+use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Codec\AttendanceCodec;
+use Promoseven\Biometric\Codec\RecordBuffer;
+use Promoseven\Biometric\Contracts\ProgressListener;
+use Promoseven\Biometric\Exception\DeviceException;
+use Promoseven\Biometric\Value\DeviceConfig;
+use Promoseven\Biometric\Value\Progress;
 
 /**
  * Adapts the framework-agnostic zkteco-protocol package to this application.
  *
- * This is the ONLY class in the app that imports anything from Zkteco\Protocol.
+ * This is the ONLY class in the app that imports anything from Promoseven\Biometric.
  * Its whole job is translation:
  *
  *   Device (Eloquent)  ->  DeviceConfig (value object)
@@ -39,18 +44,44 @@ class ZktecoDriver implements BiometricDeviceDriver
                 $this->capabilities($device),
             );
         } catch (DeviceException $e) {
-            // Log with app-side identity the library cannot know about, then rethrow
-            // unchanged — callers decide how to present it, and the typed exception
-            // is what lets them distinguish a timeout from an unsupported command.
-            Log::warning('Device operation failed', [
-                'device_id' => $device->id,
-                'device_name' => $device->name,
-                'endpoint' => "{$device->ip_address}:{$device->port}",
-                'exception' => $e::class,
-                'retryable' => $e->isRetryable(),
-                'context' => $e->context(),
-                'message' => $e->getMessage(),
-            ]);
+            $this->logFailure($device, $e);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Logs with app-side identity the library cannot know about.
+     *
+     * The exception is always rethrown unchanged — callers decide how to present it,
+     * and the typed exception is what lets them tell a timeout from an unsupported
+     * command.
+     */
+    private function logFailure(Device $device, DeviceException $e): void
+    {
+        Log::warning('Device operation failed', [
+            'device_id' => $device->id,
+            'device_name' => $device->name,
+            'endpoint' => "{$device->ip_address}:{$device->port}",
+            'exception' => $e::class,
+            'retryable' => $e->isRetryable(),
+            'context' => $e->context(),
+            'message' => $e->getMessage(),
+        ]);
+    }
+
+    /**
+     * Opens a session the caller owns. See the contract — this is for the realtime
+     * listener only; everything else uses run().
+     */
+    public function open(Device $device): ProtocolDevice
+    {
+        $this->guardProtocol($device);
+
+        try {
+            return ProtocolDevice::open($this->configFor($device), $this->capabilities($device));
+        } catch (DeviceException $e) {
+            $this->logFailure($device, $e);
 
             throw $e;
         }
@@ -64,6 +95,83 @@ class ZktecoDriver implements BiometricDeviceDriver
     public function info(Device $device): array
     {
         return $this->run($device, fn (ProtocolDevice $d) => $d->info());
+    }
+
+    /**
+     * Reads the whole attendance table, then decodes it.
+     *
+     * The transfer happens inside one session and the decode happens after it
+     * closes: decoding is pure, and holding a session open through it would keep a
+     * device locked for no reason. The device stamps LOCAL time, so its configured
+     * offset is what the codec is given — see configFor().
+     */
+    public function readAttendance(Device $device, ?callable $onProgress = null): array
+    {
+        $raw = $this->run($device, function (ProtocolDevice $d) use ($onProgress) {
+            if ($onProgress !== null) {
+                $d->onProgress($this->progressAdapter($onProgress));
+            }
+
+            return $d->attendance()->raw();
+        });
+
+        return AttendanceCodec::decode(
+            $raw,
+            $device->timezone ?: config('attendance.device_timezone', '+03:00'),
+        );
+    }
+
+    /**
+     * Turns the library's byte counts into the record counts an operator cares
+     * about, and hands them to app code as a vendor-neutral DeviceProgress.
+     *
+     * THIS IS THE ONLY PLACE THE CONVERSION CAN HAPPEN. The transport honestly
+     * knows only bytes — it is generic over users, attendance and templates. The
+     * app layer must not name AttendanceCodec (rule 8). The driver is the seam
+     * that legitimately knows both, exactly as it already knows how to turn a
+     * Device model into a DeviceConfig.
+     *
+     * The record width is DERIVED, not assumed: this protocol never announces it,
+     * so RecordBuffer::detectRecordSize() infers it from the declared total the
+     * same way the decoder later infers it from the received total. When it cannot
+     * be inferred — a length divisible by none of the known widths — progress is
+     * reported in BYTES rather than in invented records. A percentage that is
+     * honest about its unit beats a record count that is quietly wrong.
+     */
+    private function progressAdapter(callable $onProgress): ProgressListener
+    {
+        return new class($onProgress) implements ProgressListener
+        {
+            public function __construct(private $sink) {}
+
+            public function onProgress(Progress $progress): void
+            {
+                // The 4-byte length prefix is part of the transfer but not part of
+                // any record, so it is excluded from both sides of the ratio.
+                $bodyTotal = max(0, $progress->bytesTotal - 4);
+                $bodyRead = max(0, $progress->bytesRead - 4);
+
+                $width = RecordBuffer::detectRecordSize($bodyTotal, AttendanceCodec::WIDTHS);
+
+                $mapped = $width > 0
+                    ? new DeviceProgress(
+                        $progress->operation,
+                        intdiv($bodyRead, $width),
+                        intdiv($bodyTotal, $width),
+                        DeviceProgress::UNIT_RECORDS,
+                        $progress->attempt,
+                    )
+                    : new DeviceProgress(
+                        $progress->operation,
+                        $progress->bytesRead,
+                        $progress->bytesTotal,
+                        DeviceProgress::UNIT_BYTES,
+                        $progress->attempt,
+                    );
+
+                ($this->sink)($mapped);
+            }
+        };
     }
 
     /**
@@ -121,7 +229,39 @@ class ZktecoDriver implements BiometricDeviceDriver
             commKey: (int) ($device->comm_key ?: 0),
             timeout: (float) config('attendance.device_timeout', 8.0),
             timezone: $device->timezone ?: config('attendance.device_timezone', '+03:00'),
+            receiveBufferBytes: (int) config('attendance.device_receive_buffer', 4 * 1024 * 1024),
+            // Windowed-read stall tolerance. A LAN device never stalls a window, so
+            // the default is harmless there; a device reached over the internet
+            // needs the retries to complete a large table on the UDP path.
+            bulkWindowRetries: (int) config('attendance.device_window_retries', 4),
+            transport: $this->transportFor($device),
         );
+    }
+
+    /**
+     * Chooses UDP or TCP for a device.
+     *
+     * `attendance.device_transport` is 'udp', 'tcp', or 'auto' (default). On 'auto'
+     * a device on the public internet gets TCP and a LAN device gets UDP: UDP is
+     * proven and fast on the LAN, while over the internet it loses bursts and stalls
+     * and only TCP's flow control and retransmission complete a large read reliably.
+     * A single device can be forced either way by setting the config explicitly.
+     */
+    private function transportFor(Device $device): string
+    {
+        $configured = (string) config('attendance.device_transport', 'auto');
+
+        if (in_array($configured, [DeviceConfig::TRANSPORT_UDP, DeviceConfig::TRANSPORT_TCP], true)) {
+            return $configured;
+        }
+
+        $isPublic = filter_var(
+            $device->ip_address,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
+        ) !== false;
+
+        return $isPublic ? DeviceConfig::TRANSPORT_TCP : DeviceConfig::TRANSPORT_UDP;
     }
 
     private function guardProtocol(Device $device): void
@@ -129,8 +269,8 @@ class ZktecoDriver implements BiometricDeviceDriver
         if (! $this->supports($device->protocol)) {
             throw new \InvalidArgumentException(
                 "ZktecoDriver cannot speak protocol '{$device->protocol}' for device {$device->name}. "
-                . 'Direct device operations require the Binary/TCP-IP protocol; CSL HTTP devices are '
-                . 'handled by the web-portal client instead.',
+                .'Direct device operations require the Binary/TCP-IP protocol; CSL HTTP devices are '
+                .'handled by the web-portal client instead.',
             );
         }
     }

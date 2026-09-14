@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { FOCUS } from '../../shared/theme';
 import { Badge, Button, Card, EmptyState, PageHeader, SelectField, Skeleton, TextField } from '../../shared/ui';
 import { Pager, formatPunch, groupByDay, verifyLabel } from './parts';
 
 // Mobile attendance: collapsed filters behind a toggle (they'd otherwise eat the
 // whole first screen), then punches grouped under sticky day headers.
-export default function AttendanceMobile({ rows, devices, filters, onFilter, loading, pagination, onPage }) {
+export default function AttendanceMobile({ rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting }) {
     const [filtersOpen, setFiltersOpen] = useState(false);
     const hasFilters = !!(filters.device_id || filters.from || filters.to);
     const activeCount = [filters.device_id, filters.from, filters.to].filter(Boolean).length;
@@ -16,6 +17,17 @@ export default function AttendanceMobile({ rows, devices, filters, onFilter, loa
     return (
         <div className="space-y-4">
             <PageHeader title="Attendance" compact>
+                {/* Same export as desktop, same filters, same server-side scope. */}
+                <Button
+                    variant="secondary"
+                    className="min-h-[38px] px-3 text-sm"
+                    loading={exporting}
+                    disabled={exporting}
+                    onClick={onExport}
+                    title="Download these punches as a PDF"
+                >
+                    {exporting ? 'Preparing…' : 'PDF'}
+                </Button>
                 <Button
                     variant="secondary"
                     className="min-h-[38px] px-3 text-sm"
@@ -82,20 +94,7 @@ export default function AttendanceMobile({ rows, devices, filters, onFilter, loa
                             </div>
                             <div className="mt-1 space-y-2">
                                 {group.rows.map((log) => (
-                                    <Card key={log.id} className="flex items-center gap-3 p-3.5">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="truncate font-medium text-slate-900">
-                                                {log.employee_name || <span className="text-slate-500">Unmatched</span>}
-                                            </div>
-                                            <div className="truncate text-xs text-slate-500">
-                                                {log.device_name || '—'} · {verifyLabel(log.verify_method)}
-                                                {log.employee_code && <span className="font-mono"> · {log.employee_code}</span>}
-                                            </div>
-                                        </div>
-                                        <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-700">
-                                            {formatPunch(log.punched_at).time}
-                                        </div>
-                                    </Card>
+                                    <PunchCard key={log.id} log={log} onSelect={onSelect} />
                                 ))}
                             </div>
                         </div>
@@ -105,5 +104,49 @@ export default function AttendanceMobile({ rows, devices, filters, onFilter, loa
 
             <Pager pagination={pagination} onPage={onPage} loading={loading} />
         </div>
+    );
+}
+
+/*
+| One punch. Opens the employee behind it, matching the desktop row exactly —
+| same target, same keyboard handling, same "Unmatched has nothing to open".
+|
+| A punch the sync could not attribute to an employee stays inert: a dialog with
+| only a device name in it is worse than a row that does not respond.
+*/
+function PunchCard({ log, onSelect }) {
+    const openable = !!log.employee_id;
+
+    return (
+        <Card
+            role={openable ? 'button' : undefined}
+            tabIndex={openable ? 0 : undefined}
+            aria-label={openable ? `View ${log.employee_name || 'employee'} details` : undefined}
+            onClick={openable ? () => onSelect(log) : undefined}
+            onKeyDown={openable ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onSelect(log);
+                }
+            } : undefined}
+            className={`flex items-center gap-3 p-3.5 ${openable ? `cursor-pointer active:bg-slate-50 ${FOCUS}` : ''}`}
+        >
+            <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-slate-900">
+                    {log.employee_name || (
+                        <span className="text-slate-500" title="This punch is not linked to an employee record">
+                            Unmatched
+                        </span>
+                    )}
+                </div>
+                <div className="truncate text-xs text-slate-500">
+                    {log.device_name || '—'} · {verifyLabel(log.verify_method)}
+                    {log.employee_code && <span className="font-mono"> · {log.employee_code}</span>}
+                </div>
+            </div>
+            <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-700">
+                {formatPunch(log.punched_at).time}
+            </div>
+        </Card>
     );
 }

@@ -1,0 +1,502 @@
+{
+    "label": "camelot-win",
+    "host": "87.237.196.60",
+    "mode": "windowed",
+    "run": 2,
+    "started_at": "2026-09-13T14:52:30+00:00",
+    "granted_rcvbuf": 425984,
+    "result": {
+        "ok": false,
+        "size": 1664804,
+        "got": 65536,
+        "ms": 19501,
+        "windows": [
+            {
+                "start": 0,
+                "want": 16384,
+                "got": 16384,
+                "ms": 100.2
+            },
+            {
+                "start": 16384,
+                "want": 16384,
+                "got": 16384,
+                "ms": 8092.3
+            },
+            {
+                "start": 32768,
+                "want": 16384,
+                "got": 16384,
+                "ms": 164
+            },
+            {
+                "start": 49152,
+                "want": 16384,
+                "got": 16384,
+                "ms": 3130
+            },
+            {
+                "start": 65536,
+                "want": 16384,
+                "got": 0,
+                "err": "UNKNOWN(0)"
+            }
+        ]
+    },
+    "udp_counter_delta": {
+        "InDatagrams": 113,
+        "NoPorts": 18,
+        "OutDatagrams": 48,
+        "IgnoredMulti": 82
+    },
+    "arrivals": [
+        {
+            "t": 2.67,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 1024,
+            "rxq": 0
+        },
+        {
+            "t": 4.651,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 2048,
+            "rxq": 0
+        },
+        {
+            "t": 6.964,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 3072,
+            "rxq": 0
+        },
+        {
+            "t": 9.421,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 4096,
+            "rxq": 0
+        },
+        {
+            "t": 19.437,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 5120,
+            "rxq": 0
+        },
+        {
+            "t": 22.292,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 6144,
+            "rxq": 0
+        },
+        {
+            "t": 27.167,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 7168,
+            "rxq": 0
+        },
+        {
+            "t": 31.261,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 8192,
+            "rxq": 0
+        },
+        {
+            "t": 43.352,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 9216,
+            "rxq": 0
+        },
+        {
+            "t": 48.541,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 10240,
+            "rxq": 0
+        },
+        {
+            "t": 58.281,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 11264,
+            "rxq": 0
+        },
+        {
+            "t": 64.674,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 12288,
+            "rxq": 0
+        },
+        {
+            "t": 71.535,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 13312,
+            "rxq": 0
+        },
+        {
+            "t": 76.8,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 14336,
+            "rxq": 0
+        },
+        {
+            "t": 84.534,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 15360,
+            "rxq": 0
+        },
+        {
+            "t": 88.358,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 16384,
+            "rxq": 960
+        },
+        {
+            "t": 4.514,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 1024,
+            "rxq": 0
+        },
+        {
+            "t": 9.751,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 2048,
+            "rxq": 0
+        },
+        {
+            "t": 16.535,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 3072,
+            "rxq": 0
+        },
+        {
+            "t": 20.52,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 4096,
+            "rxq": 0
+        },
+        {
+            "t": 28.007,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 5120,
+            "rxq": 0
+        },
+        {
+            "t": 32.272,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 6144,
+            "rxq": 0
+        },
+        {
+            "t": 36.745,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 7168,
+            "rxq": 0
+        },
+        {
+            "t": 41.269,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 8192,
+            "rxq": 0
+        },
+        {
+            "t": 45.515,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 9216,
+            "rxq": 0
+        },
+        {
+            "t": 49.511,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 10240,
+            "rxq": 0
+        },
+        {
+            "t": 54.268,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 11264,
+            "rxq": 0
+        },
+        {
+            "t": 68.54,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 12288,
+            "rxq": 0
+        },
+        {
+            "t": 75.624,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 13312,
+            "rxq": 0
+        },
+        {
+            "t": 81.51,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 14336,
+            "rxq": 0
+        },
+        {
+            "t": 86.741,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 15360,
+            "rxq": 0
+        },
+        {
+            "t": 91.263,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 16384,
+            "rxq": 960
+        },
+        {
+            "t": 4.888,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 1024,
+            "rxq": 0
+        },
+        {
+            "t": 10.147,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 2048,
+            "rxq": 0
+        },
+        {
+            "t": 18.146,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 3072,
+            "rxq": 0
+        },
+        {
+            "t": 23.949,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 4096,
+            "rxq": 0
+        },
+        {
+            "t": 29.696,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 5120,
+            "rxq": 0
+        },
+        {
+            "t": 43.428,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 6144,
+            "rxq": 0
+        },
+        {
+            "t": 57.652,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 7168,
+            "rxq": 0
+        },
+        {
+            "t": 63.373,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 8192,
+            "rxq": 0
+        },
+        {
+            "t": 69.148,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 9216,
+            "rxq": 0
+        },
+        {
+            "t": 91.914,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 10240,
+            "rxq": 0
+        },
+        {
+            "t": 104.433,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 11264,
+            "rxq": 0
+        },
+        {
+            "t": 121.889,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 12288,
+            "rxq": 0
+        },
+        {
+            "t": 132.724,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 13312,
+            "rxq": 0
+        },
+        {
+            "t": 140.37,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 14336,
+            "rxq": 0
+        },
+        {
+            "t": 146.153,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 15360,
+            "rxq": 0
+        },
+        {
+            "t": 152.912,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 16384,
+            "rxq": 960
+        },
+        {
+            "t": 6.372,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 1024,
+            "rxq": 0
+        },
+        {
+            "t": 12.421,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 2048,
+            "rxq": 0
+        },
+        {
+            "t": 18.76,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 3072,
+            "rxq": 0
+        },
+        {
+            "t": 25.852,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 4096,
+            "rxq": 0
+        },
+        {
+            "t": 36.605,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 5120,
+            "rxq": 0
+        },
+        {
+            "t": 45.114,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 6144,
+            "rxq": 0
+        },
+        {
+            "t": 57.576,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 7168,
+            "rxq": 0
+        },
+        {
+            "t": 64.808,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 8192,
+            "rxq": 0
+        },
+        {
+            "t": 83.66,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 9216,
+            "rxq": 0
+        },
+        {
+            "t": 101.807,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 10240,
+            "rxq": 0
+        },
+        {
+            "t": 114.237,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 11264,
+            "rxq": 0
+        },
+        {
+            "t": 127.87,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 12288,
+            "rxq": 0
+        },
+        {
+            "t": 134.951,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 13312,
+            "rxq": 0
+        },
+        {
+            "t": 144.39,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 14336,
+            "rxq": 0
+        },
+        {
+            "t": 156.093,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 15360,
+            "rxq": 0
+        },
+        {
+            "t": 170.612,
+            "bytes": 1024,
+            "datagram": 1032,
+            "cum": 16384,
+            "rxq": 960
+        }
+    ]
+}

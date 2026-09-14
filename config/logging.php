@@ -73,6 +73,48 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+        |--------------------------------------------------------------------
+        | device
+        |--------------------------------------------------------------------
+        |
+        | Every biometric device/protocol failure lands here, separated from
+        | general application noise so "the terminal misbehaved again" is one
+        | file to read rather than a grep across laravel.log.
+        |
+        | Written to only through App\Support\DeviceErrorReporter, which
+        | guarantees the entry carries the device, the operation and the
+        | exception's structured context() — the three things that make a
+        | protocol bug reproducible.
+        |
+        */
+        'device' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/device.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DEVICE_DAYS', 30),
+            'replace_placeholders' => true,
+        ],
+
+        /*
+        |--------------------------------------------------------------------
+        | client
+        |--------------------------------------------------------------------
+        |
+        | Browser-side crashes reported by the SPA's ErrorBoundary and global
+        | handlers via POST /api/client-errors. Separate from `device` because
+        | the audiences differ: this one answers "what did the operator's
+        | screen do", not "what did the terminal say".
+        |
+        */
+        'client' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/client.log'),
+            'level' => 'debug',
+            'days' => env('LOG_CLIENT_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

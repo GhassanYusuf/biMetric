@@ -3,8 +3,8 @@
 namespace Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Zkteco\Protocol\Capability\Capability;
-use Zkteco\Protocol\Capability\CapabilitySet;
+use Promoseven\Biometric\Capability\Capability;
+use Promoseven\Biometric\Capability\CapabilitySet;
 
 /**
  * The capability model.
@@ -103,7 +103,7 @@ class CapabilityTest extends TestCase
             $this->assertFalse(
                 $set->isConfirmed($key),
                 "{$key} is marked confirmed. Promote it only when a real device has proved it, "
-                . 'and say which device and firmware in the commit message.',
+                .'and say which device and firmware in the commit message.',
             );
             $this->assertTrue($set->supports($key), "{$key} should still be offered, labelled unproven");
         }
@@ -114,7 +114,7 @@ class CapabilityTest extends TestCase
         $set = CapabilitySet::defaults();
 
         foreach ([Capability::VERIFY_MODE, Capability::ACCESS_SCHEDULES, Capability::ANTI_PASSBACK,
-                  Capability::DURESS, Capability::RELAY] as $key) {
+            Capability::DURESS, Capability::RELAY] as $key) {
             $this->assertSame(
                 Capability::UNKNOWN,
                 $set->level($key),
@@ -128,7 +128,7 @@ class CapabilityTest extends TestCase
         $set = CapabilitySet::defaults();
 
         foreach ([Capability::PING, Capability::DEVICE_INFO, Capability::USER_READ,
-                  Capability::ATTENDANCE_READ, Capability::TEMPLATE_TABLE_READ] as $key) {
+            Capability::ATTENDANCE_READ, Capability::TEMPLATE_TABLE_READ] as $key) {
             $this->assertTrue($set->isConfirmed($key), "{$key} is exercised on real hardware");
         }
     }

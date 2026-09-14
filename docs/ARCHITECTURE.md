@@ -106,9 +106,20 @@ docs/
 
 ## 6. Cut-over strategy
 Build API + new SPA alongside the current Inertia app against the same DB. Ship
-per module. Retire Inertia screens as their API-backed replacements land. The
-ZKTeco service layer (`app/Services/Zkteco`) is reused unchanged — it is
-hardware-verified.
+per module. Retire Inertia screens as their API-backed replacements land.
+
+**Status: complete for every business module.** Devices, Employees, Attendance,
+Holidays and the dashboard are SPA-only; their Inertia counterparts are deleted and
+`/` redirects to `/app`. Auth and profile are the remaining Inertia surface,
+because the SPA has no password-reset or account-deletion screen yet.
+
+The original plan reused `app/Services/Zkteco` unchanged, on the grounds that it
+was hardware-verified. That held only until the protocol became a library: keeping
+it meant maintaining two implementations of one protocol, with the older one still
+serving live traffic. It has been retired in favour of
+`promoseven/biometric-protocol` behind `BiometricDeviceDriver` — the hardware knowledge
+was preserved by moving the capture fixtures and codec tests into the library, not
+by keeping the code that produced them.
 
 ## 7. Build order
 Phases 1→9 per the standards. This document is Phase 1.

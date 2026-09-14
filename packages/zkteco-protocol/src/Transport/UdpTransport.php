@@ -2,6 +2,7 @@
 
 namespace Zkteco\Protocol\Transport;
 
+use Zkteco\Protocol\Contracts\HasReceiveBuffer;
 use Zkteco\Protocol\Contracts\Transport;
 use Zkteco\Protocol\Exception\ConnectionException;
 use Zkteco\Protocol\Exception\TimeoutException;
@@ -21,18 +22,34 @@ use Zkteco\Protocol\Value\Reply;
  * datagram is dropped. This class does NOT retry individual datagrams; retrying
  * the whole request is simpler and safe, because reading from the device never
  * consumes or deletes anything. That retry lives in BulkReader.
+ *
+ * The other half of that defence is the socket receive buffer, raised from the
+ * 64 KB default to hold a whole table — see enlargeReceiveBuffer(), which is the
+ * single most effective fix for short transfers on this protocol.
  */
-final class UdpTransport implements Transport
+final class UdpTransport implements HasReceiveBuffer, Transport
 {
     /** @var resource|null */
     private $socket = null;
 
+    /**
+     * The same socket as $socket, imported as an ext-sockets handle.
+     *
+     * Held as a property, not a local, ON PURPOSE. socket_import_stream() returns a
+     * handle that SHARES the underlying descriptor; letting it fall out of scope
+     * has historically closed the stream with it. Keeping it alive for the lifetime
+     * of the connection avoids depending on which PHP version fixed that.
+     */
+    private ?\Socket $rawSocket = null;
+
+    /** What the OS actually granted for SO_RCVBUF, or null when unknown. */
+    private ?int $grantedReceiveBuffer = null;
+
     private int $sessionId = 0;
+
     private int $replyId = 0;
 
-    public function __construct(private readonly DeviceConfig $config)
-    {
-    }
+    public function __construct(private readonly DeviceConfig $config) {}
 
     public function open(): void
     {
@@ -58,10 +75,80 @@ final class UdpTransport implements Transport
         $this->socket = $socket;
         $this->sessionId = 0;
         $this->replyId = 0;
+
+        $this->enlargeReceiveBuffer();
+    }
+
+    /**
+     * Asks the OS for a receive buffer big enough to hold a whole table.
+     *
+     * ==========================================================================
+     *  THE MOST EFFECTIVE FIX AVAILABLE FOR "Incomplete transfer" — MEASURED
+     * ==========================================================================
+     *
+     * The OS default is 64 KB. One attendance table on an F18 is 412 KB. This
+     * protocol has no flow control and the device does not wait for us, so any
+     * pause longer than it takes 64 KB to arrive drops datagrams permanently — the
+     * kernel discards them before PHP ever sees them.
+     *
+     * With a 4 MB buffer the entire transfer fits, so a stall costs latency rather
+     * than data, and the reader can afford to do work between chunks.
+     *
+     * BEST EFFORT, BY DESIGN:
+     *
+     *  - ext-sockets is a SUGGEST, not a require. Without it this returns silently
+     *    and the library behaves exactly as it did before — correct, just more
+     *    prone to short transfers. Never make this a hard dependency; the package
+     *    is meant to install anywhere.
+     *  - The size is a request. Linux halves it and clamps to
+     *    net.core.rmem_max (raise that if the granted value comes back small);
+     *    Windows grants it outright. Read back what was actually given rather than
+     *    assuming, which is why grantedReceiveBuffer exists.
+     */
+    private function enlargeReceiveBuffer(): void
+    {
+        $this->rawSocket = null;
+        $this->grantedReceiveBuffer = null;
+
+        if (! function_exists('socket_import_stream') || $this->config->receiveBufferBytes <= 0) {
+            return;
+        }
+
+        $raw = @socket_import_stream($this->socket);
+
+        if (! $raw instanceof \Socket) {
+            return;
+        }
+
+        // Suppressed rather than thrown: a device we can talk to with a small
+        // buffer is strictly better than one we refuse to talk to at all.
+        @socket_set_option($raw, SOL_SOCKET, SO_RCVBUF, $this->config->receiveBufferBytes);
+
+        $granted = @socket_get_option($raw, SOL_SOCKET, SO_RCVBUF);
+
+        $this->rawSocket = $raw;
+        $this->grantedReceiveBuffer = is_int($granted) ? $granted : null;
+    }
+
+    /**
+     * Receive buffer the OS actually granted, or null if it could not be set.
+     *
+     * Null means ext-sockets is missing and the socket is on the platform default
+     * — worth surfacing when diagnosing repeated short transfers, because it is the
+     * difference between 64 KB and 4 MB of headroom.
+     */
+    public function receiveBufferBytes(): ?int
+    {
+        return $this->grantedReceiveBuffer;
     }
 
     public function close(): void
     {
+        // Drop the imported handle first — it shares this descriptor, and holding
+        // it past fclose() leaves a stale reference to a closed socket.
+        $this->rawSocket = null;
+        $this->grantedReceiveBuffer = null;
+
         if ($this->socket !== null) {
             fclose($this->socket);
             $this->socket = null;
@@ -163,8 +250,8 @@ final class UdpTransport implements Transport
         return $this->config;
     }
 
-    /** @return resource|null Raw socket, for stream_select() over several devices. */
-    public function socket()
+    /** @return resource|null The UDP socket, for stream_select() over several devices. */
+    public function selectableStream()
     {
         return $this->socket;
     }

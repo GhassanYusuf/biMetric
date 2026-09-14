@@ -3,9 +3,9 @@
 namespace Tests\Unit\Protocol;
 
 use PHPUnit\Framework\TestCase;
-use Zkteco\Protocol\Codec\AttendanceCodec;
-use Zkteco\Protocol\Codec\RecordBuffer;
-use Zkteco\Protocol\Codec\Timestamp;
+use Promoseven\Biometric\Codec\AttendanceCodec;
+use Promoseven\Biometric\Codec\RecordBuffer;
+use Promoseven\Biometric\Codec\Timestamp;
 
 /**
  * The attendance decoder, driven by synthesised buffers rather than a device.
@@ -37,7 +37,7 @@ class AttendanceCodecTest extends TestCase
     /** Prefixes the 4-byte length field the bulk envelope carries. */
     private function envelope(string $body): string
     {
-        return pack('V', strlen($body)) . $body;
+        return pack('V', strlen($body)).$body;
     }
 
     public function test_it_decodes_a_forty_byte_record(): void
@@ -56,8 +56,8 @@ class AttendanceCodecTest extends TestCase
     {
         $raw = $this->envelope(
             $this->record40(1, '100', '2026-07-26 08:00:00')
-            . $this->record40(2, '101', '2026-07-26 08:05:03')   // single-digit second
-            . $this->record40(3, '102', '2026-07-26 17:09:00'),  // single-digit minute
+            .$this->record40(2, '101', '2026-07-26 08:05:03')   // single-digit second
+            .$this->record40(3, '102', '2026-07-26 17:09:00'),  // single-digit minute
         );
 
         $records = AttendanceCodec::decode($raw, self::TZ);
@@ -117,7 +117,7 @@ class AttendanceCodecTest extends TestCase
     public function test_an_undecodable_record_is_kept_as_raw_hex_rather_than_dropped(): void
     {
         $bad = str_repeat("\0", 40);   // zero timestamp → undecodable
-        $raw = $this->envelope($this->record40(1, '261', '2026-07-26 09:00:00') . $bad);
+        $raw = $this->envelope($this->record40(1, '261', '2026-07-26 09:00:00').$bad);
 
         $records = AttendanceCodec::decode($raw, self::TZ);
 
@@ -131,7 +131,7 @@ class AttendanceCodecTest extends TestCase
     {
         $raw = $this->envelope(
             str_repeat("\0", 40)
-            . $this->record40(9, '999', '2026-07-26 11:11:11'),
+            .$this->record40(9, '999', '2026-07-26 11:11:11'),
         );
 
         $records = AttendanceCodec::decode($raw, self::TZ);

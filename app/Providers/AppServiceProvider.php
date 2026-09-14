@@ -2,12 +2,14 @@
 
 namespace App\Providers;
 
+use App\Contracts\BiometricDeviceDriver;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Models\Holiday;
 use App\Models\User;
 use App\Observers\AuditObserver;
+use App\Services\Devices\DeviceDriverManager;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -22,7 +24,7 @@ class AppServiceProvider extends ServiceProvider
         /*
          * Bind the biometric driver contract.
          *
-         * App code depends on BiometricDeviceDriver, never on Zkteco\Protocol
+         * App code depends on BiometricDeviceDriver, never on Promoseven\Biometric
          * directly — that is what keeps the protocol package portable to other
          * platforms instead of quietly re-acquiring Laravel assumptions.
          *
@@ -30,8 +32,8 @@ class AppServiceProvider extends ServiceProvider
          * not editing a controller.
          */
         $this->app->singleton(
-            \App\Contracts\BiometricDeviceDriver::class,
-            \App\Services\Devices\ZktecoDriver::class,
+            BiometricDeviceDriver::class,
+            DeviceDriverManager::class,
         );
     }
 

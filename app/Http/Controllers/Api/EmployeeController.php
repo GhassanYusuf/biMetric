@@ -9,18 +9,27 @@ use App\Http\Resources\EmployeeResource;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
-use App\Services\Zkteco\DeviceSyncService;
-use App\Services\Zkteco\ZktecoException;
+use App\Services\Devices\DeviceUserSyncService;
+use App\Services\Devices\EnrollmentOrchestratorService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Promoseven\Biometric\Exception\DeviceException;
 
 class EmployeeController extends Controller
 {
-    public function __construct(private readonly DeviceSyncService $sync)
-    {
-    }
+    /**
+     * The device actions below run INLINE rather than through DeviceCommandBus,
+     * because each is triggered by an operator standing at the terminal with the
+     * employee and watching for the result — a queue receipt is useless to them.
+     * The queued equivalents exist for automation and bulk work; see
+     * DeviceEnrollmentController.
+     */
+    public function __construct(
+        private readonly DeviceUserSyncService $users,
+        private readonly EnrollmentOrchestratorService $enrollment,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -28,9 +37,12 @@ class EmployeeController extends Controller
 
         $employees = Employee::query()
             ->withCount('attendanceLogs')
-            ->with('department:id,name')
+            // `deviceMaps` answers "enrolled on which terminal?" — the flat
+            // enrollment columns on employees cannot, once there is more than
+            // one device.
+            ->with(['department:id,name', 'deviceMaps.device:id,name'])
             ->when($request->filled('search'), function ($q) use ($request) {
-                $term = '%' . $request->string('search')->trim() . '%';
+                $term = '%'.$request->string('search')->trim().'%';
                 $q->where(function ($sub) use ($term) {
                     $sub->where('name', 'like', $term)
                         ->orWhere('employee_code', 'like', $term)
@@ -109,7 +121,7 @@ class EmployeeController extends Controller
     {
         $this->authorize('view', $employee);
 
-        $employee->loadCount('attendanceLogs')->load('department:id,name');
+        $employee->loadCount('attendanceLogs')->load(['department:id,name', 'deviceMaps.device:id,name']);
 
         return ApiResponse::success(new EmployeeResource($employee), 'Employee retrieved.');
     }
@@ -161,10 +173,10 @@ class EmployeeController extends Controller
         $this->authorize('pushToDevice', $employee);
 
         try {
-            $this->sync->pushEmployeeToDevice($device, $employee);
+            $result = $this->users->pushEmployee($device, $employee);
 
-            return ApiResponse::success(null, "{$employee->name} enrolled on {$device->name}.");
-        } catch (ZktecoException $e) {
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (DeviceException $e) {
             return ApiResponse::error("Failed to push to device: {$e->getMessage()}", [], 502);
         }
     }
@@ -174,10 +186,10 @@ class EmployeeController extends Controller
         $this->authorize('pushToDevice', $employee);
 
         try {
-            $this->sync->removeEmployeeFromDevice($device, $employee);
+            $result = $this->users->removeEmployee($device, $employee);
 
-            return ApiResponse::success(null, "{$employee->name} removed from {$device->name}.");
-        } catch (ZktecoException $e) {
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (DeviceException $e) {
             return ApiResponse::error("Failed to remove from device: {$e->getMessage()}", [], 502);
         }
     }
@@ -195,10 +207,10 @@ class EmployeeController extends Controller
 
         try {
             return ApiResponse::success(
-                $this->sync->readEmployeeEnrollment($device, $employee),
+                $this->users->readEnrollment($device, $employee),
                 "Read {$employee->name}'s enrollment from {$device->name}.",
             );
-        } catch (ZktecoException $e) {
+        } catch (DeviceException $e) {
             return ApiResponse::error("Could not read enrollment: {$e->getMessage()}", [], 502);
         }
     }
@@ -221,23 +233,17 @@ class EmployeeController extends Controller
         set_time_limit(90);
 
         try {
-            $result = $this->sync->enrollFingerprint($device, $employee, (int) $data['finger_index']);
+            $result = $this->enrollment->captureFingerprint($device, $employee, (int) $data['finger_index']);
 
-            if (! ($result['success'] ?? false)) {
-                // A capture error is the device's answer, not a transport fault:
-                // report it as a failed operation rather than a 5xx.
-                return ApiResponse::error(
-                    "The device reported a capture error (code {$result['error_code']}). Ask them to place the finger again.",
-                    [],
-                    422,
-                );
+            // A capture that did not produce a template is the DEVICE'S answer —
+            // nobody presented a finger, or it could not be read — not a transport
+            // fault. 422 with the service's own wording, never a 5xx.
+            if (! ($result['raw']['success'] ?? false)) {
+                return ApiResponse::error($result['message'], $result['raw'], 422);
             }
 
-            return ApiResponse::success(
-                $result,
-                "Fingerprint captured for {$employee->name} on {$device->name}.",
-            );
-        } catch (ZktecoException $e) {
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (DeviceException $e) {
             return ApiResponse::error("Fingerprint enrollment failed: {$e->getMessage()}", [], 502);
         }
     }
@@ -254,21 +260,16 @@ class EmployeeController extends Controller
         set_time_limit(90);
 
         try {
-            $result = $this->sync->clearCard($device, $employee);
+            $result = $this->enrollment->clearCard($device, $employee);
 
-            if (! $result['cleared']) {
-                return ApiResponse::error(
-                    "{$employee->name} has no card on {$device->name}, so there was nothing to remove.",
-                    [],
-                    422,
-                );
+            // No card to clear is a 422 with the service's wording: the request was
+            // understood, there was simply nothing to do.
+            if (($result['raw']['previous_card'] ?? null) === null) {
+                return ApiResponse::error($result['message'], $result['raw'], 422);
             }
 
-            return ApiResponse::success(
-                $result,
-                "Removed card #{$result['previous_card']} from {$employee->name} on {$device->name}.",
-            );
-        } catch (ZktecoException $e) {
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (DeviceException $e) {
             return ApiResponse::error("Could not remove the card: {$e->getMessage()}", [], 502);
         }
     }
@@ -289,26 +290,10 @@ class EmployeeController extends Controller
         set_time_limit(90);
 
         try {
-            $result = $this->sync->deleteFingerprint($device, $employee, $slot);
+            $result = $this->enrollment->deleteFingerprint($device, $employee, $slot);
 
-            if (! $result['deleted']) {
-                return ApiResponse::error(
-                    "Slot {$slot} is not enrolled for {$employee->name} on {$device->name}, so there was nothing to delete.",
-                    [],
-                    422,
-                );
-            }
-
-            $remaining = count($result['slots']);
-
-            return ApiResponse::success(
-                $result,
-                "Deleted slot {$slot} for {$employee->name}. "
-                    . ($remaining === 0
-                        ? 'They now have no fingerprints on this terminal.'
-                        : "{$remaining} fingerprint(s) remain."),
-            );
-        } catch (ZktecoException $e) {
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (DeviceException $e) {
             return ApiResponse::error("Could not delete the fingerprint: {$e->getMessage()}", [], 502);
         }
     }
@@ -326,13 +311,16 @@ class EmployeeController extends Controller
         set_time_limit(90);
 
         try {
-            $result = $this->sync->enrollCard($device, $employee);
+            $result = $this->enrollment->captureCard($device, $employee);
 
-            return ApiResponse::success(
-                $result,
-                "Card enrolled for {$employee->name} on {$device->name} (card #{$result['card_number']}).",
-            );
-        } catch (ZktecoException $e) {
+            if (! ($result['raw']['success'] ?? false)) {
+                // Nobody tapped a card within the window. The device answered; it
+                // just answered "nothing happened".
+                return ApiResponse::error($result['message'], $result['raw'], 422);
+            }
+
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (DeviceException $e) {
             return ApiResponse::error("Card enrollment failed: {$e->getMessage()}", [], 502);
         }
     }

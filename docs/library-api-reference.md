@@ -1,16 +1,24 @@
 # Library API reference
 
-`Zkteco\Protocol` — 31 classes. This documents the public surface; the internals
+`Promoseven\Biometric` — 31 classes. This documents the public surface; the internals
 (`Transport`, `Session`, `Codec`, `Packet`) are documented in
 [protocol-overview.md](protocol-overview.md) and normally not called directly.
 
 ---
 
+## Two families, two front doors
+
+This library speaks **two unrelated protocols**. Everything below documents the
+ZKTeco **standalone** family (`Promoseven\Biometric\Protocol`, `Client\Device`)
+unless it says otherwise. The **C3 / PullSDK** family lives under
+`Promoseven\Biometric\C3` and shares no frame, checksum, session model or command
+constant with it — see "`C3\Client\Panel`" at the end of this file.
+
 ## `Client\Device` — the front door
 
 ```php
-use Zkteco\Protocol\Client\Device;
-use Zkteco\Protocol\Value\DeviceConfig;
+use Promoseven\Biometric\Client\Device;
+use Promoseven\Biometric\Value\DeviceConfig;
 ```
 
 ### Lifecycle
@@ -271,7 +279,7 @@ matching on message text. See [error-handling.md](error-handling.md).
 
 | Class | |
 |---|---|
-| `DeviceConfig` | `host`, `port = 4370`, `commKey = 0`, `timeout = 8.0`, `timezone = '+03:00'` |
+| `DeviceConfig` | `host`, `port = 4370`, `commKey = 0`, `timeout = 8.0`, `timezone = '+03:00'`, `receiveBufferBytes = 4 MB`, `bulkWindowRetries = 4` (times a stalled windowed-read window is re-requested before the transfer is abandoned; raise for devices reached over the internet, `0` for pre-2.1.0 behaviour), `transport = 'udp'` (`'udp'`/`'tcp'`; TCP speaks the same commands inside the 8-byte TCP frame — see `TcpTransport` — with flow control and retransmission, for devices reached over the internet) |
 | `DeviceUser` | `uid`, `userId`, `name`, `privilege`, `cardNumber`, `fingerSlots`; plus `hasCard()`, `fingerprintCount()`, `cardLooksLikeSentinel()` |
 | `Reply` | a parsed response: command, session, counter, payload |
 | `EnrollmentResult` | above |
@@ -284,3 +292,147 @@ distinction as `TemplateService`.
 appears on a real employee record. We do not know whether the device means "no
 card", "read error", or a genuine number, so it is surfaced as suspect rather than
 trusted.
+
+## Progress on bulk transfers
+
+`Device::onProgress(?ProgressListener)` attaches a listener that receives a
+`Value\Progress` while a bulk table streams in.
+
+```php
+Device::run($config, function (Device $d) use ($listener) {
+    $d->onProgress($listener);
+
+    return $d->attendance()->raw();
+});
+```
+
+`Progress` carries `operation` (`attendance` / `users` / `templates`), `bytesRead`,
+`bytesTotal`, and `attempt`. `percent()` returns **null**, not 0, when the device
+declared no total — a small table arrives inline with no `CMD_PREPARE_DATA` and
+therefore no announced size.
+
+Progress is in **bytes**, deliberately. The reader is generic over three tables and
+this protocol never announces a record width; deriving records is the caller's job
+(`RecordBuffer::detectRecordSize()` against the declared total).
+
+### The listener contract is strict, for a measured reason
+
+- **Called only from idle windows** — after three consecutive silent polls, never
+  while chunks are arriving.
+- **Must not throw.** What escapes is swallowed, but do not rely on that.
+- **Must be fast, and must throttle anything that writes.**
+
+Reporting per chunk was measured to destroy transfers outright: 0 of 3 completed
+with a listener doing one throttled database write per event, against 6 of 6 with
+none attached. UDP has no flow control, so time spent in the loop is data lost. See
+`BulkReader::emit()` and [attendance-sync-flow.md](attendance-sync-flow.md).
+
+**On the windowed path the contract relaxes, and you get more events.** When the
+device stages the table (`CMD_PREPARE_BUFFER`) the library requests one 16 KB
+window at a time, so nothing is in flight while the listener runs and progress is
+reported **once per window** rather than only during proven silence. A listener
+still must not throw, but it no longer has to be quick. Callers cannot choose the
+path — it is negotiated per read — so **write every listener to the strict contract
+anyway**; the relaxed one is a bonus, not a guarantee.
+
+## Windowed bulk reads
+
+Nothing in the public API changes. `BulkReader` negotiates per read: it asks
+`CMD_PREPARE_BUFFER` for the table it wants, uses the flow-controlled path if the
+device stages it, and falls back to the free-running push envelope otherwise.
+
+What a **reuser** needs to know:
+
+- A custom `Transport` needs no changes. The negotiation rides on `send()`.
+- Implement `Contracts\SupportsRawDrain` on a datagram transport if you want the
+  faster reassembly loop (payload without a `Reply` per datagram). It is optional
+  in exactly the way `HasReceiveBuffer` is — skip it and the reader uses
+  `readUnsolicited()`.
+- Support is **per table**, not per device. Do not cache the outcome.
+- A stalled window raises `ProtocolException` with `window_offset` and
+  `window_bytes` in its context. It never returns a short table.
+
+See [protocol-overview.md](protocol-overview.md#windowed-reads-the-flow-controlled-alternative-confirmed-f22)
+for the wire format and the measurements.
+
+## `C3\Client\Panel` — the front door for access-control panels
+
+A different protocol family: ZKTeco **C3 / PullSDK**, spoken by inBIO and C3 access
+panels and by the TF1700. TCP 4370 only, `AA 01 … 55` framing, CRC-16/ARC.
+
+**Read-only by construction.** There is no write method on this class. Enrollment,
+`SetDeviceData` and the door relay (`CONTROL_DEVICE`, `0x05`) are unbuilt on
+purpose — see rule 16 on why a door relay is not probed casually.
+
+```php
+$panel = new Panel(new DeviceConfig(host: '192.168.7.61', timezone: '+03:00'), 'inBIO460');
+$panel->open();
+try {
+    $panel->info();                  // array<string,string> of named parameters
+    $panel->catalogue();             // C3\Codec\Catalogue — the panel's own schema
+    $panel->readTable('transaction'); // list<array<string,int|string>>
+    $panel->readAttendance($onProgress); // the shared attendance record shape
+} finally {
+    $panel->close();
+}
+```
+
+| Method | Notes |
+|---|---|
+| `open()` / `close()` | The model decides the session dialect; selection happens once, in the constructor. |
+| `info()` | Named parameters. A panel that does not know one omits it, so ask for all. |
+| `catalogue()` | The panel describes its own schema. **Table and field indexes are read, never hard-coded** — the inBIO460 reports 12 tables, the TF1700 reports 11. Cached per session. |
+| `readTable()` | Handles both answers — inline rows, or a staged read. Callers do not need to know which. |
+| `readAttendance()` | `transaction` decoded into the same record shape the standalone family returns, so one consumer serves both. |
+
+### The staged read — `C3\Protocol\BufferedReader`
+
+`GET_DATA` on a populated table stages its answer rather than returning it:
+**`0x0D` PREPARE_DATA → `0x0E` DATA (repeated) → `0x0F` FREE_DATA**.
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | compression flag, `0` = raw |
+| 1 | 4 | `datalen` — bytes staged |
+| 5 | 4 | `oriLen` — length after decompression |
+| 9 | 4 | **CRC-32/ISO-HDLC** over the assembled payload |
+| 13 | 4 | `packageLen` — most the device puts in one reply |
+
+Each `0x0E` carries a **4-byte little-endian offset and nothing else**; the reply
+echoes it back, then the chunk. The offset is a running byte count, advanced by
+bytes actually received. `0x0F` takes no argument and is sent on every exit path.
+
+**The CRC is why you can trust the result.** A wrong pull loop fails the checksum
+instead of returning a plausible half-table, so `pull()` throws rather than hand
+back a short read. No public C3 reimplementation has this path.
+
+### `C3\Codec\Timestamp`
+
+**Not** the standalone family's `Codec\Timestamp` and not a unix epoch. A mixed
+radix with a 31-day month:
+
+```
+second = t % 60; minute = (t/60) % 60; hour = (t/3600) % 24;
+day = (t/86400) % 31 + 1; month = (…) % 12 + 1; year = … + 2000
+```
+
+Panels stamp **LOCAL** time and say nothing about the zone, so pass one. Anything
+that will not decode returns `null` — never an epoch, never midnight.
+
+### `C3\Model\*` — per-model behaviour
+
+| Class | Panel | Session |
+|---|---|---|
+| `InBio460` | inBIO460 | Refuses both connect forms; runs session-less. Sends nothing. |
+| `Tf1700` | TF1700 | **Requires `CONNECT_SESSION_LESS` (0x01).** |
+| `GenericPanel` | anything else | Asks for session-less, tolerates refusal. Confirms no capability. |
+
+`PanelModelFactory::for($name)` is the single selection point. Each model class
+owns its own name match and its own `CapabilitySet`, so a model identifier never
+appears outside the file named for it.
+
+**The TF1700 trap, in full.** Without `0x01` that panel prefixes every reply with
+four session bytes. A session-less reader is then shifted four bytes on every
+payload: `~SerialNumber` disappears and `GET_DATA` answers a well-formed `0xC8`
+with ten useless bytes. **It does not error — it returns zero records**, so a panel
+holding 21,005 rows reports as reachable, healthy and empty.

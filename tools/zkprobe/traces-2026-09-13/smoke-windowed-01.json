@@ -1,0 +1,29 @@
+{
+    "label": "smoke",
+    "host": "87.237.196.60",
+    "mode": "windowed",
+    "run": 1,
+    "started_at": "2026-09-13T14:49:33+00:00",
+    "granted_rcvbuf": 425984,
+    "result": {
+        "ok": false,
+        "size": 1664804,
+        "got": 0,
+        "ms": 10052,
+        "windows": [
+            {
+                "start": 0,
+                "want": 16384,
+                "got": 0,
+                "err": "UNKNOWN(0)"
+            }
+        ]
+    },
+    "udp_counter_delta": {
+        "InDatagrams": 5,
+        "NoPorts": 682,
+        "OutDatagrams": 6,
+        "IgnoredMulti": 57
+    },
+    "arrivals": []
+}

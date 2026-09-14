@@ -1,0 +1,77 @@
+{
+    "label": "inbio-info",
+    "host": "192.168.7.60",
+    "port": 4370,
+    "protocol": "c3-pullsdk-tcp",
+    "started_at": "2026-09-14T12:31:53+00:00",
+    "steps": [
+        {
+            "step": "tcp connect",
+            "ok": true,
+            "ms": 1,
+            "error": null
+        },
+        {
+            "step": "connect probe (0x76)",
+            "ok": true,
+            "command": 200,
+            "command_name": "OK (0xC8)",
+            "declared_size": 4,
+            "received": 7,
+            "raw": "aa00c804003611000017c555",
+            "payload_hex": "36110000",
+            "ms": 5,
+            "sent_hex": "aa01760000e02655"
+        },
+        {
+            "step": "connect probe (0x01)",
+            "ok": true,
+            "command": 200,
+            "command_name": "OK (0xC8)",
+            "declared_size": 0,
+            "received": 3,
+            "raw": "aa00c8000081fe55",
+            "payload_hex": "",
+            "ms": 23.1,
+            "sent_hex": "aa01010000503c55"
+        },
+        {
+            "step": "getparam (0x04)",
+            "ok": true,
+            "command": 200,
+            "command_name": "OK (0xC8)",
+            "declared_size": 164,
+            "received": 167,
+            "raw": "aa00c8a4007e53657269616c4e756d6265723d45534b353234323030303030392c4c6f636b436f756e743d312c417578496e436f756e743d302c4175784f7574436f756e743d302c4669726d5665723d56657220362e36342e30303133204f637420313620323031382c7e4465766963654e616d653d5446313730302c4950416464726573733d3139322e3136382e372e36302c4d41433d30303a31373a36313a31303a39363a4644ed7c55",
+            "payload_hex": "7e53657269616c4e756d6265723d45534b353234323030303030392c4c6f636b436f756e743d312c417578496e436f756e743d302c4175784f7574436f756e743d302c4669726d5665723d56657220362e36342e30303133204f637420313620323031382c7e4465766963654e616d653d5446313730302c4950416464726573733d3139322e3136382e372e36302c4d41433d30303a31373a36313a31303a39363a4644",
+            "ms": 304,
+            "sent_hex": "aa01045b007e53657269616c4e756d6265722c4c6f636b436f756e742c417578496e436f756e742c4175784f7574436f756e742c4669726d5665722c4465766963654e616d652c7e4465766963654e616d652c4950416464726573732c4d414376ab55"
+        },
+        {
+            "step": "parsed parameters",
+            "ok": true,
+            "values": {
+                "~SerialNumber": "ESK5242000009",
+                "LockCount": "1",
+                "AuxInCount": "0",
+                "AuxOutCount": "0",
+                "FirmVer": "Ver 6.64.0013 Oct 16 2018",
+                "~DeviceName": "TF1700",
+                "IPAddress": "192.168.7.60",
+                "MAC": "00:17:61:10:96:FD"
+            }
+        },
+        {
+            "step": "disconnect (0x02)",
+            "ok": true,
+            "command": 200,
+            "command_name": "OK (0xC8)",
+            "declared_size": 0,
+            "received": 3,
+            "raw": "aa00c8000081fe55",
+            "payload_hex": "",
+            "ms": 25.7,
+            "sent_hex": "aa01020000a03c55"
+        }
+    ]
+}

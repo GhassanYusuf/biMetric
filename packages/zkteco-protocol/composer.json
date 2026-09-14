@@ -7,6 +7,9 @@
     "require": {
         "php": "^8.2"
     },
+    "suggest": {
+        "ext-sockets": "Raises the UDP receive buffer above the 64KB default so a whole attendance table fits. Without it, bulk reads on large tables are markedly more likely to fail with 'Incomplete transfer'."
+    },
     "require-dev": {
         "phpunit/phpunit": "^11.0"
     },

@@ -61,11 +61,74 @@ async function request(method, path, { body, headers } = {}) {
     return payload ?? { success: true, data: null, meta: {} };
 }
 
+/*
+| A file download that carries the bearer token.
+|
+| A plain <a href> cannot: the API authenticates with a header, not a cookie, so
+| the browser's own navigation would arrive unauthenticated and bounce to login
+| with no explanation. Fetching the bytes and handing them to an object URL keeps
+| the one auth path the rest of the client uses.
+|
+| Failures come back as the JSON envelope rather than a file, so they are
+| unwrapped into the same ApiError every other call throws.
+*/
+async function download(path, fallbackName) {
+    const token = getToken();
+
+    const res = await fetch(`${config.apiBase}${path}`, {
+        headers: {
+            Accept: 'application/pdf',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+    });
+
+    if (!res.ok) {
+        if (res.status === 401) setToken(null);
+
+        let payload = null;
+        try {
+            payload = await res.json();
+        } catch {
+            payload = null;
+        }
+
+        throw new ApiError(payload?.message || `Could not produce the file (${res.status}).`, {
+            status: res.status,
+            errors: payload?.errors,
+        });
+    }
+
+    const name = filenameFrom(res.headers.get('Content-Disposition')) || fallbackName;
+    const url = URL.createObjectURL(await res.blob());
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    // Revoking in the same tick cancels the save in some browsers; the object
+    // URL is dropped a moment later instead so the blob is not held for the
+    // life of the page.
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+    return name;
+}
+
+/** Pulls the server's filename out of `attachment; filename="…"`. */
+function filenameFrom(header) {
+    if (!header) return null;
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
 export const api = {
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, { body }),
     put: (path, body) => request('PUT', path, { body }),
     patch: (path, body) => request('PATCH', path, { body }),
     delete: (path) => request('DELETE', path),
+    download,
     raw: request,
 };

@@ -7,8 +7,8 @@ use App\Models\Device;
 use App\Models\DeviceStatusLog;
 use App\Services\Realtime\MqttPublisher;
 use App\Services\Realtime\TopicBuilder;
-use Zkteco\Protocol\Client\Device as ProtocolDevice;
-use Zkteco\Protocol\Exception\DeviceException;
+use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Exception\DeviceException;
 
 /**
  * Liveness and identity for terminals.
@@ -27,8 +27,7 @@ class DeviceHealthService
     public function __construct(
         private readonly BiometricDeviceDriver $driver,
         private readonly MqttPublisher $mqtt,
-    ) {
-    }
+    ) {}
 
     /**
      * Pings a device and records the outcome.
@@ -120,6 +119,34 @@ class DeviceHealthService
                 $info['serial'] ?: 'unknown',
             ),
             'raw' => $info + ['device_time' => $info['device_time']?->format('c')],
+        ];
+    }
+
+    /**
+     * Reads a device's identity WITHOUT persisting anything.
+     *
+     * Used by the add-device form to identify hardware before it exists as a row,
+     * so the operator can confirm the model rather than type it. The Device passed
+     * here is transient (unsaved); nothing is written, and the caller decides what
+     * to do with the answer.
+     *
+     * Only reachable for a protocol this app actually drives — today that is the
+     * ZKTeco standalone binary protocol (F-/K-series). An inBIO/C3 panel does not
+     * answer info() on this protocol and will time out; that is a true negative,
+     * not a bug, until a C3 driver exists (see docs/device-capabilities.md).
+     *
+     * @return array{device_name:?string, firmware:?string, platform:?string, serial:?string, mac:?string}
+     */
+    public function identify(Device $device): array
+    {
+        $info = $this->driver->run($device, fn (ProtocolDevice $d) => $d->info());
+
+        return [
+            'device_name' => $info['device_name'] ?: null,
+            'firmware' => $info['firmware'] ?: null,
+            'platform' => $info['platform'] ?: null,
+            'serial' => $info['serial'] ?: null,
+            'mac' => $info['mac'] ?: null,
         ];
     }
 

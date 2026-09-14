@@ -231,3 +231,73 @@ export function CountChips({ counts }) {
         </div>
     );
 }
+
+/*
+| Device failures, formatted for the person debugging them.
+|
+| WHY THIS EXISTS: `AttendanceSyncRun::casts()` and `DeviceCommand::casts()` both
+| cast `error` to `array`, and their resources pass it straight through, so the
+| field arrives as a STRUCTURED OBJECT, not a string:
+|
+|   { exception: 'Promoseven\\Biometric\\Exception\\ProtocolException',
+|     context: { command: 'ATTLOG_RRQ', expected: 412084, received: 162816 } }
+|
+| Six screens rendered `{run.error}` directly. React refuses an object as a child
+| ("Objects are not valid as a React child (found: object with keys
+| {exception, context})") and throws during render, which the ErrorBoundary catches
+| by blanking the whole page. The sync history screen was unopenable for exactly
+| this reason as soon as one run had failed.
+|
+| Rule 11 keeps the operator-facing `message` separate from the technical `error`.
+| This formats the technical half only: the exception's short class name, then the
+| context as `key=value` pairs. The namespace is dropped because it is noise on
+| screen and the class name is what identifies the failure.
+|
+| Tolerates a plain string too — older rows predate the array cast, and a decoder
+| that returns something unexpected must not take a page down a second time.
+*/
+export function formatDeviceError(error) {
+    if (error == null || error === '') return null;
+    if (typeof error === 'string') return error;
+    if (typeof error !== 'object') return String(error);
+    if (Array.isArray(error)) {
+        return error.map(formatDeviceError).filter(Boolean).join(' · ') || null;
+    }
+
+    const { exception, message, context, ...rest } = error;
+    const parts = [];
+
+    if (exception) parts.push(String(exception).split(/[\\/]/).pop());
+    if (message) parts.push(String(message));
+
+    // `context` is the documented shape, but merge any stray top-level keys in
+    // too rather than silently dropping detail somebody deliberately recorded.
+    const detail = {
+        ...(context && typeof context === 'object' && !Array.isArray(context) ? context : {}),
+        ...rest,
+    };
+
+    const pairs = Object.entries(detail)
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([k, v]) => `${k.replace(/_/g, ' ')}=${typeof v === 'object' ? JSON.stringify(v) : v}`);
+
+    if (pairs.length > 0) parts.push(pairs.join(', '));
+
+    // An unrecognised object still has to say something rather than render as
+    // "[object Object]" or crash.
+    return parts.length > 0 ? parts.join(' — ') : JSON.stringify(error);
+}
+
+/**
+ * The technical failure line. Renders nothing when there is no error, so call
+ * sites stay `<DeviceError error={run.error} />` with no surrounding guard.
+ *
+ * Always a <div>: every call site is block-level, and a <p> cannot legally hold
+ * one if this ever grows richer content.
+ */
+export function DeviceError({ error, className = 'mt-1 max-w-xs text-xs text-rose-600' }) {
+    const text = formatDeviceError(error);
+    if (!text) return null;
+
+    return <div className={className} title={text}>{text}</div>;
+}

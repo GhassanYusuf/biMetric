@@ -1,15 +1,24 @@
 <?php
 
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\ResolveTenant;
 use App\Support\ApiResponse;
+use App\Support\DeviceErrorReporter;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
+use Promoseven\Biometric\Exception\DeviceException;
+use Promoseven\Biometric\Exception\UnsupportedCommandException;
 use Spatie\Permission\Exceptions\UnauthorizedException;
+use Spatie\Permission\Middleware\PermissionMiddleware;
+use Spatie\Permission\Middleware\RoleMiddleware;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -22,16 +31,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
-            \App\Http\Middleware\HandleInertiaRequests::class,
-            \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
+            HandleInertiaRequests::class,
+            AddLinkHeadersForPreloadedAssets::class,
         ]);
 
         // Route-level aliases. `tenant` establishes the acting tenant after
         // auth; `permission`/`role` are spatie's authorization gates.
         $middleware->alias([
-            'tenant' => \App\Http\Middleware\ResolveTenant::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
-            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'tenant' => ResolveTenant::class,
+            'permission' => PermissionMiddleware::class,
+            'role' => RoleMiddleware::class,
         ]);
 
         // CRITICAL: the tenant must be resolved BEFORE route-model binding runs,
@@ -39,14 +48,34 @@ return Application::configure(basePath: dirname(__DIR__))
         // and a user could bind another tenant's record by id. Force
         // ResolveTenant ahead of SubstituteBindings in the priority list.
         $middleware->prependToPriorityList(
-            before: \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            prepend: \App\Http\Middleware\ResolveTenant::class,
+            before: SubstituteBindings::class,
+            prepend: ResolveTenant::class,
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // ------------------------------------------------------------------
+        // Device / protocol failures are RECORDED here, exactly once.
+        //
+        // The Promoseven\Biometric package is framework-agnostic (CLAUDE.md rule 8)
+        // and cannot log for itself, so anything that escaped a catch block
+        // previously reached the default arm below and was flattened to
+        // 'Server error.' — losing context(), isRetryable() and the concrete
+        // subclass, which are the only parts worth having.
+        //
+        // Returning false stops Laravel writing its own duplicate entry to the
+        // stack channel. Call sites that catch DeviceException themselves call
+        // DeviceErrorReporter directly instead, so a failure is never logged
+        // twice: either the catch reports it, or this does.
+        // ------------------------------------------------------------------
+        $exceptions->report(function (DeviceException $e): bool {
+            app(DeviceErrorReporter::class)->report($e, 'device communication');
+
+            return false;
+        });
+
         // Every API/JSON error is returned in the standard envelope so the SPA
         // and mobile clients get a single, predictable failure shape.
-        $exceptions->render(function (\Throwable $e, Request $request) {
+        $exceptions->render(function (Throwable $e, Request $request) {
             if (! $request->is('api/*') && ! $request->expectsJson()) {
                 return null; // let web (Inertia) errors render normally
             }
@@ -66,6 +95,23 @@ return Application::configure(basePath: dirname(__DIR__))
                 $e instanceof NotFoundHttpException => ApiResponse::error(
                     'Resource not found.', [], 404,
                 ),
+                // Rule 9: the UI is supposed to HIDE unsupported actions, so
+                // reaching here means a capability was mis-declared or a client
+                // called the endpoint directly. Say so plainly rather than
+                // returning a plausible-looking empty success.
+                $e instanceof UnsupportedCommandException => ApiResponse::error(
+                    $e->getMessage(), [], 501,
+                ),
+
+                // 502, not 500: the request was fine, the terminal upstream of us
+                // was not. The message is already operator-readable and the entry
+                // was logged by the report() hook above, so only format here.
+                $e instanceof DeviceException => ApiResponse::error(
+                    $e->getMessage(),
+                    ['retryable' => $e->isRetryable()],
+                    502,
+                ),
+
                 default => ApiResponse::error(
                     app()->hasDebugModeEnabled() ? $e->getMessage() : 'Server error.',
                     [],

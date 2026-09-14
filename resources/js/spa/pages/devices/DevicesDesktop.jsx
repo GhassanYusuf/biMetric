@@ -1,12 +1,14 @@
+import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Button, EmptyState, PageHeader, TableShell, Thead } from '../../shared/ui';
+import { ActionMenu, Badge, Button, EmptyState, PageHeader, ProgressBar, TableShell, Thead } from '../../shared/ui';
 import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
+import { describeProgress } from '../../shared/useSyncProgress';
 
 // Desktop devices: wide table, one row per unit, hardware actions inline.
 export default function DevicesDesktop({
-    rows, busy,
+    rows, busy, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync,
 }) {
     const showActions = canSync || canUpdate || canDelete;
     const failing = rows.filter((d) => d.last_sync_status === 'error').length;
@@ -50,8 +52,10 @@ export default function DevicesDesktop({
                     )}
                     {rows.map((d) => {
                         const running = busy[d.id];
+                        const syncing = syncingId === d.id;
                         return (
-                            <tr key={d.id} className="transition-colors duration-150 hover:bg-slate-50/70">
+                            <Fragment key={d.id}>
+                            <tr className="transition-colors duration-150 hover:bg-slate-50/70">
                                 <td className="px-5 py-3.5">
                                     {/* The name is the way in to everything else about this unit. */}
                                     <Link to={`/devices/${d.id}`} className="font-medium text-slate-900 hover:text-violet-700 hover:underline">
@@ -78,30 +82,97 @@ export default function DevicesDesktop({
                                 </td>
                                 {showActions && (
                                     <td className="px-5 py-3.5">
-                                        <div className="flex items-center justify-end gap-1.5">
-                                            {canSync && (
-                                                <>
-                                                    <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" disabled={!!running} loading={running === 'test-connection'} onClick={() => onTest(d)}>
-                                                        Test
-                                                    </Button>
-                                                    <Button variant="soft" className="min-h-[34px] px-2.5 text-xs" disabled={!!running} loading={running === 'sync-attendance'} onClick={() => onSync(d)}>
-                                                        Sync punches
-                                                    </Button>
-                                                    <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" disabled={!!running} loading={running === 'import-employees'} onClick={() => onImport(d)}>
-                                                        Import staff
-                                                    </Button>
-                                                </>
-                                            )}
-                                            {canUpdate && (
-                                                <button onClick={() => onEdit(d)} className="rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900">Edit</button>
-                                            )}
-                                            {canDelete && (
-                                                <button onClick={() => onDelete(d)} className="rounded-lg px-2 py-1 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50">Delete</button>
-                                            )}
+                                        {/*
+                                          | One menu, not six buttons. The strip that used to
+                                          | live here shrank every label past readability and
+                                          | put Delete next to Sync punches; the menu gives
+                                          | each action a full label, a line saying what it
+                                          | actually does, and keeps the destructive one
+                                          | below a rule of its own.
+                                          |
+                                          | The per-action spinner is not lost — while a
+                                          | command runs the trigger wears that command's
+                                          | own label (see ActionMenu).
+                                        */}
+                                        <div className="flex justify-end">
+                                            <ActionMenu
+                                                label="Actions"
+                                                items={[
+                                                    canSync && {
+                                                        key: 'test',
+                                                        label: 'Test',
+                                                        description: 'Open a session and confirm the terminal answers.',
+                                                        loading: running === 'test-connection',
+                                                        disabled: !!running,
+                                                        onSelect: () => onTest(d),
+                                                    },
+                                                    canSync && {
+                                                        key: 'sync',
+                                                        label: 'Sync punches',
+                                                        description: 'Read everything recorded since the last watermark.',
+                                                        tone: 'primary',
+                                                        loading: running === 'sync-attendance',
+                                                        disabled: !!running,
+                                                        onSelect: () => onSync(d),
+                                                    },
+                                                    canSync && {
+                                                        /*
+                                                          | Directly under Sync punches because it is the
+                                                          | same operation with the watermark ignored.
+                                                          | Not `danger` — slow, not destructive.
+                                                        */
+                                                        key: 'full-resync',
+                                                        label: 'Full re-read',
+                                                        description: 'The same read with the watermark ignored. Slow, but safe.',
+                                                        loading: running === 'full-resync',
+                                                        disabled: !!running,
+                                                        onSelect: () => onFullResync(d),
+                                                    },
+                                                    canSync && {
+                                                        key: 'import',
+                                                        label: 'Import staff',
+                                                        description: 'Pull the employee records the terminal holds.',
+                                                        loading: running === 'import-employees',
+                                                        disabled: !!running,
+                                                        onSelect: () => onImport(d),
+                                                    },
+                                                    canSync && (canUpdate || canDelete) && { key: 'sep', separator: true },
+                                                    canUpdate && {
+                                                        key: 'edit',
+                                                        label: 'Edit device',
+                                                        description: 'Name, address, protocol and credentials.',
+                                                        onSelect: () => onEdit(d),
+                                                    },
+                                                    canDelete && {
+                                                        key: 'delete',
+                                                        label: 'Delete device',
+                                                        description: 'Removes the terminal and its link to these punches.',
+                                                        tone: 'danger',
+                                                        onSelect: () => onDelete(d),
+                                                    },
+                                                ]}
+                                            />
                                         </div>
                                     </td>
                                 )}
                             </tr>
+                            {/*
+                              | A full-width row beneath the device, not a bar squeezed
+                              | into a cell: the numbers need room, and the bar belongs
+                              | to the whole row rather than to any one column.
+                              |
+                              | This is page STATE, not an event, so it is content
+                              | rather than a toast (rule 2) — it describes how things
+                              | currently are and stops existing when they change.
+                            */}
+                            {syncing && (
+                                <tr>
+                                    <td colSpan={showActions ? 7 : 6} className="bg-violet-50/40 px-5 pb-3.5">
+                                        <SyncProgressRow progress={syncProgress} stalled={syncStalled} />
+                                    </td>
+                                </tr>
+                            )}
+                            </Fragment>
                         );
                     })}
                 </tbody>
@@ -111,6 +182,32 @@ export default function DevicesDesktop({
                 <p className="text-xs text-slate-500">
                     If <strong className="font-semibold text-slate-600">Test</strong> times out on the Binary protocol, the
                     terminal is likely reseller-branded firmware — try CSL HTTP with its web credentials.
+                </p>
+            )}
+        </div>
+    );
+}
+
+/**
+ * The bar shown under a syncing device. Shared by both presentations via
+ * describeProgress(), so desktop and mobile cannot drift apart (rule 5).
+ */
+export function SyncProgressRow({ progress, stalled }) {
+    const { label, detail, percent } = describeProgress(progress);
+
+    return (
+        <div>
+            <ProgressBar
+                percent={percent}
+                label={label}
+                detail={detail}
+                tone={progress?.phase === 'importing' ? 'emerald' : 'violet'}
+            />
+            {stalled && (
+                // Careful wording: we lost the progress feed, which is NOT evidence
+                // the sync failed. It runs in a different request and may be fine.
+                <p className="mt-1.5 text-xs text-slate-500">
+                    Lost contact with the progress feed — the sync may still be running.
                 </p>
             )}
         </div>
