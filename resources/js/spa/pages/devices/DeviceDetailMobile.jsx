@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Badge, Button, Card, EmptyState, PageHeader, SectionCard } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
-import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
+import { PROTOCOL_LABELS, SyncBadge, describeRunMode, relativeTime } from './parts';
 import {
     CAPABILITY_LEVELS, CapabilityBadge, CommandStatusBadge, CountChips, DeviceError, Fact,
     HealthBadge, RunStatusBadge, commandLabel, formatDuration, shortTime,
@@ -27,7 +27,7 @@ const TABS = [
 export default function DeviceDetailMobile({
     device, runs, commands, history, dispatching,
     syncRunning, syncProgress, syncStalled,
-    canSync, onRefresh, onDispatch, onFullResync, onRetryCommand, onCancelCommand, onBack,
+    canSync, onRefresh, onDispatch, onFullResync, onRangeSync, onRetryCommand, onCancelCommand, onBack,
 }) {
     const [tab, setTab] = useState('runs');
     const caps = device.capabilities ?? {};
@@ -85,6 +85,10 @@ export default function DeviceDetailMobile({
                         <Button variant="secondary" className="col-span-2" disabled={busy} onClick={onFullResync}>
                             Full re-read of attendance
                         </Button>
+                        {/* Same action and same words as the desktop pane — rule 5. */}
+                        <Button variant="secondary" className="col-span-2" disabled={busy} onClick={onRangeSync}>
+                            Read a date range…
+                        </Button>
                     </div>
                 </SectionCard>
             )}
@@ -121,7 +125,7 @@ export default function DeviceDetailMobile({
                                     <CountChips counts={run.counts} />
                                 </div>
                                 <div className="mt-2 text-xs text-slate-500">
-                                    {run.mode} · {formatDuration(run.duration_ms)}
+                                    {describeRunMode(run)} · {formatDuration(run.duration_ms)}
                                 </div>
                                 <DeviceError error={run.error} className="mt-1.5 text-xs text-rose-600" />
                             </Card>

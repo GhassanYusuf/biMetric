@@ -1,0 +1,65 @@
+{
+    "label": "c3-templatev10-framing",
+    "host": "multiple",
+    "started_at": "2026-09-15T10:02:02+00:00",
+    "devices": [
+        {
+            "device_id": 13,
+            "name": "Glass Door",
+            "host": "192.168.7.61",
+            "model": "inBIO460",
+            "payload_bytes": 281680,
+            "rows": 1,
+            "consumed": 1527,
+            "total": 281680,
+            "exact": false,
+            "failed_at_record": 1,
+            "sane": {
+                "distinct_pins": 1,
+                "finger_ids": [
+                    3
+                ],
+                "template_size_min": 878,
+                "template_size_max": 878,
+                "distinct_digests": 1
+            },
+            "digests": [
+                {
+                    "pin": 10,
+                    "finger": 3,
+                    "size": 878,
+                    "sha1": "dc411e77a0433109e0dfd203ad1978a3acf8c243"
+                }
+            ]
+        },
+        {
+            "device_id": 14,
+            "name": "Entrance",
+            "host": "192.168.7.60",
+            "model": "TF1700",
+            "payload_bytes": 281680,
+            "rows": 1,
+            "consumed": 1527,
+            "total": 281680,
+            "exact": false,
+            "failed_at_record": 1,
+            "sane": {
+                "distinct_pins": 1,
+                "finger_ids": [
+                    3
+                ],
+                "template_size_min": 878,
+                "template_size_max": 878,
+                "distinct_digests": 1
+            },
+            "digests": [
+                {
+                    "pin": 10,
+                    "finger": 3,
+                    "size": 878,
+                    "sha1": "dc411e77a0433109e0dfd203ad1978a3acf8c243"
+                }
+            ]
+        }
+    ]
+}

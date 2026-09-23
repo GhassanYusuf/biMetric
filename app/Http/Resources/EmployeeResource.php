@@ -48,6 +48,25 @@ class EmployeeResource extends JsonResource
             'enrollments' => EmployeeDeviceMapResource::collection(
                 $this->whenLoaded('deviceMaps')
             ),
+            /*
+             * IDENTITY — the link to the human, and to payroll.
+             *
+             * The national id is the HRMS join key and is government id, so the full
+             * value never leaves the server (see Person). What a screen needs is
+             * whether one exists, and enough of a tail to confirm the right document
+             * was entered — not the number itself.
+             *
+             * `person_id` null means this employment is not yet attached to a human:
+             * attendance still collects, payroll export is blocked.
+             */
+            'person_id' => $this->person_id,
+            'has_national_id' => $this->whenLoaded(
+                'person',
+                fn () => $this->person?->national_id_hash !== null,
+                $this->person_id !== null,
+            ),
+            'national_id_masked' => $this->whenLoaded('person', fn () => $this->person?->maskedNationalId()),
+            'exportable' => $this->whenLoaded('person', fn () => (bool) $this->person?->isExportable(), false),
             'attendance_logs_count' => $this->whenCounted('attendanceLogs'),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

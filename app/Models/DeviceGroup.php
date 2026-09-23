@@ -11,7 +11,15 @@ class DeviceGroup extends Model
 {
     use BelongsToTenant;
 
-    protected $fillable = ['tenant_id', 'name', 'description'];
+    protected $fillable = [
+        'tenant_id', 'name', 'description',
+        'shared_pin_namespace', 'pin_namespace_evidence',
+    ];
+
+    protected function casts(): array
+    {
+        return ['shared_pin_namespace' => 'boolean'];
+    }
 
     public function devices(): BelongsToMany
     {

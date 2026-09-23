@@ -173,6 +173,30 @@ class ProtocolLibraryBoundaryTest extends TestCase
             'app/Services/Devices/AttendanceSyncService.php',
             'app/Services/Devices/DeviceUserSyncService.php',
             'app/Services/Devices/EnrollmentOrchestratorService.php',
+            /*
+             * Adoption: reads an existing terminal's roster before it is writable.
+             * Names Capability to gate the read and DeviceUser to receive what
+             * BiometricDeviceDriver::readUsers() returns. Same category as the two
+             * above — it reaches the hardware only through the contract.
+             */
+            'app/Services/Devices/DeviceAdoptionService.php',
+            /*
+             * Records template digests off each terminal. Names
+             * UnsupportedCommandException ONLY, to tell "this family has no readable
+             * template table" apart from "the read failed" — the first must leave the
+             * stored digests alone, the second is a device fault. It reaches hardware
+             * solely through BiometricDeviceDriver::readTemplateDigests(), which
+             * returns sizes and SHA-1s and never lets a template blob cross the seam.
+             */
+            'app/Console/Commands/DeviceReadTemplates.php',
+            /*
+             * The PIN-to-employee resolver. Names DeviceUser only — the occupant of a
+             * slot, handed to it by the driver so it can decide whether a write may
+             * proceed. It holds no session and issues no command: the read and the
+             * write that the decision sits between both happen inside
+             * BiometricDeviceDriver::saveUser(), which is where the atomicity lives.
+             */
+            'app/Services/Devices/DeviceIdentityResolver.php',
             'app/Jobs/ProcessDeviceCommand.php',
             'app/Models/Device.php',
             'app/Models/AccessCard.php',

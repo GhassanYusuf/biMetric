@@ -1,14 +1,22 @@
 import { FOCUS } from '../../shared/theme';
 import { Button, Card, EmptyState, PageHeader, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
-import { Pager, formatPunch, verifyLabel } from './parts';
+import { MatchedEmployee, NationalIdLookup, Pager, formatPunch, verifyLabel } from './parts';
+
+// Every filter this page owns, cleared. Named so "Clear filters" cannot forget one
+// — an employee_id left behind would leave the table showing one person under a
+// header claiming no filters are set.
+const NO_FILTERS = { employee_id: '', device_id: '', from: '', to: '' };
 
 // Desktop attendance: filter bar + wide punch table + pager.
-export default function AttendanceDesktop({ rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting }) {
+export default function AttendanceDesktop({
+    rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting,
+    matched, onLookup, onClearMatch, lookingUp, canLookup,
+}) {
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
     }
 
-    const hasFilters = !!(filters.device_id || filters.from || filters.to);
+    const hasFilters = !!(filters.employee_id || filters.device_id || filters.from || filters.to);
     const total = pagination?.total;
 
     return (
@@ -35,7 +43,16 @@ export default function AttendanceDesktop({ rows, devices, filters, onFilter, lo
                 </Button>
             </PageHeader>
 
-            <Card className="p-4">
+            {matched && <MatchedEmployee employee={matched} onClear={onClearMatch} />}
+
+            <Card className="space-y-4 p-4">
+                {/* Rule 5: mobile puts the same component in the same order. */}
+                {canLookup && (
+                    <>
+                        <NationalIdLookup onLookup={onLookup} busy={lookingUp} />
+                        <div className="h-px bg-slate-100" />
+                    </>
+                )}
                 <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-4">
                     <SelectField label="Device" value={filters.device_id} onChange={(e) => set('device_id', e.target.value)}>
                         <option value="">All devices</option>
@@ -46,7 +63,7 @@ export default function AttendanceDesktop({ rows, devices, filters, onFilter, lo
                     <TextField label="From" type="date" value={filters.from} onChange={(e) => set('from', e.target.value)} />
                     <TextField label="To" type="date" value={filters.to} onChange={(e) => set('to', e.target.value)} />
                     {hasFilters && (
-                        <Button variant="ghost" onClick={() => onFilter({ device_id: '', from: '', to: '' })}>
+                        <Button variant="ghost" onClick={() => onFilter(NO_FILTERS)}>
                             Clear filters
                         </Button>
                     )}
@@ -72,7 +89,7 @@ export default function AttendanceDesktop({ rows, devices, filters, onFilter, lo
                                     title="No punches found"
                                     hint={hasFilters ? 'No punches match these filters. Try widening the date range.' : 'Sync a device to pull attendance in.'}
                                     action={hasFilters && (
-                                        <Button variant="secondary" onClick={() => onFilter({ device_id: '', from: '', to: '' })}>
+                                        <Button variant="secondary" onClick={() => onFilter(NO_FILTERS)}>
                                             Clear filters
                                         </Button>
                                     )}

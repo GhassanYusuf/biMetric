@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\ClientErrorController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\DeviceAdoptionController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\DeviceEnrollmentController;
 use App\Http\Controllers\Api\DeviceGroupController;
@@ -77,8 +78,50 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // by `employees/{employee}` and 404 on model binding.
     Route::get('employees/next-code', [EmployeeController::class, 'nextCode']);
 
+    /*
+     * Resolves a national id to the employment holding it. It is the ONLY read the
+     * national id has, and it is one-way: you must already know the number to get
+     * an answer, and the answer never contains one.
+     *
+     * POST, not GET, because the number must not travel in a URL. A query string is
+     * written to the access log, kept in browser history, and handed to the next
+     * origin the page talks to in the Referer header — three copies of a government
+     * id in places nobody is guarding.
+     *
+     * Throttled: exact-match lookup over a sequential numbering scheme is an oracle.
+     * 20/minute is more than an operator working through a stack of ID cards needs,
+     * and useless for enumerating one.
+     *
+     * Declared before the resource for the same reason next-code is — consistency of
+     * reading order; `POST employees/lookup` does not itself collide with `store`.
+     */
+    Route::post('employees/lookup', [EmployeeController::class, 'lookup'])
+        ->middleware('throttle:20,1');
+
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
     Route::get('employees/{employee}/attendance-summary', [EmployeeController::class, 'attendanceSummary']);
+    /*
+     * The national id is WRITE-ONLY over HTTP. Nothing reads one back — the employee
+     * resource carries only `has_national_id` and a masked tail. It is government id,
+     * and the HRMS join key, so a screen that can list them is a screen that can leak
+     * them. See EmployeeController::setNationalId().
+     */
+    Route::put('employees/{employee}/national-id', [EmployeeController::class, 'setNationalId']);
+    /*
+     * Writes one employee onto SEVERAL terminals, queued one command each. What the
+     * add/edit form calls after saving; the single-device route below stays for the
+     * enrollment dialog, which pushes as a precondition for capturing a finger and
+     * needs the answer in the same breath.
+     */
+    Route::post('employees/{employee}/propagate', [EmployeeController::class, 'propagate']);
+    /*
+     * Folds duplicate employment records into one. It addresses no single employee —
+     * the keeper and the records folded in are all in the body — so it is a POST to a
+     * fixed path. No collision with the resource: that registers `POST employees`
+     * (store) and nothing of the shape `POST employees/{something}`. Verified in
+     * route:list, not assumed.
+     */
+    Route::post('employees/merge', [EmployeeController::class, 'merge']);
     Route::post('employees/{employee}/devices/{device}/push', [EmployeeController::class, 'pushToDevice']);
     Route::post('employees/{employee}/devices/{device}/remove', [EmployeeController::class, 'removeFromDevice']);
 
@@ -168,6 +211,24 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     | READ-ONLY reporting. Auto-resolving would mean deciding whose version wins,
     | which either deletes a real enrollment or restores a departed employee.
     */
+    /*
+    |----------------------------------------------------------------------------
+    | Adoption — bringing an EXISTING terminal under management
+    |----------------------------------------------------------------------------
+    | A device is read-only until its roster has been read and every person already
+    | on it has been claimed or ignored. Pushing to an unadopted terminal is what
+    | overwrote real enrollments on 2026-09-15; the gate is Device::assertWritable().
+    |
+    | `read` contacts the hardware and is read-only. `claim` and `ignore` record a
+    | human's decision and write nothing to the device. Only `adopt` changes what the
+    | system is allowed to do afterwards.
+    */
+    Route::get('devices/{device}/roster', [DeviceAdoptionController::class, 'index']);
+    Route::post('devices/{device}/roster/read', [DeviceAdoptionController::class, 'read']);
+    Route::post('devices/{device}/roster/{entry}/claim', [DeviceAdoptionController::class, 'claim']);
+    Route::post('devices/{device}/roster/{entry}/ignore', [DeviceAdoptionController::class, 'ignore']);
+    Route::post('devices/{device}/adopt', [DeviceAdoptionController::class, 'adopt']);
+
     Route::get('device-maps', [DeviceReconciliationController::class, 'index']);
     Route::get('device-maps/summary', [DeviceReconciliationController::class, 'summary']);
     Route::post('devices/{device}/reconcile', [DeviceReconciliationController::class, 'reconcile']);

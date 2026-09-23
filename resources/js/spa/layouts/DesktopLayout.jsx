@@ -20,46 +20,16 @@ function Chevron({ open }) {
     );
 }
 
-// A top-level item. When it carries `children` it becomes a collapsible parent
-// with an indented tree beneath it (guide line + rows), matching the reference.
-function NavItem({ item, unread, can }) {
-    const children = (item.children || []).filter((c) => !c.permission || can(c.permission));
-    const [open, setOpen] = useState(true);
-
-    if (children.length) {
-        return (
-            <div>
-                <button
-                    type="button"
-                    onClick={() => setOpen((v) => !v)}
-                    aria-expanded={open}
-                    className={`${ITEM_BASE} ${ITEM_IDLE} w-full text-left`}
-                >
-                    <Icon name={item.icon} />
-                    <span className="flex-1">{item.label}</span>
-                    <Chevron open={open} />
-                </button>
-                {open && (
-                    <div className="ml-[22px] mt-1 space-y-0.5 border-l border-slate-200 pl-3">
-                        {children.map((child) => (
-                            <NavLink
-                                key={child.to}
-                                to={child.to}
-                                className={({ isActive }) =>
-                                    `block rounded-lg px-3 py-2 text-sm transition ${
-                                        isActive ? 'font-medium text-violet-700' : 'text-slate-500 hover:text-slate-700'
-                                    }`
-                                }
-                            >
-                                {child.label}
-                            </NavLink>
-                        ))}
-                    </div>
-                )}
-            </div>
-        );
-    }
-
+/*
+| One sidebar row: icon, label, violet active marker, and the alerts count.
+|
+| Every item is one of these. The nav has no nesting (see nav.jsx): Devices used to
+| render instead as a disclosure <button> holding the other hardware screens, which
+| made the one page it pointed at unreachable from the sidebar and left it
+| unhighlighted while you were standing on it. Four plain siblings cost one row each
+| and have neither problem.
+*/
+function NavItem({ item, unread }) {
     return (
         <NavLink
             to={item.to}
@@ -104,7 +74,7 @@ function NavSection({ section, unread, can }) {
             {open && (
                 <div className="space-y-1">
                     {items.map((item) => (
-                        <NavItem key={item.to || item.label} item={item} unread={unread} can={can} />
+                        <NavItem key={item.to || item.label} item={item} unread={unread} />
                     ))}
                 </div>
             )}

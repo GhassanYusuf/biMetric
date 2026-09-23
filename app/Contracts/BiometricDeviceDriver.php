@@ -121,6 +121,83 @@ interface BiometricDeviceDriver
     public function readUsers(Device $device, bool $withFingerprints = false): array;
 
     /**
+     * Every stored fingerprint template on the device, as opaque identifiers.
+     *
+     * WHAT THIS IS FOR: deciding whether two device records are the same human. A
+     * vendor tool that enrols a finger once and pushes it to the other terminals
+     * leaves BYTE-IDENTICAL templates behind, so a matching digest is hardware-grade
+     * evidence of one person — stronger than a name, stronger than a card.
+     *
+     * CONFIRMED on 2026-09-15: PIN 261 slot 3 returned the same 1,054 bytes from the
+     * F18 at 192.168.7.62 and the F22 at 192.168.7.63. Identical across two different
+     * models, which is what makes the digest usable as an identifier at all.
+     *
+     * READ IT THE RIGHT WAY ROUND. Identical digests mean one enrolment, copied.
+     * DIFFERENT digests mean NOTHING: re-presenting the same finger produces a
+     * different template every time, and there is no matcher here. Never conclude
+     * "different people" from a digest mismatch.
+     *
+     * NO BYTES CROSS THIS SEAM. A driver returns sizes and digests; the template
+     * itself stays inside the protocol layer. Biometric data that is never carried
+     * upward cannot be logged, serialised into an API response or committed to a
+     * trace by accident.
+     *
+     * An empty array means the table would not decode — UNKNOWN, never "nobody is
+     * enrolled" (rule 10). A driver whose family has no readable template table
+     * throws UnsupportedCommandException rather than returning empty, so the two
+     * cases stay distinguishable.
+     *
+     * @return list<array{user_id:?string,uid:int,slot:int,size:int,sha1:string}>
+     */
+    public function readTemplateDigests(Device $device): array;
+
+    /**
+     * Writes a user record, having first proved the slot is not somebody else's.
+     *
+     * WHY THIS IS ON THE CONTRACT rather than done by a service inside a run()
+     * closure: the read that proves the slot is free and the write that fills it MUST
+     * share one session. This protocol is stateful and permits a single session per
+     * device (rule 11), so checking in one session and writing in another leaves a
+     * window — and a window here means overwriting a stranger's enrollment.
+     *
+     * WHAT IT PREVENTS. save() on this firmware family is an UPSERT. Writing to an
+     * occupied slot does not fail; it replaces the record and that person's fingerprint
+     * templates with it. Templates cannot be recovered from a backup — the employee has
+     * to stand at the terminal again. On 2026-09-15 employees were pushed to terminals
+     * that had been in service for years, addressed by payroll code, and every
+     * collision destroyed a real enrollment. This method is the reason that cannot
+     * recur: there is no unguarded write path left above the driver.
+     *
+     * $guard receives whoever currently holds the slot — or null when it is empty —
+     * and throws to abandon the write. The driver calls it after the read and before
+     * the write, inside the session. A driver MUST NOT write if the guard throws, and
+     * MUST NOT skip calling it. A guard that is null means the caller has accepted an
+     * unguarded upsert, which only a caller that just read the slot itself may do.
+     *
+     * $onlyIfMissing writes nothing when the record already exists, returning it
+     * unchanged — for callers that need the record to exist before attaching a
+     * credential to it, not to update its fields.
+     *
+     * @param  ?\Closure(?DeviceUser):void  $guard
+     */
+    public function saveUser(
+        Device $device,
+        string $userId,
+        string $name,
+        ?\Closure $guard = null,
+        bool $onlyIfMissing = false,
+    ): DeviceUser;
+
+    /**
+     * Deletes a user record, with its templates and card.
+     *
+     * Vendor-neutral for the same reason readUsers() is, and expressed here rather
+     * than as a run() closure so that no app service has to name a protocol session
+     * in order to remove somebody.
+     */
+    public function deleteUser(Device $device, string $userId): void;
+
+    /**
      * What this device can do.
      *
      * Returns the stored/declared set without touching the network. Use

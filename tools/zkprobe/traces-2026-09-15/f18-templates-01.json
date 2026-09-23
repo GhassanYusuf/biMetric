@@ -1,0 +1,321 @@
+{
+    "label": "f18-templates",
+    "host": "multiple",
+    "started_at": "2026-09-15T09:17:51+00:00",
+    "devices": [
+        {
+            "device_id": 2,
+            "name": "IT Room",
+            "host": "192.168.7.62",
+            "model": "F18/ID",
+            "is_control": true,
+            "read_at": "2026-09-15T09:17:51+00:00",
+            "records": 16,
+            "template_bytes": 19122,
+            "templates": [
+                {
+                    "user_id": "21",
+                    "uid": 1,
+                    "slot": 6,
+                    "size": 832,
+                    "sha1": "c070f4fbe3c162a1ccec705e5b935503637e1298"
+                },
+                {
+                    "user_id": "261",
+                    "uid": 2,
+                    "slot": 3,
+                    "size": 1054,
+                    "sha1": "840cfbda340c377f891d034930d44252f12003dc"
+                },
+                {
+                    "user_id": "261",
+                    "uid": 2,
+                    "slot": 6,
+                    "size": 1132,
+                    "sha1": "58ce6d78a3137526840a4543db0473ce2083cc9a"
+                },
+                {
+                    "user_id": "537",
+                    "uid": 3,
+                    "slot": 3,
+                    "size": 910,
+                    "sha1": "6781ac14722588588755757d35f7bb7a240e6c89"
+                },
+                {
+                    "user_id": "654",
+                    "uid": 7,
+                    "slot": 6,
+                    "size": 1404,
+                    "sha1": "91e8d40ab9f7ac1b959cdfb007a1f34b43a599da"
+                },
+                {
+                    "user_id": "654",
+                    "uid": 7,
+                    "slot": 7,
+                    "size": 864,
+                    "sha1": "f52a4cc78befc77b1ee8075df76da4d035de873c"
+                },
+                {
+                    "user_id": "656",
+                    "uid": 8,
+                    "slot": 6,
+                    "size": 1298,
+                    "sha1": "8356f2e59ca55a7fdd7d7d82ca42d9ccb2d37dc5"
+                },
+                {
+                    "user_id": "21",
+                    "uid": 1,
+                    "slot": 7,
+                    "size": 1234,
+                    "sha1": "f3cf99c0e9a59b9b8a6cc98beceec5f314f5f91c"
+                },
+                {
+                    "user_id": "695",
+                    "uid": 18,
+                    "slot": 6,
+                    "size": 1290,
+                    "sha1": "a7aa02c6940d9075f48d94749634f599015181aa"
+                },
+                {
+                    "user_id": "673",
+                    "uid": 12,
+                    "slot": 6,
+                    "size": 1240,
+                    "sha1": "a4b37d139151032e44caf6b6d1095f737d275e22"
+                },
+                {
+                    "user_id": "675",
+                    "uid": 13,
+                    "slot": 6,
+                    "size": 1284,
+                    "sha1": "d25c4bac2290e58002a2f8c69c92341502d72ff0"
+                },
+                {
+                    "user_id": "933",
+                    "uid": 14,
+                    "slot": 6,
+                    "size": 1110,
+                    "sha1": "158130a156886a41c6ec13be3a78247a6313bd20"
+                },
+                {
+                    "user_id": "1",
+                    "uid": 15,
+                    "slot": 6,
+                    "size": 1132,
+                    "sha1": "d507071ad35289ff60098cf824b9ccd5296c1482"
+                },
+                {
+                    "user_id": "537",
+                    "uid": 3,
+                    "slot": 6,
+                    "size": 1602,
+                    "sha1": "9b37cb042172523e5e7be6ede17da5dd44814d2b"
+                },
+                {
+                    "user_id": "694",
+                    "uid": 5,
+                    "slot": 6,
+                    "size": 1524,
+                    "sha1": "af6898bf7f4a10f7d675a663b761ce9efd8432d1"
+                },
+                {
+                    "user_id": "940",
+                    "uid": 6,
+                    "slot": 6,
+                    "size": 1212,
+                    "sha1": "e03e8c8828fc8b320153daac7631e983bdda3dd1"
+                }
+            ]
+        },
+        {
+            "device_id": 11,
+            "name": "On The Road",
+            "host": "192.168.7.63",
+            "model": "F22/ID",
+            "is_control": false,
+            "read_at": "2026-09-15T09:17:52+00:00",
+            "records": 16,
+            "template_bytes": 18386,
+            "templates": [
+                {
+                    "user_id": "261",
+                    "uid": 1,
+                    "slot": 3,
+                    "size": 1054,
+                    "sha1": "840cfbda340c377f891d034930d44252f12003dc"
+                },
+                {
+                    "user_id": "261",
+                    "uid": 1,
+                    "slot": 6,
+                    "size": 1132,
+                    "sha1": "58ce6d78a3137526840a4543db0473ce2083cc9a"
+                },
+                {
+                    "user_id": "651",
+                    "uid": 9,
+                    "slot": 7,
+                    "size": 1154,
+                    "sha1": "8fc668d6cf9984412cc8f9e3df88bc3df6b87f84"
+                },
+                {
+                    "user_id": "437",
+                    "uid": 2,
+                    "slot": 3,
+                    "size": 1026,
+                    "sha1": "e63b6ceffca90b4f3984927f9f4bac4b0053d885"
+                },
+                {
+                    "user_id": "437",
+                    "uid": 2,
+                    "slot": 6,
+                    "size": 682,
+                    "sha1": "63409777452d13b40a7633a82ed061bc6bd29859"
+                },
+                {
+                    "user_id": "649",
+                    "uid": 7,
+                    "slot": 6,
+                    "size": 1236,
+                    "sha1": "ff35eb0b4e8835a528c780eba94a76d0b5c44f44"
+                },
+                {
+                    "user_id": "650",
+                    "uid": 8,
+                    "slot": 5,
+                    "size": 1482,
+                    "sha1": "078236dd38f8d299e8f908991da1e1c01864b76f"
+                },
+                {
+                    "user_id": "650",
+                    "uid": 8,
+                    "slot": 6,
+                    "size": 1144,
+                    "sha1": "15a7489d6c613674ec60a1b240b026816e243866"
+                },
+                {
+                    "user_id": "651",
+                    "uid": 9,
+                    "slot": 6,
+                    "size": 1540,
+                    "sha1": "ee490f7dfa3485f9316c56221dbdb0978d9a1d9a"
+                },
+                {
+                    "user_id": "654",
+                    "uid": 10,
+                    "slot": 6,
+                    "size": 1404,
+                    "sha1": "91e8d40ab9f7ac1b959cdfb007a1f34b43a599da"
+                },
+                {
+                    "user_id": "654",
+                    "uid": 10,
+                    "slot": 7,
+                    "size": 864,
+                    "sha1": "f52a4cc78befc77b1ee8075df76da4d035de873c"
+                },
+                {
+                    "user_id": "655",
+                    "uid": 11,
+                    "slot": 6,
+                    "size": 1144,
+                    "sha1": "6e26f376baed3bed72bc367c02082a7a42caf774"
+                },
+                {
+                    "user_id": "636",
+                    "uid": 5,
+                    "slot": 6,
+                    "size": 870,
+                    "sha1": "117598235e5f0d73687303653686e989233f5a6e"
+                },
+                {
+                    "user_id": "648",
+                    "uid": 6,
+                    "slot": 6,
+                    "size": 1008,
+                    "sha1": "81855b466a640464c10428be639ce03c01e9d2ad"
+                },
+                {
+                    "user_id": "648",
+                    "uid": 6,
+                    "slot": 7,
+                    "size": 1434,
+                    "sha1": "00d09e24f06d8808cf1e19fe23b61b1d9b2cd436"
+                },
+                {
+                    "user_id": "940",
+                    "uid": 3,
+                    "slot": 6,
+                    "size": 1212,
+                    "sha1": "e03e8c8828fc8b320153daac7631e983bdda3dd1"
+                }
+            ]
+        }
+    ],
+    "comparison": {
+        "distinct_templates": 27,
+        "templates_on_more_than_one_device": 5,
+        "matches": [
+            [
+                {
+                    "device": "IT Room",
+                    "user_id": "261",
+                    "slot": 3
+                },
+                {
+                    "device": "On The Road",
+                    "user_id": "261",
+                    "slot": 3
+                }
+            ],
+            [
+                {
+                    "device": "IT Room",
+                    "user_id": "261",
+                    "slot": 6
+                },
+                {
+                    "device": "On The Road",
+                    "user_id": "261",
+                    "slot": 6
+                }
+            ],
+            [
+                {
+                    "device": "IT Room",
+                    "user_id": "654",
+                    "slot": 6
+                },
+                {
+                    "device": "On The Road",
+                    "user_id": "654",
+                    "slot": 6
+                }
+            ],
+            [
+                {
+                    "device": "IT Room",
+                    "user_id": "654",
+                    "slot": 7
+                },
+                {
+                    "device": "On The Road",
+                    "user_id": "654",
+                    "slot": 7
+                }
+            ],
+            [
+                {
+                    "device": "IT Room",
+                    "user_id": "940",
+                    "slot": 6
+                },
+                {
+                    "device": "On The Road",
+                    "user_id": "940",
+                    "slot": 6
+                }
+            ]
+        ]
+    }
+}

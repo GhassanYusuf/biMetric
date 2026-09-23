@@ -26,7 +26,7 @@ and will change.
 
 ```php
 try {
-    $driver->run($device, fn ($d) => $d->users()->save($code, $name));
+    $driver->saveUser($device, $pin, $name, $identity->slotGuard($device, $employee, $pin));
 } catch (DeviceException $e) {
     if ($e->isRetryable()) {
         $command->releaseForRetry($e->getMessage());
@@ -35,6 +35,28 @@ try {
     }
 }
 ```
+
+### Two app-level refusals that are NOT device failures
+
+Added 2026-09-15. Both extend `\RuntimeException`, not `DeviceException` — nothing
+went wrong with the hardware, and neither should ever be retried.
+
+| Class | Thrown by | Means |
+|---|---|---|
+| `App\Exceptions\DeviceNotAdoptedException` | `Device::assertWritable()` | the terminal's existing roster has not been read, or entries remain undecided |
+| `App\Exceptions\DeviceIdentityConflictException` | `DeviceIdentityResolver::assertSlotFree()` | the target PIN is held by somebody who is not this employee |
+
+Both are **operator-facing**, and both are normal states rather than faults. A newly
+added terminal is legitimately unadopted; a PIN collision on a terminal that predates
+this system is expected. Surface the message and the next action, not a stack trace:
+read the roster, or claim/reallocate the PIN.
+
+`DeviceIdentityConflictException` carries `$device`, `$pin` and `$occupantName` so a UI
+can offer "claim this person" directly. Do not put the occupant's name in a log line
+that leaves the system — it is a real employee.
+
+Retrying either is pointless: nothing about the device will have changed, and a retry
+that eventually "succeeded" would mean the guard had been bypassed.
 
 ## An ack is not a commit
 
@@ -90,6 +112,23 @@ until it expires (600s).
 
 If commands are stuck queued and no worker is running, that is the cause. The lock
 self-expires; `cache_locks` can also be cleared manually.
+
+**Seen again on 2026-09-15.** A sync of the Camelot terminal (remote, over the internet)
+exceeded the worker timeout. The lock survived, so every requeue of that command
+returned in ~11ms without touching the device, and the command row sat at `running`
+indefinitely. The symptom — a job that "succeeds" instantly and changes nothing — looks
+like a device problem and is not.
+
+```
+DELETE FROM cache_locks WHERE key LIKE '%device:{id}';
+-- then reset the row to queued and redispatch
+```
+
+Do **not** pass `--tries=1` to `queue:work` for these jobs. A `WithoutOverlapping`
+release counts as a queue attempt, so the first release fails the job with
+`MaxAttemptsExceededException` before it ever reaches a device. The job declares
+`$tries = 25` for exactly this reason; overriding it on the command line reintroduces
+the bug the constant documents.
 
 ## Where a failure is RECORDED: `DeviceErrorReporter`
 

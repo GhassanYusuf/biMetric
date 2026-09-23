@@ -16,14 +16,21 @@ const PER_PAGE = 50;
 // over MQTT for this tenant.
 export default function Attendance() {
     const deviceClass = useDeviceClass();
-    const { user } = useAuth();
+    const { user, can } = useAuth();
     const toast = useToast();
     const [rows, setRows] = useState([]);
     const [devices, setDevices] = useState([]);
     const [pagination, setPagination] = useState(null);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
-    const [filters, setFilters] = useState({ device_id: '', from: '', to: '' });
+    const [filters, setFilters] = useState({ employee_id: '', device_id: '', from: '', to: '' });
+    /*
+     * The employee a national-ID lookup resolved to, held so the page can SAY whose
+     * punches these are. The national id itself is never held: it goes into the
+     * request body and is dropped, and this name is what remains on screen.
+     */
+    const [matched, setMatched] = useState(null);
+    const [lookingUp, setLookingUp] = useState(false);
     // The punch whose employee is open. Held as the whole row, not an id: the
     // dialog leads with the punch that was clicked, and a live refresh can
     // renumber the page under it.
@@ -61,7 +68,7 @@ export default function Attendance() {
     // while viewing page 1 unfiltered — otherwise it would violate the filter.
     const topics = user?.tenant ? [`tenant/${user.tenant.id}/module/attendance/+`] : [];
     useMqtt(topics, () => {
-        const unfiltered = !filters.device_id && !filters.from && !filters.to;
+        const unfiltered = !filters.employee_id && !filters.device_id && !filters.from && !filters.to;
         if (page === 1 && unfiltered) load(1, filters);
     });
 
@@ -87,9 +94,46 @@ export default function Attendance() {
         }
     }
 
+    /*
+     * National ID -> employee -> the punch filter the page already has.
+     *
+     * POST, so the number travels in the body: a query string would be written to
+     * the access log, kept in browser history, and leaked in the Referer of
+     * whatever the page loads next.
+     *
+     * Returns whether it matched, which is the field's cue to clear itself. A miss
+     * is a toast and nothing else — the typed number stays so a mistyped digit can
+     * be fixed rather than retyped.
+     */
+    async function lookupByNationalId(nationalId) {
+        const trimmed = (nationalId || '').trim();
+        if (!trimmed) return false;
+
+        setLookingUp(true);
+        try {
+            const res = await api.post('/employees/lookup', { national_id: trimmed });
+            const employee = res.data;
+            setMatched(employee);
+            setPage(1);
+            setFilters((f) => ({ ...f, employee_id: String(employee.id) }));
+            toast.success(`${employee.name} — showing their punches.`);
+            return true;
+        } catch (err) {
+            // The 404 carries the server's own wording ("has to match the whole
+            // number"), which is the useful half of the answer — do not replace it.
+            toast.error(err instanceof ApiError ? err.message : 'Could not look that national ID up.');
+            return false;
+        } finally {
+            setLookingUp(false);
+        }
+    }
+
     function applyFilters(next) {
         setPage(1);
         setFilters(next);
+        // Clearing the filters clears the person with them. The banner naming an
+        // employee must never outlive the filter that made it true.
+        if (!next.employee_id) setMatched(null);
     }
 
     const presentationProps = {
@@ -105,6 +149,17 @@ export default function Attendance() {
         onSelect: (log) => log.employee_id && setSelected(log),
         onExport: exportPdf,
         exporting,
+        matched,
+        onLookup: lookupByNationalId,
+        lookingUp,
+        onClearMatch: () => applyFilters({ ...filters, employee_id: '' }),
+        /*
+         * Both halves are required. employees.view is what the endpoint authorises;
+         * attendance.view is what makes the result mean anything — a self-only user's
+         * employee_id filter is ignored by PunchLogQuery, so offering them the box
+         * would be offering a control that cannot do what it says.
+         */
+        canLookup: can('employees.view') && can('attendance.view'),
     };
 
     const Presentation = deviceClass === 'desktop' ? AttendanceDesktop : AttendanceMobile;

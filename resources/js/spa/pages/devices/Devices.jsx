@@ -9,14 +9,15 @@ import { useSyncProgress, describeProgress } from '../../shared/useSyncProgress'
 import DevicesDesktop from './DevicesDesktop';
 import DevicesMobile from './DevicesMobile';
 import DeviceFormModal from './DeviceFormModal';
-import { FULL_RESYNC_CONFIRM } from './parts';
+import SyncRangeModal from './SyncRangeModal';
+import { FULL_RESYNC_CONFIRM, adoptConfirm } from './parts';
 
 // Actions that QUEUE a device read rather than returning a result inline. The POST
 // comes back at once with a queued command; the read then runs on the worker and
 // the sync-progress poller below drives the bar and detects completion. (Reads used
 // to run inside the request, which timed the front proxy out — a 524 — on a slow
 // device like Camelot.)
-const SYNCING_KEYS = ['sync-attendance', 'full-resync'];
+const SYNCING_KEYS = ['sync-attendance', 'full-resync', 'range-read'];
 
 // Owns device data + every device operation. The three hardware actions
 // (test / sync / import) talk to a physical ZKTeco unit over the network, so
@@ -30,6 +31,7 @@ export default function Devices() {
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(null); // device object, or {} for "new"
+    const [rangeFor, setRangeFor] = useState(null); // device awaiting a date range
     const [busy, setBusy] = useState({}); // { [deviceId]: 'test' | 'sync' | 'import' }
 
     const load = useCallback(async () => {
@@ -115,6 +117,49 @@ export default function Devices() {
         await runAction(device, 'sync-attendance', { body: { full: true }, busyKey: 'full-resync' });
     }
 
+    /**
+     * Imports one window of days and nothing else.
+     *
+     * The SAME endpoint again, with two dates instead of `full` — the device read is
+     * identical either way, because this protocol cannot be asked for part of its
+     * table (see AttendanceSyncService). What changes is which punches are written,
+     * and that the device's sync position is left where it was, so this can be used
+     * to repair one month without disturbing ordinary syncing.
+     *
+     * The dialog closes as soon as the read is QUEUED; its outcome arrives on the
+     * same progress bar every other read uses.
+     */
+    /**
+     * Unlocks writes on a terminal whose roster has been read and fully decided.
+     *
+     * The gate itself is not being weakened here — `finishAdoption()` still refuses
+     * while anything is unclaimed, and this button is only offered when the count is
+     * zero. What was missing was any way to TAKE the step from the UI: the endpoint
+     * and a console command existed, and no screen called either, so every push was
+     * refused with an instruction nobody could act on without a terminal.
+     */
+    async function adoptDevice(device) {
+        if (!(await confirm(adoptConfirm(device)))) return;
+
+        setBusy((b) => ({ ...b, [device.id]: 'adopt' }));
+        try {
+            const res = await api.post(`/devices/${device.id}/adopt`);
+            toast.success(res.message);
+            await load();
+        } catch (err) {
+            // A 422 here is the gate refusing, and its message names what is still
+            // undecided — that is the useful answer, so it is shown verbatim.
+            toast.error(err instanceof ApiError ? err.message : `Could not allow writes to ${device.name}.`);
+        } finally {
+            setBusy((b) => ({ ...b, [device.id]: undefined }));
+        }
+    }
+
+    async function rangeSync(device, { from, to }) {
+        await runAction(device, 'sync-attendance', { body: { from, to }, busyKey: 'range-read' });
+        setRangeFor(null);
+    }
+
     /*
      * Only one device syncs at a time from this screen (every action button is
      * disabled while any is busy), so a single poller covers the page. Polling is
@@ -177,6 +222,8 @@ export default function Devices() {
         onTest: (d) => runAction(d, 'test-connection'),
         onSync: (d) => runAction(d, 'sync-attendance'),
         onFullResync: fullResync,
+        onRangeSync: (d) => setRangeFor(d),
+        onAdopt: adoptDevice,
         onImport: (d) => runAction(d, 'import-employees'),
     };
 
@@ -194,6 +241,13 @@ export default function Devices() {
                     device={editing.id ? editing : null}
                     onSubmit={saveDevice}
                     onClose={() => setEditing(null)}
+                />
+            )}
+            {rangeFor && (
+                <SyncRangeModal
+                    device={rangeFor}
+                    onSubmit={(range) => rangeSync(rangeFor, range)}
+                    onClose={() => setRangeFor(null)}
                 />
             )}
         </>

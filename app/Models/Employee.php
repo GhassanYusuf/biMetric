@@ -17,6 +17,7 @@ class Employee extends Model
 
     protected $fillable = [
         'tenant_id',
+        'person_id',
         'name',
         'employee_code',
         'email',
@@ -55,6 +56,19 @@ class Employee extends Model
         return Attribute::make(
             get: fn () => $this->photo_path ? Storage::disk('public')->url($this->photo_path) : null,
         );
+    }
+
+    /**
+     * The human behind this employment.
+     *
+     * Nullable while an employment is being reconciled — a device roster gives you a
+     * name and a PIN, never a national id, so a claimed entry starts without a Person
+     * and gains one when HR supplies the id. Attendance still collects meanwhile;
+     * payroll export is what blocks (see Person::isExportable()).
+     */
+    public function person(): BelongsTo
+    {
+        return $this->belongsTo(Person::class);
     }
 
     public function attendanceLogs(): HasMany

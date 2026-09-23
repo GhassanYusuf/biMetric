@@ -61,3 +61,67 @@ export const FULL_RESYNC_CONFIRM = {
     ],
     confirmLabel: 'Read everything',
 };
+
+/**
+ * How a finished run describes what it was ASKED for.
+ *
+ * `incremental` and `full` say everything about themselves; `range` does not — two
+ * range runs minutes apart can cover different months, and "read 9,579, imported
+ * 640" is only legible next to the window it was bounded to. The dates come back
+ * from the API as plain Y-m-d because they are the terminal's own calendar days
+ * (see AttendanceSyncRunResource); they are shown as typed, NOT reformatted through
+ * the browser's timezone, which would move them by a day.
+ */
+export function describeRunMode(run) {
+    if (run?.mode !== 'range') return run?.mode ?? '';
+
+    if (run.range_from && run.range_to) return `range · ${run.range_from} → ${run.range_to}`;
+    if (run.range_from) return `range · from ${run.range_from}`;
+    if (run.range_to) return `range · up to ${run.range_to}`;
+
+    return 'range';
+}
+
+/**
+ * Whether this terminal will accept a write, as a badge.
+ *
+ * It was invisible until today: nothing in the devices payload said a device was
+ * read-only, so every screen offered pushes the hardware would refuse and the only
+ * way to find out was to try. Rule 9 — an action that cannot work is hidden, and a
+ * state that blocks actions is shown.
+ *
+ * `adopted` deliberately renders NOTHING. It is the normal state, and a green badge
+ * on every row would make the two that matter harder to see, not easier.
+ */
+export function AdoptionBadge({ device }) {
+    if (device?.is_writable) return null;
+
+    const pending = device?.unclaimed_roster_entries ?? 0;
+
+    return (
+        <Badge tone="amber" title={device?.write_refusal ?? undefined}>
+            {pending > 0 ? `${pending} to claim` : 'Read-only'}
+        </Badge>
+    );
+}
+
+/**
+ * The confirmation shown before adopting, wherever it is offered.
+ *
+ * Shared for the same reason FULL_RESYNC_CONFIRM is: two screens fire it and they
+ * must warn about the same thing in the same words.
+ *
+ * NOT `danger`. Adoption destroys nothing — it permits writes that were refused, and
+ * it is refused itself while anything on the terminal is undecided. Painting it red
+ * would teach operators to fear the step that makes the device usable.
+ */
+export function adoptConfirm(device) {
+    return {
+        title: `Allow writes to ${device.name}?`,
+        body: [
+            'Its roster has been read and every entry on it has been claimed or ignored, so this app knows who is already enrolled on the hardware.',
+            'From now on this terminal will accept employee pushes and enrollments. Nothing is written to it by this action itself.',
+        ],
+        confirmLabel: 'Allow writes',
+    };
+}

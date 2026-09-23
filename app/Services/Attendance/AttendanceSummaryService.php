@@ -2,11 +2,8 @@
 
 namespace App\Services\Attendance;
 
-use App\Models\AttendanceWaiver;
 use App\Models\Employee;
-use App\Models\Holiday;
 use Carbon\Carbon;
-use Carbon\CarbonPeriod;
 
 /**
  * Computes an employee's per-day attendance breakdown and payroll-hours total
@@ -17,6 +14,12 @@ use Carbon\CarbonPeriod;
  * Attendance is defined by the first and last punch of each scheduled work day
  * only; a work day with no punches is "absent" unless a holiday or waiver
  * excuses it (then it's credited the full shift so payroll isn't reduced).
+ *
+ * It reads NOTHING itself. Punches, holidays, waivers and the per-day shift marks
+ * all arrive in a SummaryBatch, which one caller builds for a whole roster and this
+ * one builds for a single employee. That is what keeps the payroll report and the
+ * employee screen on the same arithmetic — see SummaryBatch for the numbers that
+ * forced the split.
  */
 class AttendanceSummaryService
 {
@@ -41,18 +44,22 @@ class AttendanceSummaryService
     }
 
     /**
+     * @param  ?SummaryBatch  $batch  rows and shift marks already read for a SET of
+     *                                employees over this same window. Pass one when
+     *                                summarising more than one person; leaving it
+     *                                null builds a batch of this employee alone, so
+     *                                both callers run identical code.
      * @return array{employee:array,from:string,to:string,daily:array,categories:array,total_punches:int,total_payroll_hours:float}
      */
-    public function summary(Employee $employee, ?string $from = null, ?string $to = null): array
+    public function summary(Employee $employee, ?string $from = null, ?string $to = null, ?SummaryBatch $batch = null): array
     {
         $tz = config('attendance.timezone');
 
         [$fromDate, $toDate] = self::window($from, $to);
 
-        $logs = $employee->attendanceLogs()
-            ->whereBetween('punched_at', [$fromDate->copy()->setTimezone('UTC'), $toDate->copy()->setTimezone('UTC')])
-            ->orderBy('punched_at')
-            ->get(['punched_at']);
+        $batch ??= SummaryBatch::for([$employee], $fromDate, $toDate);
+
+        $logs = $batch->logsFor($employee->id);
 
         $punchesByDay = [];
         foreach ($logs as $log) {
@@ -65,20 +72,7 @@ class AttendanceSummaryService
             $byDay[$day] = ['first' => $times[0], 'last' => end($times), 'count' => count($times)];
         }
 
-        $holidays = Holiday::query()
-            ->whereBetween('date', [$fromDate->format('Y-m-d'), $toDate->format('Y-m-d')])
-            ->get()->keyBy(fn (Holiday $h) => $h->date->format('Y-m-d'));
-
-        $waivers = AttendanceWaiver::query()
-            ->where('employee_id', $employee->id)
-            ->whereBetween('date', [$fromDate->format('Y-m-d'), $toDate->format('Y-m-d')])
-            ->get()->keyBy(fn (AttendanceWaiver $w) => $w->date->format('Y-m-d'));
-
-        $shiftStart = config('attendance.shift_start');
-        $shiftEnd = config('attendance.shift_end');
-        $grace = config('attendance.grace_minutes');
-        $workDays = config('attendance.work_days');
-        $shiftLengthHours = round(Carbon::parse($shiftStart)->diffInMinutes(Carbon::parse($shiftEnd)) / 60, 1);
+        $shiftLengthHours = $batch->shiftLengthHours;
 
         $categories = [
             'early' => 0, 'come_late' => 0, 'leave_on_time' => 0, 'leave_late' => 0,
@@ -87,15 +81,17 @@ class AttendanceSummaryService
         $daily = [];
         $totalPayrollHours = 0;
 
-        foreach (CarbonPeriod::create($fromDate, $toDate) as $date) {
-            if (! in_array($date->dayOfWeek, $workDays, true)) {
-                continue;
-            }
-
-            $key = $date->format('Y-m-d');
+        /*
+         * The work days, and each day's shift marks, come from the batch. They
+         * depend only on the date and the configured shift — never on the employee
+         * — so recomputing them here meant four Carbon::parse() calls per person per
+         * day, which was the single largest cost in the payroll report.
+         */
+        foreach ($batch->days as $day) {
+            $key = $day['key'];
             $info = $byDay[$key] ?? null;
-            $holiday = $holidays->get($key);
-            $waiver = $waivers->get($key);
+            $holiday = $batch->holidayOn($key);
+            $waiver = $batch->waiverOn($employee->id, $key);
 
             $arrival = null;
             $departure = null;
@@ -104,8 +100,8 @@ class AttendanceSummaryService
 
             if ($info) {
                 $status = 'present';
-                $expectedStart = Carbon::parse("{$key} {$shiftStart}", $tz)->addMinutes($grace);
-                $expectedEnd = Carbon::parse("{$key} {$shiftEnd}", $tz)->addMinutes($grace);
+                $expectedStart = $day['expectedStart'];
+                $expectedEnd = $day['expectedEnd'];
 
                 $arrival = $info['first']->lte($expectedStart) ? 'early' : 'come_late';
                 $categories[$arrival]++;
@@ -115,8 +111,8 @@ class AttendanceSummaryService
                     $categories[$departure]++;
                     $hours = round($info['first']->diffInMinutes($info['last']) / 60, 1);
 
-                    $windowStart = Carbon::parse("{$key} {$shiftStart}", $tz);
-                    $windowEnd = Carbon::parse("{$key} {$shiftEnd}", $tz);
+                    $windowStart = $day['windowStart'];
+                    $windowEnd = $day['windowEnd'];
                     $clippedStart = $info['first']->greaterThan($windowStart) ? $info['first'] : $windowStart;
                     $clippedEnd = $info['last']->lessThan($windowEnd) ? $info['last'] : $windowEnd;
                     $payrollHours = $clippedEnd->greaterThan($clippedStart)

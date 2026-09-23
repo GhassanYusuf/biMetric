@@ -6,10 +6,10 @@ use App\Contracts\BiometricDeviceDriver;
 use App\Models\AccessCard;
 use App\Models\BiometricTemplate;
 use App\Models\Device;
+use App\Models\DeviceRosterEntry;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
 use Promoseven\Biometric\Capability\Capability;
-use Promoseven\Biometric\Client\Device as ProtocolDevice;
 use Promoseven\Biometric\Value\DeviceUser;
 
 /**
@@ -22,7 +22,11 @@ use Promoseven\Biometric\Value\DeviceUser;
  */
 class DeviceUserSyncService
 {
-    public function __construct(private readonly BiometricDeviceDriver $driver) {}
+    public function __construct(
+        private readonly BiometricDeviceDriver $driver,
+        private readonly DeviceIdentityResolver $identity,
+        private readonly DeviceAdoptionService $adoption,
+    ) {}
 
     /**
      * Reads the device and refreshes the stored mapping + credential state.
@@ -42,18 +46,36 @@ class DeviceUserSyncService
         /** @var list<DeviceUser> $deviceUsers */
         $deviceUsers = $this->driver->readUsers($device, $withFingerprints);
 
-        $employeesByCode = Employee::query()->pluck('id', 'employee_code')->all();
+        /*
+         * Resolution is by the STORED MAPPING for this device, never by string-matching
+         * the device's user id against employees.employee_code.
+         *
+         * The old match was a guess: a PIN is a slot number local to one terminal, and
+         * on a second device the same number belongs to an unrelated person. Matching on
+         * it merged two different humans and attached one's punches to the other —
+         * a payroll error with no visible symptom. See DeviceIdentityResolver.
+         *
+         * @var array<string,int> PIN on this device => employee id
+         */
+        $employeeByPin = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->live()
+            ->pluck('employee_id', 'device_user_id')
+            ->all();
 
         $matched = 0;
         $unmatched = [];
         $fingerprintsKnown = false;
 
         foreach ($deviceUsers as $user) {
-            $employeeId = $employeesByCode[$user->userId] ?? null;
+            $employeeId = $employeeByPin[$user->userId] ?? null;
 
             if ($employeeId === null) {
-                // On the device but not in the system. Recorded for reconciliation
-                // rather than ignored — their punches would arrive unattributed.
+                // On the device, claimed by nobody. Recorded as evidence rather than
+                // guessed at — their punches arrive unattributed until a human decides
+                // who they are, and the PIN stays reserved so nothing is written over
+                // them in the meantime.
+                $this->recordRosterEntry($device, $user);
                 $unmatched[] = ['device_user_id' => $user->userId, 'name' => $user->name];
 
                 continue;
@@ -77,7 +99,7 @@ class DeviceUserSyncService
             count($deviceUsers),
             $device->name,
             $matched,
-            $unmatched === [] ? '' : ', '.count($unmatched).' unknown to the system',
+            $unmatched === [] ? '' : ', '.count($unmatched).' awaiting a claim',
             $withFingerprints && ! $fingerprintsKnown
                 ? ", but this firmware's fingerprint table could not be decoded so counts are left unknown"
                 : '',
@@ -131,11 +153,19 @@ class DeviceUserSyncService
         /** @var list<DeviceUser> $deviceUsers */
         $deviceUsers = $this->driver->readUsers($device, $canReadTemplates);
 
+        /*
+         * The employee's PIN ON THIS DEVICE, from the stored mapping. employee_code is
+         * a payroll number and says nothing about which slot a terminal filed them in.
+         */
+        $map = $this->identity->activeMap($device, $employee);
+
         $match = null;
-        foreach ($deviceUsers as $user) {
-            if ($user->userId === (string) $employee->employee_code) {
-                $match = $user;
-                break;
+        if ($map !== null) {
+            foreach ($deviceUsers as $user) {
+                if ($user->userId === $map->device_user_id) {
+                    $match = $user;
+                    break;
+                }
             }
         }
 
@@ -201,12 +231,21 @@ class DeviceUserSyncService
 
         $employees = Employee::query()->where('is_active', true)->get();
 
+        // PIN per employee ON THIS DEVICE. Absent from this list means "has no identity
+        // here", which is a different statement from "is missing from the device".
+        $pinByEmployee = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->live()
+            ->pluck('device_user_id', 'employee_id')
+            ->all();
+
         $onlyOnDevice = [];
         $onlyInSystem = [];
         $mismatched = [];
 
         foreach ($employees as $employee) {
-            $user = $deviceByUserId[$employee->employee_code] ?? null;
+            $pin = $pinByEmployee[$employee->id] ?? null;
+            $user = $pin === null ? null : ($deviceByUserId[$pin] ?? null);
 
             if ($user === null) {
                 $onlyInSystem[] = [
@@ -232,10 +271,10 @@ class DeviceUserSyncService
             }
         }
 
-        $systemCodes = $employees->pluck('employee_code')->all();
+        $claimedPins = array_map('strval', array_values($pinByEmployee));
 
         foreach ($deviceUsers as $user) {
-            if (! in_array($user->userId, $systemCodes, true)) {
+            if (! in_array((string) $user->userId, $claimedPins, true)) {
                 $onlyOnDevice[] = [
                     'device_user_id' => $user->userId,
                     'device_uid' => $user->uid,
@@ -270,48 +309,97 @@ class DeviceUserSyncService
     }
 
     /**
-     * Imports device users the system does not know about, as new employees.
+     * Creates an employee for every UNCLAIMED person already on this device.
+     *
+     * WHAT CHANGED AND WHY. This used to look each device user up by
+     * employees.employee_code and either reuse the match or create a new employee. Both
+     * halves were wrong on a terminal that predates this system:
+     *
+     *   - Reusing a match MERGED two unrelated humans. A PIN is local to one terminal;
+     *     device B's PIN 5 has nothing to do with device A's PIN 5, and nothing to do
+     *     with payroll number 5. Two people became one employee, and one person's
+     *     punches were credited to the other.
+     *   - Creating silently meant a leaver, a contractor and the installer's test
+     *     account all arrived in payroll looking like staff.
+     *
+     * Now: one new employment per unclaimed roster entry on THIS device, never matched
+     * against anything that already exists, each claimed at the PIN the device already
+     * uses so no fingerprint is disturbed. Duplicates across sister terminals are
+     * expected here and are resolved afterwards at the Person layer, by national id —
+     * which is the only identifier that can honestly say two records are one human.
+     *
+     * Read the roster first (DeviceAdoptionService::readRoster). This writes nothing to
+     * the device.
      *
      * @return array{message:string, raw:array<string,mixed>}
      */
     public function importFromDevice(Device $device): array
     {
-        $this->driver->capabilities($device)->require(Capability::USER_READ);
+        $entries = DeviceRosterEntry::query()
+            ->where('device_id', $device->id)
+            ->where('claim_status', DeviceRosterEntry::UNCLAIMED)
+            ->orderBy('device_user_id')
+            ->get();
 
-        /** @var list<DeviceUser> $deviceUsers */
-        $deviceUsers = $this->driver->readUsers($device);
+        if ($entries->isEmpty()) {
+            return [
+                'message' => $device->roster_read_at === null
+                    ? "{$device->name} has not had its roster read yet, so there is nothing to import."
+                    : "{$device->name} has no unclaimed device users left to import.",
+                'raw' => ['created' => 0, 'pending_before' => 0],
+            ];
+        }
 
         $created = 0;
-        $existed = 0;
 
-        foreach ($deviceUsers as $user) {
-            if ($user->userId === '') {
-                continue;
-            }
+        foreach ($entries as $entry) {
+            $employee = Employee::create([
+                'tenant_id' => $device->tenant_id,
+                // The PIN is used as the starting payroll code only because it is the
+                // one identifier we have. It carries no meaning and an operator is
+                // expected to replace it — employee_code is unique per tenant, so a
+                // collision with an existing code would otherwise reject the import.
+                'employee_code' => $this->availableEmployeeCode($device, $entry->device_user_id),
+                // A device name field is 24 bytes and often abbreviated; better a
+                // placeholder an operator will fix than a fabricated full name.
+                'name' => $entry->device_name !== null && $entry->device_name !== ''
+                    ? $entry->device_name
+                    : "Imported {$entry->device_user_id}",
+                'is_active' => true,
+            ]);
 
-            $employee = Employee::query()->where('employee_code', $user->userId)->first();
-
-            if ($employee !== null) {
-                $existed++;
-            } else {
-                $employee = Employee::create([
-                    'tenant_id' => $device->tenant_id,
-                    'employee_code' => $user->userId,
-                    // A device name field is 24 bytes and often abbreviated; better a
-                    // placeholder an operator will fix than a fabricated full name.
-                    'name' => $user->name !== '' ? $user->name : "Imported {$user->userId}",
-                    'is_active' => true,
-                ]);
-                $created++;
-            }
-
-            $this->upsertMap($device, $employee->id, $user);
+            $this->adoption->claim($entry, $employee);
+            $created++;
         }
 
         return [
-            'message' => "Imported from {$device->name}: {$created} added, {$existed} already existed.",
-            'raw' => ['created' => $created, 'existed' => $existed, 'device_users' => count($deviceUsers)],
+            'message' => "Imported {$created} device user(s) from {$device->name} as new employees. "
+                .'Each needs a national id before payroll can export their attendance.',
+            'raw' => ['created' => $created, 'device_id' => $device->id],
         ];
+    }
+
+    /**
+     * A payroll code not yet taken in this tenant.
+     *
+     * employee_code is unique per tenant. Two terminals in the same company both
+     * holding PIN 5 is normal, so the second import would otherwise fail outright.
+     */
+    private function availableEmployeeCode(Device $device, string $pin): string
+    {
+        $candidate = $pin;
+        $suffix = 1;
+
+        while (Employee::withoutGlobalScopes()
+            ->where('tenant_id', $device->tenant_id)
+            ->where('employee_code', $candidate)
+            ->exists()
+        ) {
+            $candidate = $pin.'-'.$device->id.($suffix > 1 ? "-{$suffix}" : '');
+            $suffix++;
+        }
+
+        return $candidate;
     }
 
     /**
@@ -321,19 +409,39 @@ class DeviceUserSyncService
      */
     public function pushEmployee(Device $device, Employee $employee): array
     {
+        /*
+         * THREE GUARDS, IN THIS ORDER. Each one caught a real failure on 2026-09-15,
+         * when employees were pushed to a terminal that had been in service for years:
+         *
+         *   1. assertWritable() — the device's existing roster must have been read and
+         *      every entry decided. Without that we do not know which slots are taken.
+         *   2. pinFor()         — address the person by the PIN MAPPED to them on this
+         *      device. The old code used employee_code, which is a payroll number that
+         *      happens to collide with a stranger's slot on any other terminal.
+         *   3. guardSlot()      — read the slot before writing it. save() is an upsert:
+         *      writing to an occupied slot does not fail, it REPLACES the record and
+         *      that person's fingerprint templates with it. Templates cannot be
+         *      restored from a backup; the employee has to re-enrol in person.
+         */
+        $device->assertWritable();
+
         $this->driver->capabilities($device)->require(Capability::USER_WRITE);
 
-        $user = $this->driver->run(
+        $pin = $this->identity->pinFor($device, $employee);
+
+        // The driver reads the slot, runs this guard, and only then writes — all in one
+        // session, so nothing can claim the slot in between (rule 11).
+        $user = $this->driver->saveUser(
             $device,
-            // save() preserves the card and privilege already on the device — writing
-            // the defaults would wipe a card and demote an admin, both silently.
-            fn (ProtocolDevice $d) => $d->users()->save($employee->employee_code, $employee->name),
+            $pin,
+            $employee->name,
+            $this->identity->slotGuard($device, $employee, $pin),
         );
 
         $this->upsertMap($device, $employee->id, $user);
 
         return [
-            'message' => "{$employee->name} written to {$device->name} as uid {$user->uid}.",
+            'message' => "{$employee->name} written to {$device->name} as PIN {$pin} (uid {$user->uid}).",
             'raw' => $user->toArray(),
         ];
     }
@@ -345,16 +453,34 @@ class DeviceUserSyncService
      */
     public function removeEmployee(Device $device, Employee $employee): array
     {
+        $device->assertWritable();
+
         $this->driver->capabilities($device)->require(Capability::USER_DELETE);
 
-        $this->driver->run($device, fn (ProtocolDevice $d) => $d->users()->delete($employee->employee_code));
+        $pin = $this->identity->pinFor($device, $employee);
 
-        // The device no longer holds anything for them, so stored credential state
-        // would be a lie. Cleared rather than left stale.
-        EmployeeDeviceMap::query()
+        $this->driver->deleteUser($device, $pin);
+
+        /*
+         * The mapping is CLOSED, not deleted.
+         *
+         * Attendance already collected under this PIN belongs to this employee, and it
+         * resolves through the mapping that was in force at the punch time. Deleting the
+         * row orphans that history; worse, the PIN would then look free and could be
+         * reissued, quietly re-attributing those punches to whoever got it next.
+         */
+        $this->identity->activeMap($device, $employee)?->close('Removed from device');
+
+        // Their roster entry, if one exists, goes back to being an unclaimed slot that
+        // is still reserved — the number stays spent even though the record is gone.
+        DeviceRosterEntry::query()
             ->where('device_id', $device->id)
-            ->where('employee_id', $employee->id)
-            ->delete();
+            ->where('device_user_id', $pin)
+            ->update([
+                'claim_status' => DeviceRosterEntry::IGNORED,
+                'claimed_employee_id' => null,
+                'ignore_reason' => 'Deleted from the device; PIN kept reserved so it is never reissued',
+            ]);
 
         BiometricTemplate::query()
             ->where('device_id', $device->id)
@@ -375,23 +501,98 @@ class DeviceUserSyncService
 
     // ------------------------------------------------------------------ internals
 
+    /**
+     * Records a person the device holds that nobody has claimed.
+     *
+     * Evidence, not an identity. It also RESERVES the PIN: an unclaimed occupant still
+     * holds their slot, and allocating a new employee there is exactly the overwrite
+     * this whole change exists to prevent.
+     *
+     * An entry an operator has already decided keeps its decision — a re-read must
+     * never silently un-claim somebody.
+     */
+    private function recordRosterEntry(Device $device, DeviceUser $user): void
+    {
+        if ($user->userId === '') {
+            return;
+        }
+
+        $attributes = [
+            'device_uid' => $user->uid,
+            'device_name' => $user->name,
+            'device_privilege' => $user->privilege,
+            'card_number' => $user->cardNumber,
+            'last_seen_at' => now(),
+        ];
+
+        // Only overwrite slots when the table decoded. Storing null over a good read
+        // turns a known answer into "unknown" (rule 10).
+        if ($user->fingerSlots !== null) {
+            $attributes['fingerprint_slots'] = $user->fingerSlots;
+        }
+
+        $entry = DeviceRosterEntry::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $user->userId)
+            ->first();
+
+        if ($entry === null) {
+            DeviceRosterEntry::create($attributes + [
+                'tenant_id' => $device->tenant_id,
+                'device_id' => $device->id,
+                'device_user_id' => $user->userId,
+                'claim_status' => DeviceRosterEntry::UNCLAIMED,
+                'first_seen_at' => now(),
+            ]);
+
+            return;
+        }
+
+        $entry->update($attributes);
+    }
+
+    /**
+     * Refreshes what the device holds for an ALREADY MAPPED employee.
+     *
+     * Keyed on the live mapping, so it updates an identity rather than creating one.
+     * Creating one belongs to DeviceIdentityResolver::claim() or the adoption flow,
+     * both of which check the slot is free first.
+     */
     private function upsertMap(Device $device, int $employeeId, DeviceUser $user): EmployeeDeviceMap
     {
-        return EmployeeDeviceMap::updateOrCreate(
-            ['device_id' => $device->id, 'employee_id' => $employeeId],
-            [
-                'tenant_id' => $device->tenant_id,
-                'device_uid' => $user->uid,
-                'device_user_id' => $user->userId,
-                'device_name' => $user->name,
-                'device_privilege' => $user->privilege,
-                'card_number' => $user->cardNumber,
-                'fingerprint_slots' => $user->fingerSlots,
-                'synced_at' => now(),
-                'reconciliation_status' => EmployeeDeviceMap::IN_SYNC,
-                'reconciliation_detail' => null,
-            ],
-        );
+        $attributes = [
+            'tenant_id' => $device->tenant_id,
+            'device_uid' => $user->uid,
+            'device_user_id' => $user->userId,
+            'device_name' => $user->name,
+            'device_privilege' => $user->privilege,
+            'card_number' => $user->cardNumber,
+            'fingerprint_slots' => $user->fingerSlots,
+            'synced_at' => now(),
+            'reconciliation_status' => EmployeeDeviceMap::IN_SYNC,
+            'reconciliation_detail' => null,
+        ];
+
+        $map = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->where('employee_id', $employeeId)
+            ->live()
+            ->first();
+
+        if ($map !== null) {
+            // valid_from is deliberately NOT in the update. It is when this identity
+            // began, and refreshing it on every sync would collapse the window that
+            // lets a punch resolve to whoever held the PIN at the time.
+            $map->update($attributes);
+
+            return $map;
+        }
+
+        return EmployeeDeviceMap::create($attributes + [
+            'employee_id' => $employeeId,
+            'device_id' => $device->id,
+            'valid_from' => now(),
+        ]);
     }
 
     /** Records the card the device holds, as history rather than overwriting. */
@@ -463,6 +664,7 @@ class DeviceUserSyncService
 
         EmployeeDeviceMap::query()
             ->where('device_id', $device->id)
+            ->live()
             ->whereNotIn('device_user_id', $present ?: [''])
             ->update([
                 'reconciliation_status' => EmployeeDeviceMap::MISSING_ON_DEVICE,

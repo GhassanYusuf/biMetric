@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { ActionMenu, Badge, Button, EmptyState, PageHeader, ProgressBar, TableShell, Thead } from '../../shared/ui';
-import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
 import { describeProgress } from '../../shared/useSyncProgress';
 import { can } from './parts';
 
@@ -9,7 +9,7 @@ import { can } from './parts';
 export default function DevicesDesktop({
     rows, busy, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt,
 }) {
     const showActions = canSync || canUpdate || canDelete;
     const failing = rows.filter((d) => d.last_sync_status === 'error').length;
@@ -70,6 +70,9 @@ export default function DevicesDesktop({
                                     <div className="flex items-center gap-1.5">
                                         <SyncBadge status={d.last_sync_status} />
                                         {!d.is_active && <Badge tone="amber">Disabled</Badge>}
+                                        {/* Why a push would be refused, said BEFORE it is
+                                            tried. This was invisible until 2026-09-15. */}
+                                        <AdoptionBadge device={d} />
                                     </div>
                                     {d.last_sync_error && (
                                         <div className="mt-1 max-w-xs truncate text-xs text-rose-600" title={d.last_sync_error}>
@@ -129,6 +132,21 @@ export default function DevicesDesktop({
                                                         disabled: !!running,
                                                         onSelect: () => onFullResync(d),
                                                     },
+                                                    canSync && can(d, 'attendance.read') && {
+                                                        /*
+                                                          | Third in the sync group, because it is the
+                                                          | same read again with a window instead of a
+                                                          | watermark. The ellipsis is doing real work:
+                                                          | unlike the two above it, this one asks a
+                                                          | question before anything reaches the device.
+                                                        */
+                                                        key: 'range-read',
+                                                        label: 'Read a date range…',
+                                                        description: 'Import only the punches between two dates.',
+                                                        loading: running === 'range-read',
+                                                        disabled: !!running,
+                                                        onSelect: () => onRangeSync(d),
+                                                    },
                                                     canSync && can(d, 'user.read') && {
                                                         key: 'import',
                                                         label: 'Import staff',
@@ -136,6 +154,21 @@ export default function DevicesDesktop({
                                                         loading: running === 'import-employees',
                                                         disabled: !!running,
                                                         onSelect: () => onImport(d),
+                                                    },
+                                                    /*
+                                                      | Only while the terminal is read-only, and
+                                                      | only once nothing on it is undecided. Rule 9:
+                                                      | offering it earlier would produce a 422 that
+                                                      | teaches operators to distrust the screen.
+                                                    */
+                                                    canUpdate && !d.is_writable && (d.unclaimed_roster_entries ?? 0) === 0 && d.is_active && {
+                                                        key: 'adopt',
+                                                        label: 'Allow writes',
+                                                        description: 'Its roster is fully claimed — let this terminal accept employee pushes.',
+                                                        tone: 'primary',
+                                                        loading: running === 'adopt',
+                                                        disabled: !!running,
+                                                        onSelect: () => onAdopt(d),
                                                     },
                                                     canSync && (canUpdate || canDelete) && { key: 'sep', separator: true },
                                                     canUpdate && {

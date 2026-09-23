@@ -14,6 +14,7 @@ use App\Models\DeviceCommand;
 use App\Services\Devices\DeviceCommandBus;
 use App\Services\Devices\SyncProgressRecorder;
 use App\Support\ApiResponse;
+use App\Support\AttendanceWindow;
 use App\Support\Tenancy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -298,19 +299,28 @@ class DeviceSyncController extends Controller
                 DeviceCommand::SYNC_TIME,
             ])],
             'full' => ['boolean'],
-        ]);
+            // Only SYNC_ATTENDANCE reads them, and the payload is inert to every
+            // other command — but they are validated here so a mistyped date is a
+            // 422 at the door rather than a run that quietly imports nothing.
+        ] + AttendanceWindow::rules($request));
 
         if ($error = $this->capabilityRefusal($device, $data['command'])) {
             return ApiResponse::error($error, ['command' => [$error]], 422);
         }
 
-        $command = $this->bus->dispatch($device, $data['command'], [
-            'full' => (bool) ($data['full'] ?? false),
-        ]);
+        $window = AttendanceWindow::fromValidated($data);
+
+        $command = $this->bus->dispatch(
+            $device,
+            $data['command'],
+            $window->toPayload((bool) ($data['full'] ?? false)),
+        );
 
         return ApiResponse::success(
             new DeviceCommandResource($command),
-            "Queued {$data['command']} on {$device->name}. Watch the command for its outcome.",
+            $window->isBounded()
+                ? "Queued {$data['command']} on {$device->name} for {$window->describe()}. Watch the command for its outcome."
+                : "Queued {$data['command']} on {$device->name}. Watch the command for its outcome.",
         );
     }
 

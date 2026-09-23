@@ -22,7 +22,11 @@ return new class extends Migration
     {
         Schema::create('employee_device_maps', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
+            // tenant_id is NO ACTION, not CASCADE: SQL Server rejects two cascade paths
+            // into one table, and tenants reach most of these both directly and via
+            // devices. Tenant soft-deletes, so the cascade never fired. See
+            // 2026_07_26_080003_add_tenant_id_to_domain_tables.php.
+            $table->foreignId('tenant_id')->nullable()->constrained();
             $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
             $table->foreignId('device_id')->constrained()->cascadeOnDelete();
 

@@ -15,6 +15,7 @@ use App\Services\Devices\DeviceCommandBus;
 use App\Services\Devices\DeviceHealthService;
 use App\Services\Devices\DeviceUserSyncService;
 use App\Support\ApiResponse;
+use App\Support\AttendanceWindow;
 use App\Support\DeviceErrorReporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -43,7 +44,13 @@ class DeviceController extends Controller
     {
         $this->authorize('viewAny', Device::class);
 
-        $devices = Device::query()->withCount('attendanceLogs')->latest()->get();
+        // unclaimedRosterEntries is counted in the same statement rather than per
+        // row: the list shows whether each terminal can be written to, and asking
+        // once per device is the N+1 this codebase keeps having to remove.
+        $devices = Device::query()
+            ->withCount(['attendanceLogs', 'unclaimedRosterEntries'])
+            ->latest()
+            ->get();
 
         return ApiResponse::success(DeviceResource::collection($devices), 'Devices retrieved.');
     }
@@ -191,15 +198,31 @@ class DeviceController extends Controller
     {
         $this->authorize('sync', $device);
 
-        $full = $request->boolean('full');
+        /*
+         * `from`/`to` are DEVICE-LOCAL calendar dates, both inclusive, and either may
+         * stand alone — "everything since 1 August" is as valid a request as a closed
+         * window. They are not a device query: the protocol has no "punches since X",
+         * so the terminal still sends its whole table and these bound what gets
+         * IMPORTED. See AttendanceSyncService for why that is still worth having.
+         */
+        $data = $request->validate(['full' => ['boolean']] + AttendanceWindow::rules($request));
 
-        $command = $bus->dispatch($device, DeviceCommand::SYNC_ATTENDANCE, ['full' => $full]);
+        $full = $request->boolean('full');
+        $window = AttendanceWindow::fromValidated($data);
+
+        $command = $bus->dispatch($device, DeviceCommand::SYNC_ATTENDANCE, $window->toPayload($full));
 
         return ApiResponse::success(
             new DeviceCommandResource($command),
-            $full
-                ? "Full re-read queued for {$device->name} — watch progress here."
-                : "Attendance sync queued for {$device->name}.",
+            match (true) {
+                $window->isBounded() => sprintf(
+                    'Date-range read queued for %s (%s) — watch progress here.',
+                    $device->name,
+                    $window->describe(),
+                ),
+                $full => "Full re-read queued for {$device->name} — watch progress here.",
+                default => "Attendance sync queued for {$device->name}.",
+            },
         );
     }
 

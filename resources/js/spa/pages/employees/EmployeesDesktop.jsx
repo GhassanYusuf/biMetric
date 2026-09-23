@@ -1,11 +1,22 @@
-import { Button, EmptyState, InlineAlert, PageHeader, TableShell, TextField, Thead } from '../../shared/ui';
+import { Button, EmptyState, InlineAlert, PageHeader, TableShell, Thead } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, FingerprintCell, TerminalsCell, syncedAgo } from './enrollmentCells';
+import EmployeeFilters from './EmployeeFilters';
+import NationalIdCell from './NationalIdCell';
 
 // Desktop employees: toolbar + wide data table.
-export default function EmployeesDesktop({ rows, search, onSearch, canCreate, canDelete, canEnroll, canReadDevice, readingDevice, total, perPage, onAdd, onDelete, onEnroll, onView, onReadFromDevice }) {
+export default function EmployeesDesktop({
+    rows, search, onSearch, filters, onFilters, departments, devices,
+    canCreate, canDelete, canEnroll, canUpdate, canReadDevice, canSetNationalId,
+    readingDevice, total, perPage,
+    onAdd, onDelete, onEdit, onPush, onMerge, onEnroll, onView, onReadFromDevice, onSaveNationalId,
+}) {
     const searching = search.trim().length > 0;
-    const showActions = canEnroll || canDelete;
+    const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
+    // Not a count of the whole roster — only of what is on screen. Said that way in the
+    // banner below, because "12 missing" would read as an estate-wide figure.
+    const missingHere = rows.filter((e) => !e.has_national_id).length;
+    const showActions = canEnroll || canUpdate || canDelete;
     const lastRead = syncedAgo(rows);
     const truncated = total != null && total > rows.length;
 
@@ -36,20 +47,36 @@ export default function EmployeesDesktop({ rows, search, onSearch, canCreate, ca
                 </InlineAlert>
             )}
 
-            <TextField
-                placeholder="Search by name, code, department or email…"
-                value={search}
-                onChange={(e) => onSearch(e.target.value)}
-                aria-label="Search employees"
-                className="max-w-sm"
+            <EmployeeFilters
+                search={search}
+                onSearch={onSearch}
+                filters={filters ?? {}}
+                onChange={onFilters}
+                departments={departments}
+                devices={devices}
             />
+
+            {/* State, not an event, so it stays put while it is true (rule 2). */}
+            {canSetNationalId && missingHere > 0 && (
+                <InlineAlert tone="info">
+                    {missingHere} of the {rows.length} shown {missingHere === 1 ? 'has' : 'have'} no national ID, so
+                    their attendance cannot be exported to payroll. Click the column to add one — Enter saves and
+                    moves to the next.
+                </InlineAlert>
+            )}
 
             <TableShell>
                 <Thead>
                     <tr>
+                        {/* Position in the list as shown, so it renumbers with the
+                            filters rather than pretending to be a stable id. No font
+                            of its own — Thead styles every header, and a column that
+                            opts out of that stops looking like part of the table. */}
+                        <th className="px-5 py-3 text-center" style={{ width: '1%' }}>No.</th>
                         <th className="px-5 py-3 text-left">Name</th>
                         <th className="px-5 py-3 text-left">Code</th>
                         <th className="px-5 py-3 text-left">Department</th>
+                        <th className="px-5 py-3 text-left">National ID</th>
                         <th className="px-5 py-3 text-left">Fingerprints</th>
                         <th className="px-5 py-3 text-left">Card number</th>
                         <th className="px-5 py-3 text-left">Enrolled on</th>
@@ -57,19 +84,23 @@ export default function EmployeesDesktop({ rows, search, onSearch, canCreate, ca
                         {showActions && <th className="px-5 py-3" />}
                     </tr>
                 </Thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody>
                     {rows.length === 0 && (
                         <tr>
-                            <td colSpan={8}>
+                            <td colSpan={10}>
                                 <EmptyState
-                                    title={searching ? 'No matches' : 'No employees yet'}
-                                    hint={searching ? `Nothing matches "${search.trim()}".` : 'Add one by hand, or import the roster straight off a device.'}
-                                    action={!searching && canCreate && <Button onClick={onAdd}>+ Add your first employee</Button>}
+                                    title={searching || filtering ? 'No matches' : 'No employees yet'}
+                                    hint={searching
+                                        ? `Nothing matches "${search.trim()}".`
+                                        : filtering
+                                            ? 'No employee matches these filters. Clear them to see the whole roster.'
+                                            : 'Import the staff list with `php artisan staff:import`, or add one by hand.'}
+                                    action={!searching && !filtering && canCreate && <Button onClick={onAdd}>+ Add your first employee</Button>}
                                 />
                             </td>
                         </tr>
                     )}
-                    {rows.map((e) => (
+                    {rows.map((e, i) => (
                         // The row itself opens the enrollment detail; the action
                         // buttons stop propagation so they still do their own job.
                         <tr
@@ -83,11 +114,31 @@ export default function EmployeesDesktop({ rows, search, onSearch, canCreate, ca
                             }}
                             tabIndex={0}
                             aria-label={`View ${e.name}'s enrollment`}
-                            className={`cursor-pointer transition-colors duration-150 hover:bg-violet-50/40 ${FOCUS}`}
+                            /*
+                             * Zebra first, hover second, and the order matters: Tailwind
+                             * emits `hover:` after `odd:`/`even:`, so the hover tint wins
+                             * over whichever stripe the row happens to sit on. Without
+                             * that the highlight vanishes on every other row.
+                             *
+                             * The stripe is a reading aid across a wide table; the hover
+                             * is the "you are on this row" signal and is deliberately
+                             * stronger than both stripes.
+                             */
+                            className={`cursor-pointer odd:bg-white even:bg-slate-50/70 transition-colors duration-150 hover:bg-violet-50 ${FOCUS}`}
                         >
+                            <td className="px-5 py-3.5 text-center tabular-nums text-slate-600">{i + 1}</td>
                             <td className="px-5 py-3.5 font-medium text-slate-900">{e.name}</td>
                             <td className="px-5 py-3.5 font-mono text-xs text-slate-600">{e.employee_code}</td>
                             <td className="px-5 py-3.5 text-slate-600">{e.department || '—'}</td>
+                            {/* Stops the row's own click handler opening the detail
+                                modal the moment the operator aims at the field. */}
+                            <td className="px-5 py-3.5" onClick={(event) => event.stopPropagation()}>
+                                <NationalIdCell
+                                    employee={e}
+                                    canEdit={canSetNationalId}
+                                    onSave={onSaveNationalId}
+                                />
+                            </td>
                             <td className="px-5 py-3.5">
                                 <FingerprintCell employee={e} />
                             </td>
@@ -103,10 +154,37 @@ export default function EmployeesDesktop({ rows, search, onSearch, canCreate, ca
                             {showActions && (
                                 <td className="px-5 py-3.5" onClick={(event) => event.stopPropagation()}>
                                     <div className="flex items-center justify-end gap-1.5">
+                                        {canUpdate && (
+                                            /* Before Enroll: correcting who somebody is
+                                               comes before putting them on hardware, and
+                                               this is the dialog that can also push the
+                                               correction out to the terminals. */
+                                            <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" onClick={() => onEdit(e)}>
+                                                Edit
+                                            </Button>
+                                        )}
+                                        {canEnroll && (
+                                            /* Writes them onto terminals WITHOUT editing
+                                               them first. Saving can push too, but making
+                                               somebody re-save an unchanged record to
+                                               trigger a device write teaches them to
+                                               distrust the save button. */
+                                            <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" onClick={() => onPush(e)}>
+                                                Push
+                                            </Button>
+                                        )}
                                         {canEnroll && (
                                             <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" onClick={() => onEnroll(e)}>
                                                 Enroll
                                             </Button>
+                                        )}
+                                        {canUpdate && canDelete && (
+                                            /* Not danger-coloured here: the destructive
+                                               half is inside the dialog, behind a summary
+                                               of exactly what moves and what is deleted. */
+                                            <button onClick={() => onMerge(e)} className="rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100">
+                                                Merge
+                                            </button>
                                         )}
                                         {canDelete && (
                                             <button onClick={() => onDelete(e)} className="rounded-lg px-2 py-1 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50">

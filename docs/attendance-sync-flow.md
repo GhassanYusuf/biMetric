@@ -77,7 +77,7 @@ A **full** re-read passes no watermark, so every record becomes a candidate and 
 same settled device reports `read=8153 imported=0 duplicate=8153` instead. Comparing
 the two across modes is meaningless; compare within a mode.
 
-## The five counts
+## The six counts
 
 Recorded per run, because collapsing them hides the only information that
 distinguishes a healthy sync from a broken one.
@@ -89,6 +89,11 @@ distinguishes a healthy sync from a broken one.
 | `duplicate` | already known, skipped | high is normal |
 | `unmatched` | device user id maps to no employee | non-zero = former staff or a missing map |
 | `undecodable` | **offered but could not be decoded** | **any non-zero value needs attention** |
+| `out_of_range` | outside the requested date window | always 0 unless the run was a range read |
+
+`out_of_range` exists for the same reason `undecodable` does: a record the importer
+decided not to store is **counted**, never silently dropped. It is what makes a
+range read's `read 9,579, imported 640` legible instead of alarming.
 
 `undecodable` rows are archived in `attendance_raw_logs` for reparsing rather than
 discarded. That archive is the reason a decoder bug was recoverable rather than
@@ -165,15 +170,55 @@ Two consequences worth stating plainly:
 - The bug was invisible because nothing counted what it threw away. That is why
   `undecodable` is now a first-class count on every run.
 
+## Attribution resolves through TIME, not through the current mapping
+
+Rewritten 2026-09-15. A punch is attributed to whoever held that PIN **at the moment it
+was made** — `EmployeeDeviceMap::scopeInForceAt()`, and `employeeAt()` inside the bulk
+loop, which resolves in PHP so a 90,000-record table does not become 90,000 queries.
+
+Taking the *current* mapping instead is wrong in a way nothing on screen would show.
+Terminals reassign a departed employee's number to a new hire; resolving old punches to
+the present holder credits the leaver's entire history to the joiner.
+
+A mapping adopted off hardware has `valid_from = null` — unbounded start. The person was
+already enrolled when the terminal was first read and we do not know since when, so a
+null bound is the honest statement. Stamping the claim date instead would orphan every
+punch older than it, which on the Glass Door panel is 87,000 records.
+
+### Re-attributing after the fact
+
+Claiming a device user is a human decision that usually lands *after* the sync. So
+attribution is recomputable:
+
+```
+php artisan attendance:reattribute [device] [--dry-run]
+```
+
+It only ever recomputes `employee_id` from the mappings; it never invents, moves or
+deletes a punch, and never alters the raw `device_user_id` it recomputes from. Safe to
+re-run. Without it, claiming an existing terminal would only affect the future — and
+nearly all of such a terminal's attendance is in the past.
+
 ## Unattributed punches
 
-1,417 punches from 52 former employees have `employee_id = null`: their records
-were removed from the terminal after they had already clocked in, so the device
-user id no longer maps to anybody.
+Punches whose PIN resolves to nobody are **kept** with `employee_id = null`, counted as
+`unmatched`, and never guessed at. A plausible employee id is a lie; "unmatched" is a
+true statement about what we know (rule 10). Deleting them would quietly remove real
+hours from history.
 
-They are **kept**, not discarded. Deleting them would quietly remove real hours
-from history; keeping them with a null employee makes the gap visible and
-countable (`unattributed_punches` on the reconciliation summary).
+Measured across the estate on 2026-09-15, after a full re-read:
+
+| Device | Unmatched PINs | Still on the device | Gone from the device |
+|---|---|---|---|
+| IT Room | 59 | 3 (undecided) | 56 |
+| On The Road | 12 | 2 (undecided) | 10 |
+| Glass Door | 85 | 16 (undecided) | 69 |
+| Entrance | 9 | 0 | 9 |
+
+The large majority are PINs **deleted from the terminal** — leavers whose user record
+was removed while their punches remained. That attribution is unrecoverable. The
+minority still on the device become attributable as soon as an operator claims them,
+via `attendance:reattribute`.
 
 ## Full re-read
 
@@ -192,15 +237,17 @@ Use it after a decoder fix, or when the watermark is suspect.
 | Where | How |
 |---|---|
 | Device detail screen | the **Full re-read** button, which confirms first |
-| API, queued | `POST /api/devices/{id}/commands` `{"command":"sync_attendance","full":true}` |
-| API, inline | `POST /api/devices/{id}/sync-attendance` `{"full":true}` |
+| Devices list | the **Full re-read** menu item, same confirmation, same words |
+| API | `POST /api/devices/{id}/commands` `{"command":"sync_attendance","full":true}` |
+| API | `POST /api/devices/{id}/sync-attendance` `{"full":true}` |
 | Console | `php artisan app:sync-biometric-devices --full [--device=2]` |
 
-The queued paths need `php artisan queue:work` running; the inline one does not.
-
-The inline route raises the time limit to 300s when `full` is set — reconsidering
-tens of thousands of records against the dedupe index outlives the default 30s, and
-timing out *after* the device read has finished throws away the slow part.
+**Every one of them queues.** Both HTTP routes return a `DeviceCommand` at once and
+the read happens on a worker, so `php artisan queue:work` must be running or nothing
+moves. Neither route runs the read inside the request any more: a full re-read of a
+public-IP terminal takes minutes, and the front proxy used to time the request out
+(a 524) long before the device finished, which made a working read look like a
+failure.
 
 A response reports which it did:
 
@@ -212,6 +259,70 @@ A response reports which it did:
 CONFIRMED on a ZKTeco F18: a full re-read of a 10,303-record terminal reported
 `10,303 already known` and imported nothing, while the same table run incrementally
 imported the single new punch. The dedupe index is what makes that safe.
+
+## Date-range read
+
+The third mode, and the one an operator reaches for most often in practice: import
+**only the punches recorded between two days**, inclusive of both.
+
+```
+POST /api/devices/{id}/sync-attendance  { "from": "2026-08-01", "to": "2026-08-31" }
+```
+
+It exists because the two existing modes answer the wrong question when something
+needs repairing. An incremental sync will not look below the watermark, and a full
+re-read reconsiders 90,000 records to fix one month. A range read fixes the month.
+
+### The three things that make it trustworthy
+
+**1. It is a client-side window, and the docs must not pretend otherwise.** The
+terminal still transfers its entire table — `ATTLOG_RRQ` has no date filter, exactly
+as it has no "since X". A range does **not** make the read quicker; it bounds what
+is imported. The dialog says so on screen, because an operator told a range was
+"faster" will report the progress bar as broken.
+
+**2. The window is the DEVICE's calendar day.** Punches carry the terminal's local
+offset (`+03:00` here), so the bounds are built in `$device->timezone` — falling back
+to `attendance.device_timezone` — and widened to that day's start and end. Built in
+the app timezone instead they would be three hours out at both ends, and an evening's
+punches would land in the wrong day. That is the same class of bug as the two
+recorded below, which is why it has its own test:
+`AttendanceRangeSyncTest::test_the_window_is_the_devices_calendar_day_not_the_servers`.
+
+**3. It does NOT move the watermark, and it ignores it.**
+
+The window *replaces* the watermark rather than narrowing it. Narrowing would make
+the commonest request impossible — the month being repaired is nearly always one the
+watermark has already passed — and the run would report `read 9,579, imported 0`.
+
+Not moving it is the safety property. The watermark means "ordinary syncing has
+considered everything up to here". A backfill of last March says nothing about that:
+dragged backwards, the next sync merely reconsiders six months; dragged *forwards* by
+a window ending today, every punch between the old watermark and today would be
+skipped **permanently**. Leaving it alone can cost extra work and can never lose a
+punch — the same principle as the dedupe index.
+
+### What the run records
+
+`mode` is `range`, and `range_from` / `range_to` store the two dates as plain days.
+Without them the history cannot tell a range read from a full one, and "why did this
+import 1 of 9,579?" has no answer on the row. The API returns them as `Y-m-d`
+strings, not ISO instants, so a browser cannot shift them into its own timezone and
+display the wrong day.
+
+Records outside the window are counted in `out_of_range` and are **not** archived to
+`attendance_raw_logs`. That is deliberate: a range read is a targeted import, and
+archiving the remainder would write the terminal's whole table as raw rows on every
+run. A full re-read is the thing that archives everything.
+
+### Where it is offered
+
+The devices list (**Actions → Read a date range…**) and device detail, from one
+dialog file, with presets for last 7 days / this month / last month. Both are gated
+on `attendance.read` like every other read (rule 9). A backwards window is refused
+with a 422 on the field before anything is queued — it could only ever import
+nothing, and a run that reads a whole terminal to import nothing is
+indistinguishable on screen from a terminal that has stopped recording.
 
 ## Live progress, and why it is coarse
 

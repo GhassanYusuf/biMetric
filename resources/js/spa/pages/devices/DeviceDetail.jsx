@@ -8,6 +8,7 @@ import { useMqtt } from '../../shared/useMqtt';
 import { useToast } from '../../shared/toast';
 import { Skeleton, SkeletonCards } from '../../shared/ui';
 import { useSyncProgress } from '../../shared/useSyncProgress';
+import SyncRangeModal from './SyncRangeModal';
 import { FULL_RESYNC_CONFIRM } from './parts';
 import DeviceDetailDesktop from './DeviceDetailDesktop';
 import DeviceDetailMobile from './DeviceDetailMobile';
@@ -37,6 +38,7 @@ export default function DeviceDetail() {
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
     const [dispatching, setDispatching] = useState(null);
+    const [rangeOpen, setRangeOpen] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -81,10 +83,10 @@ export default function DeviceDetail() {
     });
 
     /** Queues one command. 422 here is a capability refusal, which is information. */
-    async function dispatch(command, { full = false } = {}) {
+    async function dispatch(command, { full = false, from = null, to = null } = {}) {
         setDispatching(command);
         try {
-            const res = await api.post(`/devices/${id}/commands`, { command, full });
+            const res = await api.post(`/devices/${id}/commands`, { command, full, from, to });
             toast.success(res.message);
             setCommands((prev) => [res.data, ...prev]);
         } catch (err) {
@@ -97,6 +99,17 @@ export default function DeviceDetail() {
     async function fullResync() {
         // Same wording as the devices list — see FULL_RESYNC_CONFIRM.
         if (await confirm(FULL_RESYNC_CONFIRM)) dispatch('sync_attendance', { full: true });
+    }
+
+    /*
+     * Same dialog, same endpoint and same semantics as the devices list: the window
+     * bounds what is imported, not what the terminal sends, and the device's sync
+     * position is left untouched. Offered on both screens because an operator who
+     * found it on one and not the other would reasonably conclude it was broken.
+     */
+    async function rangeSync({ from, to }) {
+        await dispatch('sync_attendance', { from, to });
+        setRangeOpen(false);
     }
 
     async function retryCommand(command) {
@@ -156,6 +169,7 @@ export default function DeviceDetail() {
     const Presentation = deviceClass === 'desktop' ? DeviceDetailDesktop : DeviceDetailMobile;
 
     return (
+        <>
         <Presentation
             device={device}
             runs={runs}
@@ -170,9 +184,18 @@ export default function DeviceDetail() {
             onRefresh={load}
             onDispatch={dispatch}
             onFullResync={fullResync}
+            onRangeSync={() => setRangeOpen(true)}
             onRetryCommand={retryCommand}
             onCancelCommand={cancelCommand}
             onBack={() => navigate('/devices')}
         />
+        {rangeOpen && (
+            <SyncRangeModal
+                device={device}
+                onSubmit={rangeSync}
+                onClose={() => setRangeOpen(false)}
+            />
+        )}
+        </>
     );
 }

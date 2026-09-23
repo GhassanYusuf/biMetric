@@ -97,10 +97,126 @@ flag that should drop**, not a new one.
 | `device.restart` | Deliberately never called. |
 | `user.disable` | Approximated by clearing the card — the protocol has no suspend flag. |
 
+### `template.blob.read` — CONFIRMED 2026-09-15 (F18 and F22)
+
+**The template bytes were always arriving. We were stepping over them.**
+
+The table returned by `CMD_DB_RRQ` + `FCT_FINGERTMP` — the one
+`template.table.read` already fetches on every enrollment sync — holds each blob
+immediately after its record header:
+
+```
+[uint32 total length]
+  [uint16 record length][uint16 uid][uint8 slot][uint8 valid][TEMPLATE BLOB]
+  …
+```
+
+`TemplateCodec::decode()` read the 6-byte header and skipped the remainder.
+`decodeWithBlobs()` keeps it. **No new command, no extra round trip, no new
+capability on the wire.**
+
+Measured on the F18 @ `192.168.7.62`: 22,066-byte table, 19 records, blobs of
+706–1,602 bytes, 21,948 bytes of template data, the walk consuming exactly
+22,062 of 22,062.
+
+| Terminal | Model | Templates | Bytes |
+|---|---|---|---|
+| IT Room `192.168.7.62` | F18 | 16 | 19,122 |
+| On The Road `192.168.7.63` | F22 | 16 | 18,386 |
+| Good Wheels `46.184.163.106` | F18 family | 32 | 27,422 |
+| Camelot `87.237.196.60` | F18 | 37 | 45,518 |
+| Glass Door, Entrance | C3 panels | **not exposed** | — |
+
+#### The finding that matters
+
+**Templates copied between terminals are byte-identical, across models.**
+
+| | |
+|---|---|
+| PIN 261 slot 3 | same 1,054 bytes on the **F18** and the **F22** |
+| PIN 261 slot 6 | same 1,132 bytes on both |
+| PIN 654 slots 6, 7 | identical on both |
+| PIN 940 slot 6 | identical on both |
+
+This is the vendor tool's doing: an operator enrols a finger once in ZKAccess and
+pushes it to the other terminals. It means a SHA-1 of the blob is a usable identity
+signal — the device's own record that two employee records are one human.
+
+**Read it the right way round.** A digest MATCH proves one enrolment in two places.
+A digest MISMATCH proves nothing at all: presenting the same finger twice yields a
+different template, and there is no matcher in this library. Never conclude
+"different people" from a mismatch.
+
+**Store the digest, not the bytes.** The blob is biometric data; the SHA-1 answers
+the only question being asked and cannot leak a fingerprint into a log line.
+`employee_device_maps.template_digests` holds `["<slot>:<sha1>", …]`.
+
+Read with `php artisan device:read-templates` (read-only). The probe and its trace
+are `tools/zkprobe/f18-templates.php` and
+`tools/zkprobe/traces-2026-09-15/f18-templates-*.json` — digests and sizes only,
+never the bytes.
+
+#### The C3 panels too — SOLVED 2026-09-15
+
+The line that used to sit here said the C3 panels "cannot do this". They can. The
+`templatev10` table had simply never been requested, and the panel had been
+publishing its schema in every `DATATABLE_CFG` reply all along:
+
+```
+templatev10=10,Size=i1,UID=i2,Pin=i3,FingerID=i4,Valid=i5,Template=B6,Resverd=i7,EndTag=i8
+```
+
+**What made it look unreadable is one byte.** A C3 record prefixes each field with
+its length, and `RecordCodec` read ONE byte — which tops out at 255, while these
+templates run to 1,618. The first record decoded perfectly
+(`Size=878 UID=1 Pin=10 FingerID=3 Valid=1`), then the walk consumed 110 bytes of an
+878-byte template, lost alignment inside that record, and produced plausible-looking
+nonsense for all 344 after it. Exactly the failure rule 10 exists to prevent.
+
+**A blob field carries a TWO-byte length prefix.** With that, the walk consumes
+281,680 of 281,680 bytes on both panels.
+
+| | inBIO460 `.61` | TF1700 `.60` |
+|---|---|---|
+| Records | **238** | **238** |
+| Payload consumed | 281,680 / 281,680 | 281,680 / 281,680 |
+| Distinct people | 196 | 196 |
+| Finger slots | 0, 3, 4, 5, 6, 7, 9 | same |
+| Template size | 564–1,618 B | same |
+| `SS21` signature at offset 2 | every record | every record |
+| `Size` field == blob length | every record | every record |
+
+238 is **exactly** the `fingercount` the vendor's own `Machines` table reports for
+each panel, and 196 is exactly the number of those PINs with a template in its
+`BioTemplate` table. Four independent cross-checks, all agreeing.
+
+`TEMPLATE_TABLE_READ` and `TEMPLATE_BLOB_READ` are therefore `confirmed` **on the
+inBIO460 and the TF1700 specifically**. The family default stays `implemented`: a
+level confirmed on one model says nothing about another (rule 10), so a C3-400
+nobody has read still claims nothing.
+
+The fixture is **synthetic** — `tests/Fixtures/c3-templatev10-synthetic.bin`. A real
+capture is 238 people's fingerprints and is not committed (rule 16); the framing is
+what matters and it is reproduced exactly.
+
 ### Not implemented (2)
 
-`template.download`, `template.upload` — the library can read the template
-*table* (which slots are filled) but does not transfer template blobs.
+`template.download`, `template.upload` — and the distinction from
+`template.blob.read` above matters:
+
+- `template.download` is the **separate per-slot command** (`USERTEMP_RRQ` with a
+  uid/slot payload). The device answers it — a per-slot probe returned 1,304 bytes
+  for uid 8 slot 6 — but it is redundant now that the table read yields the same
+  blob. (That 1,304 is the RECORD; the blob is 1,298. Reading the per-slot figure as
+  a blob length is an off-by-six that would misalign a decoder.)
+- `template.upload` is **writing a template back**. As of 2026-09-15 the **payload is
+  no longer unknown** — the vendor's own `BioTemplate` table stores exactly the bytes
+  the device holds (26 of 32 compared pairs byte-identical, 6 differing only by
+  trailing zero padding, 0 otherwise). See `docs/zkaccess-database.md`. What remains
+  unproven is the **write command itself**. A template that appears to save and then fails to match a real
+  finger is worse than no feature. Enrolment stays device-side.
+
+Neither ever blocked reading.
 
 ### Unknown (5)
 
@@ -108,6 +224,46 @@ flag that should drop**, not a new one.
 `access.duress`, `access.relay`.
 
 Never probed. These may exist on the hardware. We claim nothing.
+
+## Carrying a national id on the terminal — NOT IMPLEMENTED, and where it could go
+
+Asked on 2026-09-21: can the terminal itself hold the national id (CPR, 9 digits
+here, e.g. `830108246`), so that a device read alone identifies the human without
+going through `employee_code`?
+
+Probed read-only against the F18 at 192.168.7.62 the same day
+(`tools/zkprobe/f18-user-record-fields.php`, 18 user records, trace
+`traces-2026-09-21/f18-user-record-fields-01.json`).
+
+**The answer is that there is no spare field.** The 72-byte user record is fully
+accounted for — uid, privilege, password, name, card, group, timezone flags, user
+id — and every always-zero byte on the device is the unused tail of one of those,
+not free space (per-byte occupancy is in `docs/protocol-overview.md`). Anything we
+store has to go in a field that already means something:
+
+| Field | Room for 9 digits? | What it costs |
+|---|---|---|
+| **user id** (PIN), 9–24 bytes @48 | Yes — exactly 9 | It is the attendance key. Every punch row carries it, so changing it on an enrolled user **orphans their history**, and the CPR then shows on the terminal display and in every vendor tool. |
+| **name**, 24 bytes @11 | Yes, appended — names here reach 18 chars, so not always | The name is what the terminal shows on screen and what reconciliation matches on. Both break. |
+| **card**, 4 bytes @35 | Numerically yes (`830108246` < 2^32) | It is a credential field: writing it makes the CPR **work as a card** at the door, and destroys real card enrollment. `0xFFFFFFFF` is already ambiguous here (sentinel vs real). Never do this. |
+| **password**, 8 bytes @3 | No — 9 digits do not fit, and only 5 chars were observed in use | It is a verification password: anyone who knows the CPR could clock in as them. |
+| **bytes 57..71** | 15 bytes, always zero | Almost certainly the tail of `user id`, not padding — see the unresolved question in `docs/protocol-overview.md`. Writing there is a guess against a live terminal. |
+
+**So the only field that can honestly hold a CPR is the user id**, and only by
+making the CPR *be* the user id — which is a data-model decision (the terminal's
+key becomes the government id), not a protocol one. It is viable on a terminal
+being enrolled from scratch and unsafe on one with attendance history.
+
+**What is NOT settled:** ZKTeco's own SDK exposes extended user fields on some
+firmware (`SetUserInfoEx`, and an extended-format flag read via device options).
+Whether this F18 has an extended user table with somewhere neutral to put a CPR has
+**never been probed** — that is `unknown`, not `not_implemented` (rule 9), and it is
+the next thing to look at if this becomes a requirement. It needs a read of the
+device option block first, not a write.
+
+Meanwhile the app does not need this: the national id lives in `people`, and the
+terminal's `employee_code` maps to it. The lookup endpoint
+(`POST /api/employees/lookup`) resolves one to the other.
 
 ## The CSL/HTTP web firmware
 
@@ -252,6 +408,37 @@ dialect), in **model/vendor-named files** (rule 15), capability-gated (rule 9), 
 its door-relay control (`0x05`) is a WRITE gated behind the owner's authorization
 (rule 16). Probe: `tools/zkprobe/inbio460.php`. Traces:
 `tools/zkprobe/traces-2026-09-14/inbio-*.json`.
+
+### Writing users to a C3 panel — `not_implemented`, and why (2026-09-15)
+
+`user.write` and `user.delete` are **`not_implemented`** on every C3 panel, so the UI
+hides them (rule 9) and a push to Entrance or Glass Door is skipped with *"this
+protocol cannot write users"*. That is the truth about the driver, not a device
+fault, and it is worth separating from the two things that ARE now known.
+
+**The command numbers are settled.** Recovered from the vendor's `plcommpro.dll` on
+2026-09-15 — no public C3 reimplementation carries a write command at all:
+
+| Command | Code | Source |
+|---|---|---|
+| `SET_DATA` | `0x07` | DLL log string `"…!Cmd=CMD_SET_DATA, datalen=%d"` then `movl $0x7` at `0x1000b7c2` |
+| `DELETE_DATA` | `0x09` | constant inside `Process_DeleteDeviceData` |
+| `GET_DATA_COUNT` | `0x0A` | constant inside `Process_GetDeviceDataCount` |
+
+The same extraction independently reproduces `0x03`/`0x04`/`0x06`, which are already
+known from the references — that agreement is what makes the three above evidence
+rather than a guess.
+
+**The payload layout is NOT settled, and was not guessed.** A write to `user` that is
+one byte out of phase overwrites somebody already enrolled, and a C3 template cannot
+be restored from any backup. Entrance and Glass Door hold **320 roster entries each**
+and control doors. Rule 16 is explicit that this is where you stop and record the gap.
+
+`GET_DATA_COUNT` is the safe next step: it is read-only, it exercises the same
+extraction, and a correct row count proves the command numbers came out of the DLL
+intact before anything is written.
+
+See `docs/protocol-overview.md` for the three ways to close the gap, best first.
 
 ## TF1700 on 192.168.7.60 (Glass Door) — C3 / PullSDK panel, READS CONFIRMED
 

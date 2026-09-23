@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader } from '../../shared/ui';
-import { PROTOCOL_LABELS, SyncBadge, can, relativeTime } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, can, relativeTime } from './parts';
 import { SyncProgressRow } from './DevicesDesktop';
 
 // Mobile devices: stacked cards, actions as a full-width row of large tap
@@ -8,7 +8,7 @@ import { SyncProgressRow } from './DevicesDesktop';
 export default function DevicesMobile({
     rows, busy, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt,
 }) {
     return (
         <div className="space-y-4">
@@ -48,6 +48,8 @@ export default function DevicesMobile({
                                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
                                     <Badge tone="violet">{PROTOCOL_LABELS[d.protocol] || d.protocol}</Badge>
                                     {!d.is_active && <Badge tone="amber">Disabled</Badge>}
+                                    {/* Same signal as the desktop row — rule 5. */}
+                                    <AdoptionBadge device={d} />
                                     <span className="ml-auto text-xs tabular-nums text-slate-500">
                                         {(d.attendance_logs_count ?? 0).toLocaleString()} punches
                                     </span>
@@ -94,6 +96,21 @@ export default function DevicesMobile({
                                         {can(d, 'attendance.read') && (
                                             <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'full-resync'} onClick={() => onFullResync(d)}>
                                                 Full re-read
+                                            </Button>
+                                        )}
+                                        {/* Same action, same gate and same words as the desktop
+                                            menu item — rule 5 says the two presentations behave
+                                            identically, and the dialog it opens is one file. */}
+                                        {can(d, 'attendance.read') && (
+                                            <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'range-read'} onClick={() => onRangeSync(d)}>
+                                                Read a date range…
+                                            </Button>
+                                        )}
+                                        {/* Same gate and same words as the desktop menu item
+                                            — rule 5, and rule 9 for when it appears at all. */}
+                                        {canUpdate && !d.is_writable && (d.unclaimed_roster_entries ?? 0) === 0 && d.is_active && (
+                                            <Button className="col-span-3 text-xs" disabled={!!running} loading={running === 'adopt'} onClick={() => onAdopt(d)}>
+                                                Allow writes
                                             </Button>
                                         )}
                                     </div>

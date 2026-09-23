@@ -1,0 +1,234 @@
+{
+    "label": "c3-templatev10",
+    "host": "multiple",
+    "started_at": "2026-09-15T10:00:36+00:00",
+    "devices": [
+        {
+            "device_id": 13,
+            "name": "Glass Door",
+            "host": "192.168.7.61",
+            "model": "inBIO460",
+            "tables": [
+                "user",
+                "userauthorize",
+                "holiday",
+                "timezone",
+                "transaction",
+                "firstcard",
+                "multimcard",
+                "inoutfun",
+                "template",
+                "templatev10"
+            ],
+            "schema": {
+                "Size": {
+                    "index": 1,
+                    "type": "i"
+                },
+                "UID": {
+                    "index": 2,
+                    "type": "i"
+                },
+                "Pin": {
+                    "index": 3,
+                    "type": "i"
+                },
+                "FingerID": {
+                    "index": 4,
+                    "type": "i"
+                },
+                "Valid": {
+                    "index": 5,
+                    "type": "i"
+                },
+                "Template": {
+                    "index": 6,
+                    "type": "b"
+                },
+                "Resverd": {
+                    "index": 7,
+                    "type": "i"
+                },
+                "EndTag": {
+                    "index": 8,
+                    "type": "i"
+                }
+            },
+            "table_index": 10,
+            "field_indexes": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+            ],
+            "elapsed_ms": 1022,
+            "rows": 345,
+            "row_keys": [
+                "Size",
+                "UID",
+                "Pin",
+                "FingerID",
+                "Valid",
+                "Template",
+                "Resverd",
+                "EndTag"
+            ],
+            "sample": [
+                {
+                    "Size": 878,
+                    "UID": 1,
+                    "Pin": 10,
+                    "FingerID": 3,
+                    "Valid": 1,
+                    "Template": "<110 bytes>",
+                    "Resverd": 0,
+                    "EndTag": -71801405948737170
+                },
+                {
+                    "Size": 7285237794333663067,
+                    "UID": 656531333739999518,
+                    "Pin": 342768084563686886,
+                    "FingerID": 0,
+                    "Valid": -9093955608658199848,
+                    "Template": "<68 bytes>",
+                    "Resverd": 34573017860210760,
+                    "EndTag": 1143070571925606169
+                },
+                {
+                    "Size": 5368668461658385029,
+                    "UID": 3534916833737612418,
+                    "Pin": -1801419525673844817,
+                    "FingerID": 5977056194623504395,
+                    "Valid": -576454883750814941,
+                    "Template": "<252 bytes>",
+                    "Resverd": -4304584723095474805,
+                    "EndTag": -5826789299722355953
+                }
+            ],
+            "declared_sizes": {
+                "min": -9200125004126579241,
+                "max": 8968731184078906645,
+                "sum": 3.058033293854143e+19
+            },
+            "ok": true
+        },
+        {
+            "device_id": 14,
+            "name": "Entrance",
+            "host": "192.168.7.60",
+            "model": "TF1700",
+            "tables": [
+                "user",
+                "userauthorize",
+                "holiday",
+                "timezone",
+                "transaction",
+                "firstcard",
+                "multimcard",
+                "inoutfun",
+                "template",
+                "templatev10",
+                "oplog"
+            ],
+            "schema": {
+                "Size": {
+                    "index": 1,
+                    "type": "i"
+                },
+                "UID": {
+                    "index": 2,
+                    "type": "i"
+                },
+                "Pin": {
+                    "index": 3,
+                    "type": "i"
+                },
+                "FingerID": {
+                    "index": 4,
+                    "type": "i"
+                },
+                "Valid": {
+                    "index": 5,
+                    "type": "i"
+                },
+                "Template": {
+                    "index": 6,
+                    "type": "b"
+                },
+                "Resverd": {
+                    "index": 7,
+                    "type": "i"
+                },
+                "EndTag": {
+                    "index": 8,
+                    "type": "i"
+                }
+            },
+            "table_index": 10,
+            "field_indexes": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8
+            ],
+            "elapsed_ms": 1857,
+            "rows": 345,
+            "row_keys": [
+                "Size",
+                "UID",
+                "Pin",
+                "FingerID",
+                "Valid",
+                "Template",
+                "Resverd",
+                "EndTag"
+            ],
+            "sample": [
+                {
+                    "Size": 878,
+                    "UID": 1,
+                    "Pin": 10,
+                    "FingerID": 3,
+                    "Valid": 1,
+                    "Template": "<110 bytes>",
+                    "Resverd": 0,
+                    "EndTag": -71801405948737170
+                },
+                {
+                    "Size": 7285237794333663067,
+                    "UID": 656531333739999518,
+                    "Pin": 342768084563686886,
+                    "FingerID": 0,
+                    "Valid": -9093955608658199848,
+                    "Template": "<68 bytes>",
+                    "Resverd": 34573017860210760,
+                    "EndTag": 1143070571925606169
+                },
+                {
+                    "Size": 5368668461658385029,
+                    "UID": 3534916833737612418,
+                    "Pin": -1801419525673844817,
+                    "FingerID": 5977056194623504395,
+                    "Valid": -576454883750814941,
+                    "Template": "<252 bytes>",
+                    "Resverd": -4304584723095474805,
+                    "EndTag": -5826789299722355953
+                }
+            ],
+            "declared_sizes": {
+                "min": -9200125004126579241,
+                "max": 8968731184078906645,
+                "sum": 3.058033293854143e+19
+            },
+            "ok": true
+        }
+    ]
+}

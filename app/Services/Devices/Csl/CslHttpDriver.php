@@ -185,6 +185,47 @@ class CslHttpDriver implements BiometricDeviceDriver
      * no capability endpoint. A stored set from a previous read still wins, so an
      * operator's correction is not overwritten by this baseline.
      */
+    /**
+     * Not available on this family (rule 9: declared, not silently plausible).
+     *
+     * These panels keep templates in a separate table this driver does not read, so
+     * there are no digests to return. Throwing rather than returning an empty array
+     * keeps "cannot read" distinct from "nobody is enrolled" (rule 10).
+     */
+    public function readTemplateDigests(Device $device): array
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not expose a readable fingerprint template table."
+        );
+    }
+
+    /**
+     * Not implemented for this family (rule 9: declared, not silently plausible).
+     *
+     * Writing a user record here would mean a different mechanism entirely, and an
+     * unguarded one would carry exactly the overwrite risk BiometricDeviceDriver::
+     * saveUser() exists to remove. Until that is written and confirmed against real
+     * hardware, this refuses rather than returning something that looks like success.
+     */
+    public function saveUser(
+        Device $device,
+        string $userId,
+        string $name,
+        ?\Closure $guard = null,
+        bool $onlyIfMissing = false,
+    ): DeviceUser {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not support writing user records through this driver."
+        );
+    }
+
+    public function deleteUser(Device $device, string $userId): void
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not support deleting user records through this driver."
+        );
+    }
+
     public function capabilities(Device $device): CapabilitySet
     {
         $stored = $device->capabilities_cache;

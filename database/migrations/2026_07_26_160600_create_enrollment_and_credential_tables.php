@@ -30,10 +30,17 @@ return new class extends Migration
     {
         Schema::create('enrollment_sessions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
+            // tenant_id is NO ACTION, not CASCADE: SQL Server rejects two cascade paths
+            // into one table, and tenants reach most of these both directly and via
+            // devices. Tenant soft-deletes, so the cascade never fired. See
+            // 2026_07_26_080003_add_tenant_id_to_domain_tables.php.
+            $table->foreignId('tenant_id')->nullable()->constrained();
             $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
             $table->foreignId('device_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('device_command_id')->nullable()->constrained()->nullOnDelete();
+            // NO ACTION: devices reach enrollment_sessions directly and again
+            // through device_commands, and SQL Server counts SET NULL as a cascade
+            // path too. The device_id cascade above is the one that matters.
+            $table->foreignId('device_command_id')->nullable()->constrained();
 
             $table->string('type');                          // fingerprint | card
             $table->unsignedTinyInteger('finger_slot')->nullable();  // fingerprint only
@@ -71,7 +78,7 @@ return new class extends Migration
 
         Schema::create('access_cards', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('tenant_id')->nullable()->constrained();
             $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
             $table->foreignId('device_id')->nullable()->constrained()->nullOnDelete();
 
@@ -99,7 +106,7 @@ return new class extends Migration
 
         Schema::create('biometric_templates', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('tenant_id')->nullable()->constrained();
             $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
             $table->foreignId('device_id')->constrained()->cascadeOnDelete();
 

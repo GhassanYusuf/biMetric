@@ -1,6 +1,8 @@
-import { Badge, Button, Card, EmptyState, InlineAlert, PageHeader, TextField } from '../../shared/ui';
+import { Badge, Button, Card, EmptyState, InlineAlert, PageHeader } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
+import EmployeeFilters from './EmployeeFilters';
+import NationalIdCell from './NationalIdCell';
 
 /*
 | Mobile employees: search + stacked tap-friendly cards (no wide table).
@@ -10,12 +12,14 @@ import { CardCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
 | card number joined the department badge and both buttons.
 */
 export default function EmployeesMobile({
-    rows, search, onSearch,
-    canCreate, canDelete, canEnroll, canReadDevice,
+    rows, search, onSearch, filters, onFilters, departments, devices,
+    canCreate, canDelete, canEnroll, canUpdate, canReadDevice, canSetNationalId,
     readingDevice, total, perPage,
-    onAdd, onDelete, onEnroll, onView, onReadFromDevice,
+    onAdd, onDelete, onEdit, onPush, onMerge, onEnroll, onView, onReadFromDevice, onSaveNationalId,
 }) {
     const searching = search.trim().length > 0;
+    const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
+    const missingHere = rows.filter((e) => !e.has_national_id).length;
     const truncated = total != null && total > rows.length;
 
     return (
@@ -28,12 +32,23 @@ export default function EmployeesMobile({
                 {canCreate && <Button onClick={onAdd} className="px-3">+ Add</Button>}
             </PageHeader>
 
-            <TextField
-                placeholder="Search employees…"
-                aria-label="Search employees"
-                value={search}
-                onChange={(e) => onSearch(e.target.value)}
+            {/* Rule 5: the same filters as desktop, stacked rather than in a row. */}
+            <EmployeeFilters
+                search={search}
+                onSearch={onSearch}
+                filters={filters ?? {}}
+                onChange={onFilters}
+                departments={departments}
+                devices={devices}
+                stacked
             />
+
+            {canSetNationalId && missingHere > 0 && (
+                <InlineAlert tone="info">
+                    {missingHere} of the {rows.length} shown {missingHere === 1 ? 'has' : 'have'} no national ID, so
+                    their attendance cannot be exported to payroll.
+                </InlineAlert>
+            )}
 
             {canReadDevice && (
                 <Button variant="secondary" className="w-full" loading={readingDevice} onClick={onReadFromDevice}>
@@ -51,16 +66,18 @@ export default function EmployeesMobile({
             {rows.length === 0 ? (
                 <Card>
                     <EmptyState
-                        title={searching ? 'No matches' : 'No employees yet'}
+                        title={searching || filtering ? 'No matches' : 'No employees yet'}
                         hint={searching
                             ? `Nothing matches "${search.trim()}".`
-                            : 'Add one by hand, or import the roster straight off a device.'}
-                        action={!searching && canCreate && <Button onClick={onAdd}>+ Add your first employee</Button>}
+                            : filtering
+                                ? 'No employee matches these filters. Clear them to see the whole roster.'
+                                : 'Import the staff list with `php artisan staff:import`, or add one by hand.'}
+                        action={!searching && !filtering && canCreate && <Button onClick={onAdd}>+ Add your first employee</Button>}
                     />
                 </Card>
             ) : (
                 <div className="space-y-2">
-                    {rows.map((e) => (
+                    {rows.map((e, i) => (
                         <Card
                             key={e.id}
                             // Matches the desktop row: the card opens the enrollment
@@ -78,9 +95,16 @@ export default function EmployeesMobile({
                             className={`cursor-pointer p-4 active:bg-slate-50 ${FOCUS}`}
                         >
                             <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <div className="truncate font-semibold text-slate-900">{e.name}</div>
-                                    <div className="font-mono text-xs text-slate-500">{e.employee_code}</div>
+                                <div className="flex min-w-0 items-baseline gap-2.5">
+                                    {/* Rule 5: the desktop "No." column, same number.
+                                        Cards are already visually discrete, so they get
+                                        the number but not the stripe — and `active:` is
+                                        the touch equivalent of the desktop hover. */}
+                                    <span className="shrink-0 tabular-nums text-slate-600">{i + 1}</span>
+                                    <div className="min-w-0">
+                                        <div className="truncate font-semibold text-slate-900">{e.name}</div>
+                                        <div className="font-mono text-xs text-slate-500">{e.employee_code}</div>
+                                    </div>
                                 </div>
                                 <div className="shrink-0 text-right text-xs tabular-nums text-slate-500">
                                     {(e.attendance_logs_count ?? 0).toLocaleString()} punches
@@ -93,6 +117,19 @@ export default function EmployeesMobile({
                                 </div>
                             )}
 
+                            {/* Rule 5: the desktop "National ID" column, same editor. */}
+                            <div
+                                className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3"
+                                onClick={(event) => event.stopPropagation()}
+                            >
+                                <span className="text-xs font-medium text-slate-500">National ID</span>
+                                <NationalIdCell
+                                    employee={e}
+                                    canEdit={canSetNationalId}
+                                    onSave={onSaveNationalId}
+                                />
+                            </div>
+
                             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3">
                                 <FingerprintCell employee={e} />
                                 <CardCell employee={e} />
@@ -103,14 +140,31 @@ export default function EmployeesMobile({
                                 <TerminalsCell employee={e} />
                             </div>
 
-                            {(canEnroll || canDelete) && (
+                            {(canEnroll || canUpdate || canDelete) && (
                                 <div
-                                    className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-3"
+                                    className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3"
                                     onClick={(event) => event.stopPropagation()}
                                 >
+                                    {/* Same order and same words as the desktop row — rule 5. */}
+                                    {canUpdate && (
+                                        <button onClick={() => onEdit(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-slate-600 ${FOCUS}`}>
+                                            Edit
+                                        </button>
+                                    )}
+                                    {/* Same actions and same words as the desktop row — rule 5. */}
+                                    {canEnroll && (
+                                        <button onClick={() => onPush(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-violet-700 ${FOCUS}`}>
+                                            Push
+                                        </button>
+                                    )}
                                     {canEnroll && (
                                         <button onClick={() => onEnroll(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-violet-700 ${FOCUS}`}>
                                             Enroll
+                                        </button>
+                                    )}
+                                    {canUpdate && canDelete && (
+                                        <button onClick={() => onMerge(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-slate-600 ${FOCUS}`}>
+                                            Merge
                                         </button>
                                     )}
                                     {canDelete && (

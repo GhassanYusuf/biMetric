@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader, SelectField, TableShell, Thead } from '../../shared/ui';
+import { describeRunMode } from './parts';
 import { DeviceError, RUN_STATUSES, RunStatusBadge, absoluteTime, formatDuration } from './statusParts';
 
 /*
@@ -120,7 +121,7 @@ export default function SyncRunsDesktop({ runs, devices, meta, totals, filters, 
                                     {run.device_name ?? `Device ${run.device_id}`}
                                 </Link>
                             </td>
-                            <td className="px-5 py-3.5 capitalize text-slate-600">{run.mode}</td>
+                            <td className="px-5 py-3.5 text-slate-600 first-letter:uppercase">{describeRunMode(run)}</td>
                             <td className="px-5 py-3.5">
                                 <div className="flex items-center gap-1.5">
                                     <RunStatusBadge status={run.status} />

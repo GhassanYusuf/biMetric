@@ -29,6 +29,14 @@ class EmployeeDeviceMapResource extends JsonResource
             'reconciliation_detail' => $this->reconciliation_detail,
             'needs_attention' => $this->needsAttention(),
             'synced_at' => $this->synced_at?->toIso8601String(),
+            /*
+             * Whether this mapping is CURRENT. A closed one is a PIN they used to
+             * hold on that device, kept so their old punches still resolve to them —
+             * so a screen offering "update them on these terminals" must not offer
+             * it, or the write would land on whoever holds that slot now.
+             */
+            'is_live' => $this->valid_to === null,
+            'closed_at' => $this->valid_to?->toIso8601String(),
         ];
     }
 }

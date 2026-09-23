@@ -6,12 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Employee\StoreEmployeeRequest;
 use App\Http\Requests\Api\Employee\UpdateEmployeeRequest;
 use App\Http\Resources\EmployeeResource;
+use App\Models\AuditLog;
 use App\Models\Device;
 use App\Models\Employee;
+use App\Models\Person;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Devices\DeviceUserSyncService;
 use App\Services\Devices\EnrollmentOrchestratorService;
+use App\Services\Employees\EmployeeDevicePropagator;
+use App\Services\Employees\EmployeeMergeService;
 use App\Support\ApiResponse;
+use App\Support\Tenancy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -40,7 +45,7 @@ class EmployeeController extends Controller
             // `deviceMaps` answers "enrolled on which terminal?" — the flat
             // enrollment columns on employees cannot, once there is more than
             // one device.
-            ->with(['department:id,name', 'deviceMaps.device:id,name'])
+            ->with(['department:id,name', 'deviceMaps.device:id,name', 'person'])
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = '%'.$request->string('search')->trim().'%';
                 $q->where(function ($sub) use ($term) {
@@ -52,6 +57,31 @@ class EmployeeController extends Controller
             })
             ->when($request->filled('department_id'), fn ($q) => $q->where('department_id', $request->integer('department_id')))
             ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
+            /*
+             * IDENTITY FILTERS. The one that matters operationally is
+             * has_national_id=0: without a national id a person cannot be exported to
+             * the HRMS, and after importing a roster that is most of them. Filtering
+             * to exactly those is how an operator works through the backlog instead of
+             * hunting for gaps in a list of three hundred.
+             */
+            ->when($request->filled('has_national_id'), function ($q) use ($request) {
+                $request->boolean('has_national_id')
+                    ? $q->whereHas('person', fn ($p) => $p->whereNotNull('national_id_hash'))
+                    : $q->where(fn ($sub) => $sub
+                        ->whereNull('person_id')
+                        ->orWhereHas('person', fn ($p) => $p->whereNull('national_id_hash')));
+            })
+            // Enrolled on a specific terminal, via the live mapping — not the flat
+            // snapshot columns, which cannot say WHICH device once there are two.
+            ->when($request->filled('device_id'), fn ($q) => $q->whereHas(
+                'deviceMaps',
+                fn ($m) => $m->where('device_id', $request->integer('device_id'))->whereNull('valid_to'),
+            ))
+            // On no terminal at all: they cannot clock in anywhere.
+            ->when($request->boolean('unenrolled'), fn ($q) => $q->whereDoesntHave(
+                'deviceMaps',
+                fn ($m) => $m->whereNull('valid_to'),
+            ))
             ->orderBy('name')
             ->paginate($request->integer('per_page', 25));
 
@@ -117,6 +147,174 @@ class EmployeeController extends Controller
         return ApiResponse::created(new EmployeeResource($employee), 'Employee added.');
     }
 
+    /**
+     * Resolves a national id to the employment that holds it, in THIS company.
+     *
+     * The one read the national id has, and deliberately a narrow one: the caller
+     * must already know the number, and what comes back never contains one. Nothing
+     * here decrypts anything — Person::findByNationalId() matches on the blind
+     * index, so the ciphertext is not touched.
+     *
+     * EXACT MATCH ONLY, and it cannot be otherwise: a hash has no prefix, so there
+     * is no "starts with" or "contains" search on a national id and there will not
+     * be one — that would mean storing the document searchable in plaintext.
+     * Punctuation and case do not matter, because the index is over the normalised
+     * value (see Person::hashNationalId()).
+     *
+     * The intended caller is the Attendance screen: a national id is what an
+     * operator is holding when somebody asks why their hours are short, and it is
+     * the one key that is the same document across sister companies.
+     */
+    public function lookup(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Employee::class);
+
+        $data = $request->validate([
+            'national_id' => ['required', 'string', 'min:4', 'max:64'],
+        ]);
+
+        $person = Person::findByNationalId(trim($data['national_id']));
+
+        /*
+         * Person is NOT tenant-scoped — that is the whole point of it, one human
+         * across sister companies. The EMPLOYMENT is, so resolving through the
+         * relation is what stops this company's operator turning a number into a
+         * name at another company. Do not "helpfully" widen this with
+         * withoutGlobalScopes().
+         *
+         * Ordered by is_active so a rehire resolves to the current employment rather
+         * than whichever row was written first.
+         */
+        $employee = $person?->employments()
+            ->with(['department:id,name', 'deviceMaps.device:id,name', 'person'])
+            ->withCount('attendanceLogs')
+            ->orderByDesc('is_active')
+            ->first();
+
+        $this->auditLookup($request, $employee);
+
+        if ($employee === null) {
+            return ApiResponse::error(
+                'No employee in this company holds that national ID. It has to match the whole number — '
+                .'check it, or search by name or code on the Employees screen.',
+                status: 404,
+            );
+        }
+
+        return ApiResponse::success(new EmployeeResource($employee), "Found {$employee->name}.");
+    }
+
+    /**
+     * Records that somebody resolved a national id — hit AND miss.
+     *
+     * The miss is the one that matters. Somebody guessing numbers against this
+     * endpoint looks exactly like a run of misses from one user, and that pattern
+     * only exists in the audit if the misses are written down. The throttle bounds
+     * the rate; this is what makes the attempt visible afterwards.
+     *
+     * Neither the number NOR its hash is stored. An audit row is readable by more
+     * people than the employees table is, and a hash you can compare a guess
+     * against is still the document. Who asked, when, from where, and whether it
+     * matched is the whole useful content.
+     */
+    private function auditLookup(Request $request, ?Employee $employee): void
+    {
+        AuditLog::create([
+            'tenant_id' => Tenancy::id(),
+            'user_id' => $request->user()?->id,
+            'action' => 'employee.national_id_lookup',
+            'auditable_type' => Employee::class,
+            'auditable_id' => $employee?->id,
+            'changes' => ['matched' => $employee !== null],
+            'ip_address' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 255),
+        ]);
+    }
+
+    /**
+     * Sets or replaces this employment's national id — the HRMS join key.
+     *
+     * WRITE-ONLY BY DESIGN. There is no endpoint that reads a national id back; the
+     * list returns only whether one exists and a masked tail. It is government id,
+     * and a screen that can display them all is a screen that can leak them all.
+     *
+     * THE SAME ID ALREADY ON FILE IS A MATCH, NOT A CLASH. It means the same human is
+     * also employed by a sister company, which is exactly what the Person layer exists
+     * to express: they become one Person with two Employments, and punches at either
+     * company's terminal resolve to one attendance account.
+     */
+    public function setNationalId(Request $request, Employee $employee): JsonResponse
+    {
+        $this->authorize('update', $employee);
+
+        $data = $request->validate([
+            'national_id' => ['required', 'string', 'min:4', 'max:64'],
+        ]);
+
+        $nationalId = trim($data['national_id']);
+
+        $person = $employee->person;
+        $existing = Person::findByNationalId($nationalId);
+
+        /*
+         * The same document on a SECOND employment within the SAME company is a typo,
+         * not a discovery. One human cannot be employed twice by one employer, and
+         * letting it through quietly shares a Person between two unrelated people —
+         * after which the next edit to either rewrites the document for both.
+         *
+         * Across DIFFERENT companies it is the sister-company case and is exactly what
+         * the Person layer is for, so that stays allowed.
+         */
+        if ($existing !== null && $existing->id !== $person?->id) {
+            $clash = $existing->employments()
+                ->withoutGlobalScopes()
+                ->where('tenant_id', $employee->tenant_id)
+                ->where('id', '!=', $employee->id)
+                ->first();
+
+            if ($clash !== null) {
+                return ApiResponse::error(
+                    "That national ID is already on {$clash->name} (code {$clash->employee_code}) in this company. "
+                    .'Two employees here cannot be the same person — check the number, or correct the other record.',
+                    status: 422,
+                );
+            }
+        }
+
+        if ($person === null) {
+            // Either attach to the human already holding this document — they work for a
+            // sister company too — or create them.
+            $person = $existing ?? Person::create([
+                'full_name' => $employee->name,
+                'status' => Person::UNVERIFIED,
+            ]);
+
+            $employee->forceFill(['person_id' => $person->id])->save();
+        } elseif ($existing !== null && $existing->id !== $person->id) {
+            // Two records we already believed were different humans turn out to be one.
+            // Merging them moves employments and attendance history, so it is not
+            // something to do silently as a side effect of typing in a field.
+            return ApiResponse::error(
+                "That national ID already belongs to {$existing->full_name}. "
+                .'If they are the same person, merge the two records rather than reassigning the ID.',
+                status: 422,
+            );
+        }
+
+        /*
+         * Changing the ID on a Person who holds SEVERAL employments is a document
+         * renewal and correctly applies to all of them — it is one human. The old
+         * number is superseded, not overwritten, so payroll exports made under it still
+         * reconcile (see Person::setNationalId()).
+         */
+        $person->setNationalId($nationalId);
+
+        return ApiResponse::success(
+            new EmployeeResource($employee->fresh()->load(['department:id,name', 'deviceMaps.device:id,name', 'person'])),
+            "National ID saved for {$employee->name}.",
+        );
+    }
+
     public function show(Employee $employee): JsonResponse
     {
         $this->authorize('view', $employee);
@@ -166,6 +364,161 @@ class EmployeeController extends Controller
         $data = $summary->summary($employee, $validated['from'] ?? null, $validated['to'] ?? null);
 
         return ApiResponse::success($data, 'Attendance summary generated.');
+    }
+
+    /**
+     * Writes this employee onto SEVERAL terminals, IMMEDIATELY.
+     *
+     * The counterpart to saving them. `update()` deliberately still only touches the
+     * database — a name correction is not a hardware operation and must not silently
+     * become one — so the screen calls this straight afterwards with the terminals
+     * the operator chose.
+     *
+     * SYNCHRONOUS BY INSTRUCTION (2026-09-15). Rule 11 queues device writes, and its
+     * reasons hold: retries, audit rows, no request timeout. What a queue cannot give
+     * is an answer while the operator is standing at the screen, and that is the whole
+     * point of pressing Push. The time limit is raised because this now waits on
+     * hardware; the propagator attempts every device in its own try, so one
+     * unreachable terminal cannot cancel the writes to the others.
+     *
+     * The response separates written / skipped / failed rather than a pass-fail, and
+     * the message says all three. A partial result is the normal case here — two of
+     * this estate's six terminals are C3 panels that cannot write users at all — and
+     * a sentence naming only the successes would be a lie by omission.
+     */
+    public function propagate(Request $request, Employee $employee, EmployeeDevicePropagator $propagator): JsonResponse
+    {
+        $this->authorize('pushToDevice', $employee);
+
+        $data = $request->validate([
+            'device_ids' => ['required', 'array', 'min:1'],
+            /*
+             * Existence is checked against the tenant-scoped model below rather than
+             * with Rule::exists: `devices` carries a tenant scope, and a bare exists
+             * rule would confirm another company's terminal id as valid.
+             */
+            'device_ids.*' => ['integer'],
+        ]);
+
+        $devices = Device::query()->whereIn('id', $data['device_ids'])->orderBy('name')->get();
+
+        if ($devices->isEmpty()) {
+            return ApiResponse::error('None of those terminals exist here.', ['device_ids' => ['Unknown device.']], 422);
+        }
+
+        // Each device is a session, a read and a write. Four of them on a remote
+        // terminal outlive the default limit, and timing out mid-write is the one
+        // outcome worth paying to avoid.
+        set_time_limit(180);
+
+        $result = $propagator->push($employee, $devices);
+
+        return ApiResponse::success($result, $this->describePropagation($employee, $result));
+    }
+
+    /**
+     * One sentence covering all three outcomes, because a partial result is the
+     * normal case and a message mentioning only the successes would mislead.
+     *
+     * @param  array{written:list<array<string,mixed>>, skipped:list<array<string,mixed>>, failed:list<array<string,mixed>>}  $result
+     */
+    private function describePropagation(Employee $employee, array $result): string
+    {
+        $written = count($result['written']);
+
+        $sentence = $written === 0
+            ? "{$employee->name} was not written to any terminal."
+            : sprintf(
+                'Wrote %s to %d terminal%s: %s.',
+                $employee->name,
+                $written,
+                $written === 1 ? '' : 's',
+                implode(', ', array_column($result['written'], 'device_name')),
+            );
+
+        // Failures first: they are the half somebody has to act on.
+        if ($result['failed'] !== []) {
+            $sentence .= ' FAILED on '.implode('; ', array_map(
+                fn (array $f) => "{$f['device_name']} — {$f['error']}",
+                $result['failed'],
+            )).'.';
+        }
+
+        if ($result['skipped'] !== []) {
+            $sentence .= ' Skipped '.implode('; ', array_map(
+                fn (array $s) => "{$s['device_name']} — {$s['reason']}",
+                $result['skipped'],
+            )).'.';
+        }
+
+        return $sentence;
+    }
+
+    /**
+     * Folds duplicate employment records into one.
+     *
+     * WHY THIS IS MANUAL. `DuplicateEmployeeFinder` catches the import artefact — the
+     * same name at the SAME PIN on several terminals — and that is the only shape it
+     * can be sure about. The commoner human case is one person enrolled under
+     * DIFFERENT pins on different devices, which no evidence in this system can
+     * distinguish from two colleagues who share a name. Only somebody who knows the
+     * people can say, so the endpoint takes their decision and does not second-guess
+     * it.
+     *
+     * NO DEVICE IS CONTACTED. Each terminal keeps its own user, PIN, fingerprints and
+     * card exactly as they are; what moves is which employee row those per-device
+     * mappings point at. That is what makes it safe to run against terminals that are
+     * read-only or unadopted, and why a wrong merge destroys no enrollment.
+     *
+     * IT IS NOT UNDOABLE from inside the app — the folded rows are deleted and their
+     * attendance now points elsewhere. Authorised as `delete`, because that is what it
+     * ultimately does to the records being folded in.
+     */
+    public function merge(Request $request, EmployeeMergeService $merge): JsonResponse
+    {
+        $data = $request->validate([
+            'keep_id' => ['required', 'integer'],
+            'merge_ids' => ['required', 'array', 'min:1'],
+            'merge_ids.*' => ['integer'],
+        ]);
+
+        // Resolved through the tenant-scoped model, so another company's employee id
+        // cannot be named here — the service refuses a cross-tenant merge as well,
+        // but this refuses it before anything is loaded.
+        $keeper = Employee::findOrFail($data['keep_id']);
+        $folded = Employee::whereIn('id', array_diff($data['merge_ids'], [$keeper->id]))->get();
+
+        $this->authorize('update', $keeper);
+
+        foreach ($folded as $employee) {
+            $this->authorize('delete', $employee);
+        }
+
+        if ($folded->isEmpty()) {
+            return ApiResponse::error(
+                'Nothing to merge — pick at least one other record.',
+                ['merge_ids' => ['No other employee was named.']],
+                422,
+            );
+        }
+
+        $result = $merge->merge($keeper->id, $folded->pluck('id')->all(), $request->user()?->id);
+
+        $moved = ($result['rows']['attendance_logs'] ?? 0);
+
+        return ApiResponse::success(
+            $result + ['keep' => new EmployeeResource($keeper->fresh()->loadCount('attendanceLogs')->load('deviceMaps.device'))],
+            sprintf(
+                'Merged %d record%s into %s. %s punch%s and %d terminal mapping%s now belong to them.',
+                $result['merged'],
+                $result['merged'] === 1 ? '' : 's',
+                $keeper->name,
+                number_format($moved),
+                $moved === 1 ? '' : 'es',
+                $result['rows']['employee_device_maps'] ?? 0,
+                ($result['rows']['employee_device_maps'] ?? 0) === 1 ? '' : 's',
+            ),
+        );
     }
 
     public function pushToDevice(Employee $employee, Device $device): JsonResponse

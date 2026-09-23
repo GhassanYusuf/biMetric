@@ -280,6 +280,40 @@ Eighteen consecutive library reads across all three tables, on the F22:
 
 Before the change, attendance was 0 of 3.
 
+### A table that GROWS mid-transfer is normal (CONFIRMED, Camelot F18, 2026-09-14)
+
+A re-stage re-reads the table's declared size, and until 2026-09-14 any change in
+that size aborted the transfer. That made a full read **impossible** on a terminal
+still in service across a slow link.
+
+Observed on Camelot (`87.237.196.60`), where a 1,665,484-byte attendance table takes
+minutes over a public IP and needs several re-stages:
+
+```
+ProtocolException: Staged size changed mid-transfer: was 1665484, now 1665524.
+```
+
+**40 bytes — exactly one attendance record.** Somebody badged during the read. The
+transfer threw after fourteen minutes of work. Any read long enough to need a
+re-stage is long enough for somebody to badge, so this was not an edge case; it was
+the normal outcome for that device.
+
+The two directions mean opposite things and no longer share a branch:
+
+| Re-staged size | Meaning | Behaviour |
+|---|---|---|
+| **larger** | Append-only growth — the terminal is in use | **Continue** to the size we committed to. The new records arrive on the next read; every caller is incremental and deduplicates. |
+| **smaller** | The table was cleared or rolled over | **Abort.** Our offsets now address different records, and continuing would return rows that look real and are not (rule 10). |
+
+The target is deliberately NOT extended mid-flight: the caller sized its buffer and
+its progress against the original figure, and a moving target is how a transfer
+never terminates. A read that later fails carries `grew_bytes` in its exception
+context, so "the terminal was in use while we read it" is recorded rather than left
+for the next person to infer from a count that does not match the device.
+
+**Re-confirmed on the F18 before it landed (rule 15):** `192.168.7.62` read 10,531
+records and `192.168.7.63` read 8,162, both with zero undecodable, after the change.
+
 ### Progress reporting is free on this path
 
 The push path has to ration progress events, because time spent in a listener is
@@ -303,10 +337,49 @@ unconditionally — the one place in the library where a smooth bar costs nothin
 | 40 | 2 | user timezone flag |
 | 42 | 6 | tz1 / tz2 / tz3 (2 bytes each) |
 | 48 | 9 | user id (the PIN attendance records carry) |
-| 57 | 15 | zeros |
+| 57 | 15 | zeros — see below, this may be the rest of `user id` |
 
 A `group` of 0 is accepted and then ignored: the record appears to write and the
 user cannot authenticate. It must be at least 1.
+
+#### Is `user id` 9 bytes or 24? — UNRESOLVED (F18, 2026-09-21)
+
+`UserCodec` reads nine bytes at offset 48 and treats 57..71 as padding. Both
+reference implementations disagree: `pyzk`'s struct is `<HB8s24sIx7sx24s`, whose
+final field is a **24-byte** user id at offset 48, and `adrobinoga/zk-protocol`
+documents the same width. On that reading there is no padding at all — 57..71 is
+simply the unused tail of one long field.
+
+Reading the F18 at 192.168.7.62 cannot separate the two: all 18 records carry user
+ids of at most three characters, so bytes 57..71 are zero under either
+interpretation (trace `tools/zkprobe/traces-2026-09-21/f18-user-record-fields-01.json`).
+
+**It matters because it decides whether those 15 bytes are free space.** They are
+not free under the references' reading, and settling it needs a WRITE — a user id
+longer than nine characters, written and read back — which is out of scope for a
+read-only probe and needs the owner's go-ahead (rule 16). Until then, treat 57..71
+as **part of `user id`** and do not put anything else there: the cost of being
+wrong is a corrupted user id on a live terminal, against a saving of 15 bytes.
+
+#### Occupancy of a real record — CONFIRMED (F18 192.168.7.62, 18 users, 2026-09-21)
+
+Measured per byte across every record on the device, not inferred from the layout:
+
+| offsets | state | what it means |
+|---|---|---|
+| 0 | used, 1 always zero | 18 users, so uid never exceeds 255 |
+| 3..7 | used by 2 records | passwords are set on two users; 8..10 always zero, so ≤ 5 characters |
+| 11..28 | used | names; 29..34 always zero, so no name exceeds 18 characters |
+| 35..37 | used | card numbers; 38 always zero, so all cards are under 2^24 |
+| 39, 40, 42 | used | group and timezone flags |
+| 48..50 | used | user ids of 2–3 characters |
+| 51..71 | **always zero** | unused tail of the user id field |
+
+**There is no spare field in this record.** Every offset that is always zero is
+either the unused tail of a populated field or a reserved byte a different firmware
+may well use. Storing a national id on the terminal means putting it in a field
+that already means something — see `docs/device-capabilities.md`, "Carrying a
+national id on the terminal".
 
 There is **one card field per user**. A user cannot hold two cards, so
 "replace the card" and "add a card" are the same operation, and clearing a card
@@ -449,5 +522,55 @@ were read end to end with the checksum matching. The full byte layout, the pull
 loop, the per-model session difference, and where the knowledge came from are in
 [device-capabilities.md](device-capabilities.md).
 
-That protocol has **no driver in this app** and every write on it is unbuilt. The
-probe is `tools/zkprobe/inbio460.php`.
+It now has a driver (`app/Services/Devices/C3/C3Driver.php`) that reads attendance,
+users and templates. The probe is `tools/zkprobe/inbio460.php`.
+
+### Writing to a C3 panel — the command is known, the payload is not (2026-09-15)
+
+Asked to make the panels accept user writes, and the honest state of it is worth
+recording precisely, because the gap is narrow and named.
+
+**No public reimplementation has a write command at all.** `vwout/zkaccess-c3-py`'s
+command set stops at `GETDATA (0x08)`; its own README says the protocol is
+undocumented and everything rests on reverse engineering. The vendor's `PullSDK`
+*API* documents `SetDeviceData(handle, table, "Pin=1\tCardNo=123\r\n", options)`,
+but that is the DLL's C interface, not the wire.
+
+So it came out of the DLL, the same source that gave up the buffered read. **The
+command is `CMD_SET_DATA = 0x07`**, and the evidence is the SDK's own log string
+sitting immediately before the constant it sets:
+
+```
+.rdata  "SetDeviceData, ZEMBPRO_SENDCMDDATA Before !Cmd=CMD_SET_DATA, datalen=%d"
+.text   1000b7c2:  movl $0x7,0x44(%esp)      ; the command
+.text   1000b7ca:  movl $0x8000,0x40(%esp)   ; the send buffer
+```
+
+Two more fell out of the same pass: **`DELETE_DATA = 0x09`** (inside
+`Process_DeleteDeviceData`) and **`GET_DATA_COUNT = 0x0A`** (inside
+`Process_GetDeviceDataCount`). The method independently reproduces three numbers
+already known from the references — `0x03` DATETIME, `0x04` GET_PARAM, `0x06`
+DATATABLE_CFG — which is what makes it trustworthy rather than a lucky pattern
+match.
+
+**What is NOT known, and was deliberately not guessed:** the payload layout of a
+write. The read request is `[tableIndex][fieldCount][fieldIndexes…][0,0]` and the DLL
+is seen tokenising the caller's field list on `','`, so a write very probably mirrors
+it with length-prefixed values — but "very probably" is not a basis for sending bytes
+to a panel holding 320 live enrolments behind a door. A malformed write to `user`
+overwrites people whose fingerprint templates cannot be restored from any backup
+(rule 16).
+
+**To close it**, in order of value:
+
+1. **Capture ZKAccess 3.5.5 writing one user** to a panel and read the bytes off the
+   wire. One afternoon, and it settles the layout exactly. Commit the decoded
+   structure and a redacted fixture — never the `.pcap`.
+2. Or continue in the DLL: the payload builder is between `0x1000af68` (the handler's
+   log line) and `0x1000b7c2` (the send).
+3. Then, and only then: a write probe against a **test PIN** on one panel, with that
+   panel's `user` table read and saved first, per rule 16.
+
+Until one of those happens `user.write` stays `not_implemented` on C3, the UI keeps
+hiding it (rule 9), and a push to Entrance or Glass Door is skipped with *"this
+protocol cannot write users"* — which is the truth, not a failure.

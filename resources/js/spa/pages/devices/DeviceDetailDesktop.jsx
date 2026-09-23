@@ -1,6 +1,6 @@
 import { Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SectionCard, TableShell, Thead } from '../../shared/ui';
 import { describeProgress } from '../../shared/useSyncProgress';
-import { PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
+import { PROTOCOL_LABELS, SyncBadge, describeRunMode, relativeTime } from './parts';
 import {
     CAPABILITY_LEVELS, CapabilityBadge, CommandStatusBadge, CountChips, DeviceError, Fact,
     HealthBadge, RunStatusBadge, absoluteTime, commandLabel, formatDuration, shortTime,
@@ -16,7 +16,7 @@ import {
 export default function DeviceDetailDesktop({
     device, runs, commands, history, dispatching,
     syncRunning, syncProgress, syncStalled,
-    canSync, onRefresh, onDispatch, onFullResync, onRetryCommand, onCancelCommand, onBack,
+    canSync, onRefresh, onDispatch, onFullResync, onRangeSync, onRetryCommand, onCancelCommand, onBack,
 }) {
     const caps = device.capabilities ?? {};
     const busy = !!dispatching;
@@ -94,6 +94,11 @@ export default function DeviceDetailDesktop({
                         <Button variant="secondary" disabled={busy} onClick={onFullResync}>
                             Full re-read
                         </Button>
+                        {/* Next to the two reads it is a variant of. Same dialog as the
+                            devices list opens — rule 5 applies across screens too. */}
+                        <Button variant="secondary" disabled={busy} onClick={onRangeSync}>
+                            Read a date range…
+                        </Button>
                         <Button variant="secondary" loading={dispatching === 'health_check'} disabled={busy} onClick={() => onDispatch('health_check')}>
                             Health check
                         </Button>
@@ -137,7 +142,7 @@ export default function DeviceDetailDesktop({
                                         <div className="flex items-center justify-between gap-3">
                                             <div className="flex items-center gap-2">
                                                 <RunStatusBadge status={run.status} />
-                                                <span className="text-xs font-medium capitalize text-slate-600">{run.mode}</span>
+                                                <span className="text-xs font-medium text-slate-600 first-letter:uppercase">{describeRunMode(run)}</span>
                                                 {run.needs_attention && <Badge tone="amber">Needs attention</Badge>}
                                             </div>
                                             <div className="text-xs text-slate-500">

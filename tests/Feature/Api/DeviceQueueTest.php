@@ -139,6 +139,47 @@ class DeviceQueueTest extends TestCase
         $this->assertTrue($command->payload['full']);
     }
 
+    /**
+     * The same promise for a date-range read: the window must survive the trip into
+     * the queue. It is read back by DeviceCommandHandler, and a payload that lost it
+     * would run an ordinary incremental sync while telling the operator it had
+     * imported their month.
+     */
+    public function test_a_date_range_read_carries_the_window_through_to_the_command_payload(): void
+    {
+        Queue::fake();
+
+        $this->asAdmin()->postJson("/api/devices/{$this->device->id}/sync-attendance", [
+            'from' => '2026-08-01',
+            'to' => '2026-08-31',
+        ])->assertOk()->assertJsonPath('message', fn (string $m) => str_contains($m, '2026-08-01 to 2026-08-31'));
+
+        $command = DeviceCommand::withoutGlobalScopes()->latest('id')->firstOrFail();
+
+        $this->assertSame('2026-08-01', $command->payload['from']);
+        $this->assertSame('2026-08-31', $command->payload['to']);
+    }
+
+    /**
+     * A backwards window is refused BEFORE anything is queued.
+     *
+     * It can only ever import nothing, and a run that reads a whole terminal to
+     * import nothing is indistinguishable on screen from a device that has stopped
+     * recording — so it is a 422 on the field, not a queued job (rule 2: a form
+     * problem belongs on the form).
+     */
+    public function test_a_window_whose_end_precedes_its_start_is_refused(): void
+    {
+        Queue::fake();
+
+        $this->asAdmin()->postJson("/api/devices/{$this->device->id}/sync-attendance", [
+            'from' => '2026-08-31',
+            'to' => '2026-08-01',
+        ])->assertStatus(422)->assertJsonValidationErrors('to');
+
+        Queue::assertNothingPushed();
+    }
+
     public function test_a_sync_defaults_to_incremental_when_full_is_not_asked_for(): void
     {
         Queue::fake();

@@ -196,6 +196,66 @@ class ZktecoDriver implements BiometricDeviceDriver
         return $this->run($device, fn (ProtocolDevice $d) => $d->users()->all($withFingerprints));
     }
 
+    /**
+     * Template digests, from the table the enrollment sync already reads.
+     *
+     * No new command and no extra round trip — CMD_DB_RRQ with FCT_FINGERTMP has
+     * always returned the blobs; the codec was stepping over them.
+     *
+     * The blob is dropped here, at the lowest layer that can drop it: the app gets a
+     * SHA-1 and a size, never biometric bytes.
+     */
+    public function readTemplateDigests(Device $device): array
+    {
+        $records = $this->run($device, fn (ProtocolDevice $d) => $d->templates()->allWithTemplates());
+
+        return array_map(static fn (array $r) => [
+            'user_id' => $r['user_id'],
+            'uid' => $r['uid'],
+            'slot' => $r['fid'],
+            'size' => $r['size'],
+            'sha1' => $r['sha1'],
+        ], $records);
+    }
+
+    /**
+     * Guarded write. The read and the write share ONE session, deliberately.
+     *
+     * The guard runs between them, still inside that session, so nothing can take the
+     * slot in between. Splitting this into "find, then save" at the service layer is
+     * what the contract exists to prevent — see BiometricDeviceDriver::saveUser().
+     */
+    public function saveUser(
+        Device $device,
+        string $userId,
+        string $name,
+        ?\Closure $guard = null,
+        bool $onlyIfMissing = false,
+    ): DeviceUser {
+        return $this->run($device, function (ProtocolDevice $d) use ($userId, $name, $guard, $onlyIfMissing) {
+            $occupant = $d->users()->find($userId);
+
+            // Throwing here abandons the write. That is the whole point: the exception
+            // propagates out of the session and save() is never reached.
+            if ($guard !== null) {
+                $guard($occupant);
+            }
+
+            if ($onlyIfMissing && $occupant !== null) {
+                return $occupant;
+            }
+
+            // save() preserves the card and privilege already on the device — writing
+            // the defaults would wipe a card and demote an admin, both silently.
+            return $d->users()->save($userId, $name);
+        });
+    }
+
+    public function deleteUser(Device $device, string $userId): void
+    {
+        $this->run($device, fn (ProtocolDevice $d) => $d->users()->delete($userId));
+    }
+
     public function capabilities(Device $device): CapabilitySet
     {
         $stored = $device->capabilities_cache;

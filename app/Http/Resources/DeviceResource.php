@@ -2,11 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Device;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\Device
+ * @mixin Device
  *
  * Secrets (comm_key, web_password) are intentionally never exposed — they're
  * already hidden on the model and omitted here as a second line of defence.
@@ -30,6 +31,24 @@ class DeviceResource extends JsonResource
             'last_sync_status' => $this->last_sync_status,
             'last_sync_error' => $this->last_sync_error,
             'attendance_logs_count' => $this->whenCounted('attendanceLogs'),
+
+            /*
+             * ADOPTION — whether this terminal will accept a write at all.
+             *
+             * It was missing from this payload entirely, which is why a device being
+             * read-only was invisible until a push came back refused: every screen
+             * offered actions the hardware would reject, and rule 9 says a UI must
+             * hide what cannot work. `write_refusal` is the sentence the operator
+             * needs, produced by the same method the propagator refuses with, so the
+             * screen and the server cannot say different things.
+             */
+            'adoption_status' => $this->adoption_status,
+            'is_writable' => $this->isWritable(),
+            'write_refusal' => $this->userWriteRefusal(),
+            'roster_read_at' => $this->roster_read_at?->toIso8601String(),
+            // Roster entries nobody has claimed or ignored. Adoption is refused while
+            // this is above zero, and it is the number an operator has to work down.
+            'unclaimed_roster_entries' => $this->whenCounted('unclaimedRosterEntries'),
 
             // --- Identity read off the hardware (null until READ_INFO has run).
             'model' => $this->model,

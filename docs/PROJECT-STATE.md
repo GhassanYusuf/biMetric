@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-09-14**
+**Last updated: 2026-09-23**
 
 ---
 
@@ -23,7 +23,7 @@ cannot see:
 | **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It is still **not a git repository**: no history, no tags, no remote. **The windowed-read protocol fix lives only there**, on this box's filesystem, outside every repository. This is still the worst of the three. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`, with a large uncommitted working tree and nothing recent pushed. |
+| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Since 2026-09-23 the whole working tree is **committed** on `camelot` and `main` is fast-forwarded to it — **locally only**. Neither branch has been pushed; `origin/main` is still the first commit. Pushing is the remaining step, and it is the owner's call. |
 | ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
@@ -84,7 +84,7 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 
 ### Reporting: PDF exports and a Reports screen shipped (2026-09-14)
 
-Done, tested, **not committed**: three PDF exports, the attendance row → employee
+Done, tested, committed 2026-09-23: three PDF exports, the attendance row → employee
 dialog, a `/reports` screen, and a timezone fix to the attendance date filters.
 See the session log for what each one covers.
 
@@ -220,7 +220,7 @@ regression.
 second REMOTE device — to separate "remote link" from "this device". Owed by whoever
 picks up device work.
 
-**Tooling — moved out of `storage/`, but ⚠ STILL NOT COMMITTED:**
+**Tooling — moved out of `storage/`, committed (the last untracked probes and traces went in 2026-09-23):**
 `tools/zkprobe/harness.php` (instrumented read harness: per-datagram timestamps,
 sizes, receive-queue depth, and UDP counter deltas per run; `push` and `windowed`
 modes; handles the AUTH step), `Probe.php` (the shared instrumentation, extracted
@@ -228,11 +228,8 @@ modes; handles the AUTH step), `Probe.php` (the shared instrumentation, extracte
 with **43 traces** across `traces/`, `traces-2026-09-13/` and `traces-2026-09-14/`.
 
 It was first written under `storage/app/zkprobe/`, which is entirely gitignored, and
-moved to `tools/` to survive. **It has not actually survived anything yet:**
-`git status` reports the whole of `tools/` as untracked, so every trace behind every
-claim in this section exists on this box only. Rule 16 says traces are committed
-precisely because a conclusion whose evidence lives on one machine is an assertion.
-Commit `tools/` with the rest of the working tree.
+moved to `tools/` to survive. It is now tracked in the app repository — committed, but
+not yet pushed (see the blockers table).
 
 ### ⚠ The library change is in `vendor/`, which is GIT-IGNORED (2026-09-13)
 
@@ -272,6 +269,83 @@ Files changed there this session, for whoever reconstructs it:
 
 Version was **not** bumped: the package has no `version` field and no tags to bump
 from in this location. It needs doing once the repository question is settled.
+
+### ⚠ Device identity rebuilt, and the production database was WIPED (2026-09-15)
+
+**Committed 2026-09-23** on `camelot` (and fast-forwarded into local `main`), together
+with every later session. **Not pushed** — until it is, it still exists on this box only.
+
+**What happened, in the owner's words:** *"we pushed employees and it overwrote
+existing people"*, and *"if we add more devices then the other devices have different
+people but have same id of people in other devices"*.
+
+Both were real, and both were caused by the same thing: the device PIN, the payroll
+code and the human were treated as one identifier.
+
+- `pushEmployee()` and the enrollment path addressed the device by
+  `employees.employee_code`. `save()` is an **upsert**, so every collision replaced a
+  real enrolled person and took their fingerprint templates with them. Templates
+  cannot be restored from a backup.
+- Roster matching compared `employee_code` to the device's user id. Measured across
+  the estate: **16 PINs meant different people on different devices** — PIN `1` is
+  "akram" on three terminals, "HABIB UR RAHMAN" on Good Wheels and "Ghassan" on
+  Camelot. Those were being merged into one employee.
+
+**The database was deliberately wiped** (`php artisan identity:reset`) on the owner's
+explicit instruction, after being told attendance is not fully re-readable. Destroyed:
+343 employees, 715 mappings, **161,959 attendance logs and 274,616 raw logs**. A
+terminal holds a bounded log buffer and rolls old records off, so whatever had already
+rolled off is **gone except in the backup file**:
+
+```
+database/database.pre-identity-rework-20260915-072217.sqlite   (69 MB, this box only)
+```
+
+The pre-wipe data was not trustworthy — attribution was built on the broken matching,
+and the log span read `1999-12-31` → `2029-12-15` — but it was the only copy of the
+rolled-off history. That trade was the owner's call, made knowingly.
+
+**What replaced it:** a three-layer identity — Person (national ID) → Employment
+(tenant + `employee_code`) → Device identity (PIN, time-boxed per device). Full
+rationale in **`docs/device-identity-and-adoption.md`**; read that before touching
+`app/Services/Devices/`.
+
+**The re-pull was then deliberately UNDONE at the owner's request**, so the real staff
+list can be imported from HR rather than inferred from device name fields. The
+intermediate state (355 employees auto-derived from rosters) proved the machinery works
+end to end and was discarded on purpose.
+
+**State at the end of the session:**
+
+| | |
+|---|---|
+| Employees / people | **0** — `identity:reset --employees-only`, awaiting the HR import |
+| Roster entries | 711, **all unclaimed** (kept: they are what the hardware holds) |
+| Attendance | 151,264 punches **kept, all unattributed** |
+| Devices | all six back to `read_only` |
+
+Attendance survived because `attendance_logs.employee_id` is `SET NULL` and every punch
+carries its raw `device_user_id`. `attendance:reattribute` re-attaches them once the
+imported staff are claimed — so re-importing staff does not cost history.
+
+**The path forward, in order:**
+
+```
+php artisan staff:import staff.csv          # ← BLOCKED ON GHASSAN: the CSV from HR
+php artisan device:suggest-claims {device}            # review
+php artisan device:suggest-claims {device} --apply    # apply the unambiguous ones
+php artisan device:adopt {device}                     # once nothing is undecided
+php artisan attendance:reattribute                    # re-attach the kept punches
+```
+
+**Owed to Ghassan: the staff CSV, with national IDs.** `staff:import` accepts
+`name, employee_code, national_id, email, department, tenant`. Until it runs, there are
+no employees, nothing is claimable, and nothing is HRMS-exportable.
+
+**Expect ~91 entries to stay ambiguous** whatever the CSV says. The Entrance panel holds
+320 records under 259 distinct names, so name matching cannot separate them and
+`device:suggest-claims` refuses to guess. Those need a person, and there is **no UI for
+claiming yet** — the API exists, no screen calls it.
 
 ### Done and verified (2026-09-02)
 
@@ -319,6 +393,799 @@ wrap all exist already.
 ---
 
 ## Session log
+
+### 2026-09-23 — Working tree committed; `main` fast-forwarded to `camelot`
+
+Every uncommitted change from 2026-09-14 onward (112 paths: identity rework, adoption,
+people / national IDs, SQL Server move, reports, probes and traces) was committed on
+`camelot` and `main` was fast-forwarded to it. `php artisan test`: 341 passed before
+the commit. The 2026-09-15 and 2026-09-21 traces were checked before committing: they
+carry template SHA-1 digests and sizes only, no template bytes (rule 16).
+
+**Not pushed**, by the owner's choice. `/var/biometric-protocol` still has no remote.
+Session-log entries below that say "uncommitted" describe the state on their own date.
+
+### 2026-09-21 — National ID lookup: a punch search by CPR, and where a CPR could live on a terminal
+
+Owner asked how to find someone's daily in/out by their national ID (CPR). The
+answer was "you cannot" — the number was write-only by design, with no read path
+anywhere — so one was built, plus the SQL to answer the same question outside the
+app, plus a read-only probe to settle whether the terminal could carry the number
+itself.
+
+**Done, NOT COMMITTED (working tree only, branch `camelot`):**
+
+- `POST /api/employees/lookup` — national ID → employee. `employees.view`,
+  throttled 20/min, audited hit and miss as `employee.national_id_lookup`, scoped
+  to the signed-in company through `employees` because `people` is not
+  tenant-scoped. 13 tests in `tests/Feature/Api/EmployeeIdentityApiTest.php`.
+- Attendance screen: a National ID box on both presentations, a banner naming whose
+  punches are shown, and the PDF export already honours the `employee_id` it sets.
+- `docs/sql/national-id-lookup.sql` — person, employments, daily first-in/last-out
+  and raw punches. **Run against the live SQL Server the same day**: 32 days
+  returned for the test person, missed punch-outs correctly `NULL` rather than 0.
+- `tools/zkprobe/f18-user-record-fields.php` + trace — read-only, F18 at
+  192.168.7.62, 18 user records.
+
+**The decisions worth keeping:**
+
+- **POST, not GET.** A national ID in a query string lands in the access log, the
+  browser history and the next `Referer`. The body is none of those.
+- **Exact match, permanently.** The column is an HMAC blind index; a hash has no
+  prefix. There will never be a "contains" search on a national ID unless somebody
+  decides to store it in plaintext, which is the thing the design exists to avoid.
+- **Misses are audited, not just hits.** Somebody guessing numbers looks exactly
+  like a run of misses from one user, and that pattern only exists if it is written
+  down. Neither the number nor its hash goes into the audit row — a hash you can
+  compare a guess against is still the document.
+
+**The device question, answered: there is nowhere neutral to put it.** The 72-byte
+user record is fully accounted for, and every always-zero byte on the F18 is the
+unused tail of a populated field, not free space. The only field that can honestly
+hold nine digits is the **user id / PIN** — which means making the CPR *be* the
+terminal's key: viable on a terminal enrolled from scratch, and history-orphaning on
+one that already has punches. `card` would make the CPR work as a door credential;
+`password` would make it a way to clock in as somebody. Detail and the per-byte
+occupancy table are in `docs/device-capabilities.md` and `docs/protocol-overview.md`.
+
+**Open, and it is the owner's call:**
+
+1. **Does the CPR need to be on the terminal at all?** Nothing in the app needs it
+   — `employee_code` maps to the person already. If the answer is yes, say whether
+   the terminals may be re-enrolled from scratch, because that decides whether the
+   user id can become the CPR.
+2. **`user id`: 9 bytes or 24?** `UserCodec` says 9; `pyzk` and `adrobinoga/zk-protocol`
+   both say 24. The F18's own data cannot separate them (no id exceeds 3 characters).
+   Settling it needs a WRITE of a long user id and a read-back — **read-only probes
+   cannot answer this**, and it needs the owner's go-ahead on a terminal out of
+   service (rule 16).
+3. **Extended user fields are `unknown`, not absent.** ZKTeco's SDK exposes
+   `SetUserInfoEx` on some firmware. Whether this F18 has an extended user table has
+   never been probed. That is the next read if the CPR really must live on the
+   device.
+
+### 2026-09-21 — Moved off SQLite onto SQL Server; 198,062 rows copied and verified
+
+Owner supplied a SQL Server box — `192.168.7.8`, login `sa` — and asked for the app
+to run on it. Two corrections to the brief before anything else: the database is
+**`NewAttendance`**, not "New Attendance" (the spaced name fails login with error
+4060), and it was **empty**, created that afternoon at 14:54. The data still lived in
+the 138 MB SQLite file.
+
+**Done, and verified:**
+
+- `pdo_sqlsrv` 5.12.0 built from PECL against Microsoft ODBC Driver 18. 5.13+ needs
+  PHP 8.3; this host is 8.2. `pecl install sqlsrv` by name fails here — the channel
+  metadata returns malformed XML — so the tarballs are fetched directly.
+- All 38 migrations applied, plus one new one. `sqlite_legacy` connection added so the
+  old data stays readable after `DB_DATABASE` stopped naming a file.
+- `php artisan legacy:sqlite-copy` written (repeatable, not a throwaway script, because
+  a real cutover needs a second pass for whatever arrives in between). **198,062 rows
+  across 27 tables**, including 151,440 punches and 42,322 raw logs. Every table matches
+  the source, every foreign key re-validated `WITH CHECK`, identity seeds land above the
+  copied maxima, and a second run inserts nothing.
+- Apache and `zkt-queue.service` restarted; the API was exercised through Apache against
+  SQL Server and returns real data. All 334 tests still pass.
+
+**Five things SQL Server refused that SQLite had silently allowed.** Each is written up
+with its resolution in `docs/database-sql-server.md`; the two worth knowing here:
+
+- **Multiple cascade paths are forbidden.** Several `tenant_id` and `device_command_id`
+  foreign keys became `NO ACTION`. The awkward one was `attendance_raw_logs`, reachable
+  from `devices` twice, where *both* cascades are load-bearing — so the duplicate path
+  was broken at `attendance_sync_runs.device_id` instead and `Device::booted()` now
+  deletes a device's sync runs first. Verified by deleting device 2 in a rolled-back
+  transaction.
+- **`CAST(device_user_id AS INTEGER)` throws on non-numeric text**, where SQLite returned
+  0. Two roster screens did exactly that. `attendance_logs` already holds **16,386**
+  non-numeric device ids off these terminals, so this was a 500 waiting for one junk
+  roster row — the kind the F22 and Camelot produce. Now a single scope,
+  `DeviceRosterEntry::scopeOrderByDeviceUserId()`, picks the dialect in one place.
+
+**One data point needed care.** Exactly one value in the whole database was not valid
+UTF-8: `attendance_logs.device_user_id` on punch 981687, bytes `01be072933`, a corrupt
+id off device 5. The driver cannot translate it to UCS-2. Dropping the row was never an
+option — that is the failure rule 11 exists to prevent — so the copy widens such values
+byte-for-byte and reports each one. The hex round-trips exactly.
+
+**NOTHING FROM THIS SESSION IS COMMITTED.** It is all in the working tree on branch
+`camelot`, on this machine only, alongside the large pre-existing uncommitted tree.
+
+**Open, and needing a decision:**
+
+- `DB_TRUST_SERVER_CERTIFICATE=true`, because the instance presents a self-signed
+  certificate. Encrypted but unvalidated, so an active man-in-the-middle on that path
+  is possible. Proper fix is importing the certificate into the host trust store —
+  **Ghassan** to say whether that is wanted.
+- The `sa` account is being used directly. A least-privilege login scoped to
+  `NewAttendance` would be better — **Ghassan**'s call.
+- The instance is **Express**, capped at 10 GB. At 272 MB today, but nothing prunes
+  `attendance_raw_logs`.
+
+### 2026-09-15 — C3 user writes: the command number is RECOVERED, the payload is not
+
+Owner asked to make the C3 panels (Entrance, Glass Door) accept user writes. Went in
+rule 17's order — research first — and the answer is a narrow, named gap rather than
+a feature.
+
+**Research settled that nobody has published this.** `vwout/zkaccess-c3-py`, the
+reference this project already uses, has **no write command at all**: its command set
+stops at `GETDATA (0x08)` and its README says the protocol is undocumented and
+everything rests on reverse engineering. The vendor's PullSDK documents
+`SetDeviceData(handle, table, "Pin=1\tCardNo=123", options)` — but that is the DLL's
+C interface, not the wire.
+
+**So it came out of the DLL**, the same `plcommpro.dll` that gave up the buffered
+read. `CMD_SET_DATA = 0x07`, evidenced by the SDK's own log string sitting
+immediately before the constant it sets (`"…!Cmd=CMD_SET_DATA, datalen=%d"` then
+`movl $0x7,0x44(%esp)` at `0x1000b7c2`). Two more fell out of the same pass:
+`DELETE_DATA = 0x09` and `GET_DATA_COUNT = 0x0A`. The extraction independently
+reproduces `0x03`, `0x04` and `0x06` — already known from the references — which is
+what makes it a method rather than a coincidence.
+
+**What was deliberately NOT done: the write itself.** The payload layout for a write
+is unknown. The read request is `[tableIndex][fieldCount][fieldIndexes…][0,0]` and the
+DLL tokenises the caller's field list on `','`, so a write very probably mirrors it —
+and "very probably" is not a basis for sending bytes to a panel holding **320 live
+enrolments** behind a door. A malformed write to `user` overwrites people whose
+templates cannot be restored from any backup. Rule 16 says stop here and write the
+gap down; rule 17 says a narrow known gap is a good place to stop.
+
+`user.write` therefore stays **`not_implemented`** on C3, the UI keeps hiding it, and
+a push to those two panels is still skipped with *"this protocol cannot write users"*.
+
+**To finish it, best first — none started, all need the owner:**
+
+1. **Capture ZKAccess 3.5.5 writing one user** and read the bytes. One afternoon and
+   the layout is exact. Commit the decoded structure and a redacted fixture, never
+   the `.pcap` (rule 16).
+2. Or more DLL work: the payload builder sits between `0x1000af68` and `0x1000b7c2`.
+3. Then a write probe against a **test PIN** on one panel, its `user` table saved
+   first. `GET_DATA_COUNT (0x0A)` is the safe rehearsal — read-only, same extraction,
+   and a correct row count proves the numbers survived the DLL intact.
+
+Library side: `promoseven/biometric-protocol` **2.6.0** carries the three constants,
+their evidence in the docblock, and `C3CommandNumbersTest` pinning them so a silent
+edit cannot happen. Nothing sends them. The app is unchanged.
+
+### 2026-09-15 — Adoption was invisible AND unreachable from the UI; both fixed
+
+Owner pushed an employee and got four refusals in a row: *"Skipped Camelot — its
+roster has not been read and claimed yet, so it is read-only"*, and the same for
+Entrance, Glass Door and IT Room. The gate was working exactly as designed. Two
+things around it were not.
+
+**1. The devices payload never mentioned adoption at all.** No `adoption_status`, no
+`is_writable`, nothing. So every screen offered pushes the hardware would refuse and
+the only way to discover a terminal was read-only was to try one — the opposite of
+rule 9. `DeviceResource` now carries `adoption_status`, `is_writable`,
+`write_refusal` (the same sentence `Device::userWriteRefusal()` gives the propagator,
+so screen and server cannot disagree), `roster_read_at` and a
+`unclaimed_roster_entries` count, `withCount`ed in the list query rather than asked
+per row.
+
+**2. There was no way to adopt from the UI.** `POST /devices/{device}/adopt` and
+`php artisan device:adopt` both existed; **no screen called either**. So the refusal
+told operators to do something they could not do. There is now an **Allow writes**
+action on the devices list (desktop menu and mobile button) plus a **Read-only** /
+**N to claim** badge on the row, and a shared `adoptConfirm()` so both screens warn
+in the same words. The action only appears while the device is read-only AND nothing
+on it is undecided — offering it earlier would produce a 422 that teaches people to
+distrust the screen.
+
+**The gate itself is unchanged and was not weakened.** `finishAdoption()` still
+refuses while any roster entry is unclaimed, and still refuses a device whose roster
+was never read. `tests/Feature/Devices/DeviceAdoptionGateTest.php` pins all four
+behaviours.
+
+**All six terminals are one click from adoption right now** (verified 2026-09-15):
+rosters read at 07:35, **zero unclaimed entries on every one** — Camelot 24 entries,
+Entrance 320, Glass Door 320, Good Wheels 18, IT Room 18, On The Road 11. Nobody has
+pressed it yet, and that remains the owner's decision: adopting is what permits every
+future write to that hardware.
+
+### 2026-09-15 — A Push button, a merge UI, and a constraint bug the merge never hit
+
+Follow-on from the edit form. Two asks: a button named **Push** (propagating only as
+a side effect of saving is the wrong shape — a replaced terminal or a push skipped
+while a device was read-only needs no field changed, and making somebody re-save an
+unchanged record to trigger a device write teaches them to distrust the save button),
+and a way to **merge two accounts** belonging to one person.
+
+**Push** — row action on both presentations, opening `PushModal`. Lists the terminals
+they are already on (pre-ticked, the repair case) separately from the writable ones
+they are not (unticked, the enrolment case), and posts to the same `propagate`
+endpoint. The checklist is now one shared `DeviceTargets` component used by the
+add/edit form too, so the two cannot drift about what they offer.
+
+**Merge** — `POST /api/employees/merge` {keep_id, merge_ids[]}, wired to `MergeModal`.
+`EmployeeMergeService` and `DuplicateEmployeeFinder` already existed with a console
+command and no HTTP surface at all; this exposes them.
+
+**It is a SEARCH, not a suggestion list, and that is deliberate.** The finder catches
+the import artefact — same name at the SAME PIN on several terminals — and returns
+**0 groups** on this estate today. The owner's own duplicate is the other shape: one
+human under DIFFERENT pins on different devices, which no evidence here can tell
+apart from two colleagues who share a name. Only a person who knows the people can
+say, so the dialog asks them and does not guess.
+
+**Bug found by the tests, in existing uncommitted code:** `employee_device_maps`
+carries a partial unique index — one live mapping per (device, employee) — and two
+duplicate records enrolled on the SAME terminal under different PINs each satisfy it
+alone and violate it the moment they become one employee. The merge died on a
+constraint error mid-transaction. `EmployeeMergeService::closeCompetingMappings()`
+now leaves exactly one live mapping per device before re-pointing: the keeper's own
+where it has one, otherwise the most recently device-confirmed. The losers are
+CLOSED, never dropped, so punches made under the superseded PIN still resolve to the
+merged human. The index was right; relaxing it was never the fix.
+
+**The owner's actual duplicate, verified live on 2026-09-15 and NOT merged** — that
+is their call, not mine:
+
+| | Record | Code | Punches | Terminals |
+|---|---|---|---|---|
+| keep | #1404 Ghassan | 656-2 | 2,068 | Entrance, Glass Door, IT Room (PIN 656) |
+| fold | #1345 Ghassan | 1-12 | 4 | Camelot (PIN 1) |
+
+No shared terminal, so no PIN would need closing; the result is one record with 2,072
+punches across four terminals.
+
+### 2026-09-15 — Employees can be edited at last, and a save can push to the terminals
+
+Owner asked how to edit a person and have it reach the devices, and how to create
+one and put them on chosen devices. The honest answer was that **neither was
+possible from the UI**: there was no edit screen at all (`EmployeeFormModal` took
+only `onSubmit`/`onClose`, `PUT /api/employees/{id}` existed and nothing called it),
+and no save of any kind touched a terminal. Propagation meant opening the enrollment
+dialog and pushing, one device at a time, with nothing on screen saying it was
+needed. Built all three parts.
+
+**Saving still writes only the database, on purpose.** A corrected spelling is not a
+hardware operation, and a save that silently wrote to six terminals is one typo away
+from rewriting six records for somebody else. The form ASKS instead: it lists the
+terminals, pre-ticked on an edit, unticked on a create — which terminals a joiner
+belongs on is a decision nobody else can make — and the save is followed by
+`POST /api/employees/{employee}/propagate`, one queued `PUSH_USER` per device.
+
+| Piece | Where |
+|---|---|
+| Queueing, per-device refusals | `app/Services/Employees/EmployeeDevicePropagator.php` |
+| Refusal wording, on the model | `Device::userWriteRefusal()` |
+| Endpoint | `EmployeeController::propagate()`, `POST employees/{employee}/propagate` |
+| Edit mode + device picker | `EmployeeFormModal.jsx`, both Employees presentations |
+| Tests | `tests/Feature/Devices/EmployeePropagationTest.php` (6) |
+
+Three decisions worth keeping:
+
+1. **Queued, never inline** (rule 11) — a push reads the slot before writing, and
+   across several terminals that outlives a request. A command per device is also
+   what makes "it updated on four of five" legible.
+2. **A device that cannot take a write is refused BEFORE queueing**, with a reason,
+   because the operator is at the screen now — not tomorrow looking at a failed job.
+3. **Only live mappings are offered.** A closed mapping is a PIN they used to hold;
+   pushing to it would write their name over whoever holds that slot today. The
+   payload now carries `is_live` per enrollment so the form cannot offer one either.
+
+Rule 8 caught the first attempt: the propagator imported `Capability` directly.
+Rather than widen the `$allowed` list in `ProtocolLibraryBoundaryTest`, the question
+moved onto `Device`, which is already on that list — so the service asks the model
+and gets a sentence back. That is the better shape anyway.
+
+**OPERATIONAL FACT, and it blocks this feature in practice: all six terminals are
+`read_only` today.** None has had its roster read and every entry claimed, so
+`userWriteRefusal()` refuses every one of them and a propagate queues nothing.
+Verified live on 2026-09-15 — pushing employee 1345 to Camelot returned *"was not
+queued to any terminal. Skipped Camelot — its roster has not been read and claimed
+yet"*. The feature is correct; **adoption is the prerequisite nobody has done.**
+
+### 2026-09-15 — Camelot's reads DESYNCHRONISE partway; we are missing 3 years of it
+
+Found while explaining a `partial` badge to the owner, not by looking for it. It is
+the most serious thing on this list.
+
+**The evidence, all from `attendance_sync_runs` and `attendance_raw_logs`:**
+
+| Run | Device | Mode | Read | Decoded | Undecodable |
+|---|---|---|---|---|---|
+| 183 | Camelot | full | 41,655 | 17,489 | **24,166** |
+| 185 | Camelot | range | 41,655 | 25,805 | **15,850** |
+| 181 | Good Wheels | full | 11,126 | 1,230 | **9,896** |
+| 182 | Good Wheels | full | 11,126 | 11,126 | **0** |
+
+Same device, same table, same record count, runs 45 minutes apart — and a different
+number of records fails to decode each time. **So it is not the data.** Good Wheels
+proves it hardest: 9,896 failures on one run and none at all on the next.
+
+**What the failing bytes actually are.** They are not garbage — they are correct
+records cut at the wrong boundary. In run 185's archived chunks the uid and the
+ASCII user id sit at offset 12 of a 40-byte chunk, not offset 0, and the uid
+increments by one from chunk to chunk (`0x3e67`, `0x3e69`, `0x3e6a`, `0x3e6b`). The
+codec is slicing a correct stream on the wrong stride, so `Timestamp::decode()`
+reads four bytes that straddle two records and returns null — which
+`AttendanceCodec` faithfully reports as undecodable, exactly as designed.
+
+**It is always the NEWEST data that is lost.** Run 183 decoded 1999-12-31 through
+**2021-12-25** and failed on everything after. Camelot holds 41,655 records; this
+app has 13,114 of them and its newest punch is **2023-04-24**. The desync happens
+partway through the transfer and discards the entire remainder, and the remainder is
+the recent end of the table.
+
+**What is NOT yet known** (do not guess this into the code):
+
+- Where the desync originates — transport, buffer assembly, or a window placed at
+  the wrong offset. Both runs read exactly 41,655 records, so the body length did
+  not change; only its alignment did. That argues against plain byte loss and
+  towards a misplaced window in the staged read.
+- Whether it is recoverable from the archive alone. A first attempt at re-aligning
+  run 185's 15,850 archived chunks found a best fit at a 20-byte shift decoding only
+  53% of them, with dates running to 2027 — so the block is not one contiguous
+  constant-offset run, and a naive re-slice is not the answer.
+
+**Next step, in rule 16's order and NOT started:** probe Camelot with an F18 control
+read in the same session, capture the staged table to
+`tools/zkprobe/traces-YYYY-MM-DD/`, and find the offset where alignment breaks.
+Read-only. The owner has been shown the finding and has not yet said to proceed.
+
+Two things the existing design got right and should not be weakened: the raw bytes
+were archived before parsing, so the evidence above exists at all; and the records
+were COUNTED rather than dropped, which is the only reason this was visible from a
+badge on a screen.
+
+### 2026-09-15 — Every screen was slow: a missing index, then a 1,072-query report
+
+Owner asked why moving between pages takes so long. Measured, not guessed: each
+endpoint was run through the real HTTP kernel with per-query timings
+(`/api/employees` was **1,951 ms, of which one query was 1,891 ms**).
+
+**`attendance_logs` shipped with two indexes — `tenant_id`, and the unique punch
+key — and neither serves a single thing the UI does with the table.** At 151,288
+rows the `withCount('attendanceLogs')` on the employee list scanned the whole table
+**once per employee on the page**: 25 employees, 25 full scans, two seconds, every
+visit. The devices list did the same per device (179 ms of a 233 ms response): the
+unique key does start with `device_id`, but the tenant predicate sent the planner to
+the `tenant_id` index, which on a single-tenant install selects everything.
+
+Four indexes added in `2026_09_15_150000_index_attendance_logs_for_reads`,
+**APPLIED on this box on 2026-09-15**: `(tenant_id, employee_id)`,
+`(tenant_id, device_id)`, `(tenant_id, punched_at)`, `(employee_id, punched_at)`.
+
+| Endpoint | Before | After |
+|---|---|---|
+| `GET /api/employees` | 1,951 ms | **31 ms** |
+| `GET /api/devices` | 233 ms | **62 ms** |
+| `GET /api/attendance` | 78 ms | 36 ms |
+
+Nothing was added to `attendance_raw_logs` (486,821 rows): it is written by every
+sync and read only when replaying a decoder fix, so a third index would tax every
+insert to speed up nothing a person waits for.
+
+**The payroll report's N+1 is fixed too, in the same session.** It was 694 ms and
+1,072 queries for 357 employees, and it split into two problems that looked like
+one: ~119 ms of SQL (three queries per employee, one of which — the holiday list —
+did not even vary by employee) and **~575 ms of PHP**, because `Carbon::parse()` ran
+four times per work day per employee to rebuild the same shift marks. Thirty days
+across 357 people is over forty thousand date parses producing thirty distinct
+answers. Batching the queries alone would have fixed the smaller half.
+
+`App\Services\Attendance\SummaryBatch` now carries both — the rows for a whole
+roster in three queries, and the per-day shift marks worked out once.
+`AttendanceSummaryService::summary()` reads nothing itself any more; given no batch
+it builds one for a single employee, so **the employee screen and the payroll report
+run identical code**. That was the constraint throughout: two code paths producing
+"payroll hours" is how a report and its printout come to disagree.
+
+| | Before | After |
+|---|---|---|
+| `GET /api/reports/attendance` | 700 ms, 1,072 queries | **154 ms, 4 queries** |
+
+**Proven equivalent, not assumed.** The pre-refactor classes were extracted from
+`HEAD` into a throwaway namespace and both implementations were run over a seeded
+fortnight covering every branch — early, late, missed punch-out, absent, holiday,
+waiver — asserting equality row for row and day for day. That scaffolding is gone;
+what remains is `tests/Feature/Attendance/PayrollReportTest.php`, which pins the
+figures that survived it and **asserts the query count**, because an N+1 is
+invisible to a test that only checks the answer.
+
+**Found while spot-checking, NOT fixed, and pre-existing:** `GET
+/api/exports/attendance` with no date filter renders its 5,000-row cap through
+dompdf and does not finish — over 120 s in CLI, a 500 through the web server. It is
+reachable from the Attendance screen by clearing the filters and pressing Export
+PDF, since the button forwards whatever filters are set and sends none when there
+are none. Nothing here touched that path (`PunchLogQuery` and `ExportController` are
+unchanged). The fix is either a required date range or moving the render onto the
+queue with a download when it is ready; the owner has not been asked which.
+
+Two facts worth keeping for whoever profiles this next:
+
+- **Origin latency is not the problem.** An authenticated request measured at the
+  origin over loopback is 44-58 ms end to end, PHP boot included. The public name
+  resolves to Cloudflare, so anything measured from outside includes that path.
+- **Config and routes are NOT cached** in this production install
+  (`php artisan config:cache`, `route:cache`). Worth doing, but it is tens of
+  milliseconds — it was never the cause, and caching config means re-running it
+  after every `.env` change.
+
+Housekeeping: editing an already-applied migration to add the fourth index left the
+table half-indexed when `migrate:rollback` failed part way (SQLite dropped one index
+before hitting the one that did not exist yet, and the migration row survived). The
+indexes were dropped by hand, the row deleted, and the migration re-run clean —
+`PRAGMA index_list` now matches the file exactly. Do not edit an applied migration;
+write a second one.
+
+### 2026-09-15 — Attendance can be read for a date range; watermark deliberately untouched
+
+Owner asked for an option on `/app/devices` to read punches "between this date and
+this date rather than reading all dates". Shipped on the devices list and on device
+detail, from one dialog (`SyncRangeModal.jsx`), with presets covering the previous
+7 days, the current calendar month, and the one before it.
+
+**The honest part, and the reason the dialog says it on screen:** this protocol has
+no date filter and never had one. `ATTLOG_RRQ` returns the whole table, so a range
+read transfers exactly as much as a full one — it bounds the **import**, not the
+read. An operator told otherwise would report the progress bar as broken when a
+one-week range still took four minutes on Camelot.
+
+Three decisions worth keeping:
+
+1. **The window replaces the watermark; it does not narrow it.** The month being
+   repaired is almost always one the watermark has already passed, so narrowing
+   would have made the commonest request return `read 9,579, imported 0`.
+2. **A range read does NOT move the watermark.** Dragged backwards it would merely
+   cost a re-read; dragged *forwards* by a window ending today it would skip every
+   punch between the old watermark and today **permanently**. Leaving it alone can
+   only cost work.
+3. **The window is the DEVICE's calendar day**, built in `device.timezone` and
+   widened to start/end of day. Built in the app timezone it would be three hours
+   out at both ends — the same offset class as the two timezone bugs already
+   recorded in `docs/attendance-sync-flow.md`.
+
+Records outside the window are counted in a new `records_out_of_range`, never
+silently dropped (rule 10), and are deliberately not archived to
+`attendance_raw_logs` — a targeted import should not write the whole table as raw
+rows. A full re-read remains the thing that archives everything.
+
+| Change | Where |
+|---|---|
+| Migration **APPLIED on this box on 2026-09-15** | `range_from`, `range_to`, `records_out_of_range` on `attendance_sync_runs` |
+| Window validation, shared by both endpoints | `app/Support/AttendanceWindow.php` |
+| Filtering, bounds, watermark rule | `AttendanceSyncService::sync()` / `ingest()` / `resolveRange()` |
+| UI | `SyncRangeModal.jsx`, both Devices presentations, both DeviceDetail presentations |
+| Tests | `tests/Feature/Devices/AttendanceRangeSyncTest.php` (6), plus 2 in `DeviceQueueTest` |
+
+**Not committed.** Working tree only, on branch `camelot`, on top of an already
+large uncommitted tree. The `public/build` assets were rebuilt, so the live site is
+already serving the new UI.
+
+**Sidebar flattened in the same session.** `Devices` in the desktop sidebar was a
+bare `<button>` that only opened and closed a sub-page tree, so `/devices` — the
+screen the owner was asking about — could not be reached from the side menu at all,
+only from the top-bar sync pill or by typing the URL, and it never highlighted as
+the current page. On the owner's instruction the nesting is gone entirely:
+**Hardware** now lists four siblings — Devices, Sync history, Enrollments,
+Reconciliation — and `NAV_SECTIONS` has no `children` key anywhere, so the tree
+rendering in `DesktopLayout.jsx` and the child-flattening in `MOBILE_MORE_ITEMS`
+were removed with it.
+
+**`/device-groups` is no longer in any menu.** The owner's list of four did not
+include it. The route, the screen and the API are untouched and still work by URL;
+nothing in the UI links to them. Add it back as a fifth Hardware item if grouping
+turns out to be day-to-day work. Side effect worth knowing: the command palette
+reads `NAV_ITEMS`, so it now offers the three hardware screens it could not reach
+while they were nested, and no longer offers Groups.
+
+While in there, two stale claims in `docs/attendance-sync-flow.md` were corrected:
+`POST /devices/{id}/sync-attendance` has queued rather than run inline since the
+524-timeout fix, and there is no 300-second inline time limit any more.
+
+### 2026-09-15 — C3 templates cracked; every terminal now readable; ZERO duplicates left
+
+Owner asked for fingerprints off every capable device, and for the C3 panels to be
+worked out from the vendor software. Both done.
+
+**The C3 panels were never unreadable.** `templatev10` had simply never been
+requested, and the panel publishes its schema in every `DATATABLE_CFG` reply:
+
+```
+templatev10=10,Size=i1,UID=i2,Pin=i3,FingerID=i4,Valid=i5,Template=B6,Resverd=i7,EndTag=i8
+```
+
+**One byte was the whole problem.** A C3 field is length-prefixed with ONE byte, max
+255; these templates run to 1,618. The first record decoded perfectly — `Size=878
+Pin=10 FingerID=3`, and 878 is exactly what the vendor's BioTemplate holds for badge
+10 finger 3 — then the walk consumed 110 bytes of an 878-byte blob, lost alignment
+inside that record, and turned all 344 after it into plausible-looking nonsense.
+
+**A blob field carries a TWO-byte length prefix.** Found by dumping the framing:
+after `Valid`, the bytes read `6e 03 4a 2d 53 53 32 31` — `6e 03` is 878 little-endian,
+then the `J-SS21` template magic.
+
+| | inBIO460 `.61` | TF1700 `.60` |
+|---|---|---|
+| Records | **238** | **238** |
+| Consumed | 281,680 / 281,680 | 281,680 / 281,680 |
+| People | 196 | 196 |
+| `SS21` signature | every record | every record |
+
+238 = the `fingercount` the vendor's `Machines` table reports for each panel.
+196 = exactly the PINs with a template in its `BioTemplate` table. Four independent
+cross-checks agreeing.
+
+**Every terminal now reads fingerprints** — 577 templates across all six:
+
+| IT Room | Good Wheels | On The Road | Camelot | Glass Door | Entrance |
+|---|---|---|---|---|---|
+| 16 | 32 | 16 | 37 | 238 | 238 |
+
+**Which closed the last duplicates.** The four people (Mary Ann 225, Monir 230,
+Ranjith 232, Vijith 233) whose Camelot records had to be left separate turned out to
+have Camelot templates byte-identical to the panels'. Merged on that evidence.
+
+**Duplicate groups remaining: 0.** Employees 711 → 554 → 361 → **357**.
+
+Library **v2.5.0**, tagged. `RecordCodec` two-byte blob prefix; `Panel::readTemplates()`
+and `readTableRaw()`; `C3Driver::readTemplateDigests()` implemented rather than
+throwing; `TEMPLATE_TABLE_READ`/`TEMPLATE_BLOB_READ` promoted to CONFIRMED **per
+model** (inBIO460, TF1700 only — rule 10), family default left IMPLEMENTED. Synthetic
+fixture; a real capture is 238 people's fingerprints and is not committed.
+
+Probes: `tools/zkprobe/c3-templatev10.php`, `c3-templatev10-framing.php`, traces in
+`traces-2026-09-15/` — digests and sizes only.
+
+**Still not solved:** writing a template to a device. Payload known, envelope not.
+
+### 2026-09-15 — The vendor database settled the duplicates; template write payload known
+
+Owner pointed at `draft/extracted` — the ZKAccess 3.5.5 install, with its `Access.mdb`.
+It answered both stuck questions. **`draft/` stays gitignored**; only decoded structure
+is recorded, in `docs/zkaccess-database.md`.
+
+**1. A PIN IS the person — inside the set one install manages.**
+
+`Machines` holds exactly four rows: `.60 .61 .62 .63` — precisely the members of the
+"Promoseven Holdings" device group, and nothing else. Good Wheels and Camelot are
+separate installs, which is why a PIN shared with them means nothing.
+
+`USERINFO` holds **334 people with 334 distinct Badgenumbers**. Cross-checked against
+our roster reads: **320 distinct PINs across those four terminals, all 320 present in
+USERINFO, all 669 roster names matching exactly, zero disagreements.**
+
+So ZKAccess keeps one employee list and pushes the same badge number everywhere it
+manages. New concept `device_groups.shared_pin_namespace` records that — operator-
+declared, with the evidence stored on the row, **off by default**, because asserting it
+across an unmanaged terminal is exactly how two people become one.
+
+Effect on the duplicate backlog:
+
+| | before | after |
+|---|---|---|
+| one vendor-managed PIN namespace | — | **177** |
+| proven by fingerprint template | 2 | 1 |
+| unconfirmed | 180 | **4** |
+
+The 4 remaining span Camelot plus the managed panels, so the claim correctly does not
+reach them. **Not yet merged — awaiting the owner.**
+
+**2. The template write PAYLOAD is now known. The command is not.**
+
+`BioTemplate`: 248 templates, 204 people, `BioType=1`, `Version=10.0` (ZKFinger v10),
+`DataFormat=0`, `TemplateData` base64 → 564-1,620 raw bytes, signature `SS21` at
+offset 2. **No machine column** — one template per person per finger, pushed to all,
+exactly as the owner described.
+
+Compared against live reads of the managed terminals, 32 `badge:slot` pairs:
+**26 byte-identical, 6 differing only by trailing `00` padding, 0 otherwise.** The
+stored blob IS the device blob, no per-device transformation.
+
+So `uploadTemplate()` no longer lacks a payload — it lacks an envelope.
+`template.upload` stays `not_implemented`: knowing what to send is not knowing how.
+The next step is a `tcpdump` of ZKAccess pushing one enrolment, which under rule 16 is
+a **write** probe — the first here — needing the owner's go-ahead and a test user.
+
+**3. The name transposition is now evidence, not inference.** ZKAccess calls `.61`
+"P7H ENTRANCE" and `.60` "GLASS_ENTRANCE"; this app has them the other way round.
+Still the owner's call to rename.
+
+**4. `USERINFO.SSN` is NOT a national ID** — one digit, identical on all 334 rows. A
+flag. There are no national IDs in the vendor database, so that gap is unchanged and
+only the owner can close it.
+
+**5. The C3 panels hold 238 fingerprints each** per `Machines.fingercount` — data that
+exists and that our C3 driver still cannot read.
+
+### 2026-09-15 — Fingerprint templates ARE readable; digests now outrank cards
+
+The owner's observation is what cracked it: *"when using the original ZKT software we
+register a fingerprint on one device and then make other devices use the same
+fingerprint"*. If ZKAccess copies enrolments between terminals, the same person's
+template is byte-identical on several devices — which identifies duplicated employee
+records far better than a name.
+
+**Research answered it before a single packet was sent** (rule 17). Nothing needed
+reverse-engineering: `TemplateCodec`'s own docblock already recorded the layout,
+confirmed against a 22,066-byte capture from the F18 on 2026-09-02.
+
+```
+[uint32 total length]
+  [uint16 record length][uint16 uid][uint8 slot][uint8 valid][TEMPLATE BLOB]
+```
+
+`decode()` read the 6-byte header and **stepped over the blob**. The bytes had been
+arriving on every enrollment sync for weeks. `template.download` being
+`not_implemented` was about the separate per-slot command and about writing back — it
+never blocked reading, and the assumption that it did went unexamined.
+
+**Confirmed on hardware, with a control** (rule 16): `tools/zkprobe/f18-templates.php`,
+read-only, traces in `tools/zkprobe/traces-2026-09-15/`, digests and sizes only —
+never the bytes.
+
+| PIN | slot | result |
+|---|---|---|
+| 261 | 3 | same **1,054 bytes** on the F18 `.62` and the F22 `.63` |
+| 261 | 6 | same 1,132 bytes on both |
+| 654 | 6, 7 | identical on both |
+| 940 | 6 | identical on both |
+
+**Identical across two different models.** The vendor tool copied one enrolment to
+both terminals, exactly as the owner described.
+
+**Built** (rule 8 order: library, adapter, app):
+
+- Library **v2.4.0**, tagged: `TemplateCodec::decodeWithBlobs()`,
+  `TemplateService::allWithTemplates()`, new capability `template.blob.read` =
+  **CONFIRMED**. `decode()` keeps its narrow `{uid,fid}` contract. README updated.
+- `BiometricDeviceDriver::readTemplateDigests()` — **no blob crosses the seam**; the
+  app gets sizes and SHA-1s, so biometric bytes cannot reach a log or an API response.
+- `employee_device_maps.template_digests` (`["<slot>:<sha1>", …]`). **Digests, not
+  bytes** — deliberate: the hash answers the only question asked and is not reversible.
+- `php artisan device:read-templates` (read-only) records them.
+- `DuplicateEmployeeFinder` gains verdict `PROVEN`, ranked **above** a card match.
+
+**It beat the card on the one case where they disagreed.** "Ragesh" PIN 261 had
+card `10530436` at four sites and `7459039` at Camelot — the single CONTRADICTED
+group. Two of his templates match byte for byte, so he is now PROVEN. A card is
+reissued when one is lost; a fingerprint is not.
+
+**The honest limit.** The two C3 panels keep templates in a `templatev10` table this
+driver does not read, so `readTemplateDigests()` throws there. Glass Door and Entrance
+are precisely the pair holding the duplicated roster, so template evidence settles
+**1 of the 181** remaining duplicate groups. The capability is real; its reach on this
+estate is not. National IDs remain the answer for the rest.
+
+**What is still NOT solved, and is what the owner ultimately wants:** *writing* a
+template to another device. `uploadTemplate()` still throws — the blob's internal
+format and the matching write command are unverified, and a template that appears to
+save then fails to match a real finger is worse than no feature. The next step is
+rule 16's highest-value source: capture ZKAccess pushing an enrolment and read the
+write command off the wire. That needs the owner's go-ahead and a test user, because
+it is the first **write** probe this project would run.
+
+Earlier the same day: **138 card-confirmed duplicates merged** (711 → 554 employees,
+157 records removed, no mapping or punch lost; backup
+`database/database.pre-merge-20260915-091157.sqlite`), and **98,267 punches
+re-attributed** after they were found attached to nobody.
+
+### 2026-09-15 — Device identity rebuilt; database wiped and re-pulled; NOTHING COMMITTED
+
+Triggered by two production failures the owner reported: pushing employees overwrote
+people already on the terminals, and adding devices cross-matched unrelated humans who
+shared a PIN.
+
+**Root cause, single and shared.** The device PIN, the payroll code and the human were
+one identifier. A PIN is a slot number local to one terminal; `employee_code` is a
+payroll number issued by one employer; neither says who somebody is. Measured on the
+live estate: 16 PINs meant different people on different devices, and 260 of 293
+distinct people appear on more than one terminal.
+
+**Built.**
+
+- **Three-layer identity.** `people` (national ID, encrypted + blind index, not
+  tenant-scoped, with `person_national_ids` for reissued documents) → `employees`
+  (now `person_id`, and `employee_code` unique **per tenant**, not globally) →
+  `employee_device_maps` (now `valid_from`/`valid_to`; live rows guaranteed unique by
+  partial indexes).
+- **Adoption gate.** `devices.adoption_status`: `unadopted` → `read_only` → `adopted`.
+  `Device::assertWritable()` refuses every write until the terminal's existing roster
+  has been read and every entry claimed or ignored. New table
+  `device_roster_entries` holds what the device says before anyone decides who they are.
+- **Three write guards**, all now unavoidable: adoption gate, mapped PIN
+  (`DeviceIdentityResolver::pinFor()` throws rather than deriving one), and a slot guard
+  that reads the target record and refuses if it belongs to somebody else.
+- **The guard moved onto the driver contract** — `BiometricDeviceDriver::saveUser()`
+  and `deleteUser()`. The read that proves a slot is free and the write that fills it
+  must share one session (rule 11); a service doing "find, then save" reopens the window.
+  `DeviceIdentityResolver` therefore holds the *decision* and no session, so it speaks no
+  protocol and is testable without hardware.
+- **Attendance resolves through time.** A punch attributes to whoever held the PIN at
+  the punch's own timestamp, not the current holder. Mappings adopted off hardware get
+  `valid_from = null` — the person was already enrolled and we do not know since when;
+  stamping the claim date would have orphaned 87,000 Glass Door records.
+  `attendance:reattribute` recomputes stored punches when a claim lands later.
+- **Commands**: `identity:reset`, `device:roster`, `device:import-roster`,
+  `device:suggest-claims [--apply]`, `device:adopt`, `attendance:reattribute`.
+- **API**: `GET/POST /api/devices/{device}/roster…`, `POST .../adopt`. **No UI consumes
+  these yet.**
+- **13 tests** in `tests/Feature/Devices/DeviceIdentityGuardTest.php`, against an
+  in-memory fake whose `saveUser()` overwrites exactly as the real firmware does — a
+  fake that refused to overwrite would pass whether or not the guard existed. Suite:
+  272 passing.
+
+**Executed against the live estate.**
+
+1. Backed up the database (`database/database.pre-identity-rework-20260915-072217.sqlite`).
+2. `identity:reset` — wiped 343 employees, 715 mappings, 161,959 logs, 274,616 raw logs.
+   **The owner chose to include attendance after being told the rolled-off history is
+   unrecoverable.** All six devices reset to `unadopted`.
+3. Read all six rosters (read-only): 711 entries.
+4. Imported Entrance (320) as the employee base, then `device:suggest-claims --apply`
+   on the rest — 235 on Glass Door, 15 IT Room, 8 On The Road, 7 Camelot. Imported the
+   35 genuinely new people on Good Wheels and Camelot. **355 employees, not 711.**
+5. Adopted the three devices with nothing undecided. Re-read attendance: 151,264 punches.
+
+**Findings worth keeping.**
+
+- **Entrance and Glass Door hold identical rosters** (259 distinct names each). They are
+  the two C3 panels at the same site.
+- **Most unmatched punches are unrecoverable, and that is correct.** Of the unmatched
+  PINs, 56/59 on IT Room, 10/12 on On The Road and 69/85 on Glass Door are **no longer on
+  the device at all** — leavers whose user record was deleted while their punches
+  remained. They stay unattributed rather than guessed at.
+- **A stale `WithoutOverlapping` lock masquerades as a device fault.** Camelot's sync
+  exceeded the worker timeout; the lock survived, so every requeue returned in ~11 ms
+  without touching the device and the command row sat at `running`. Also confirmed the
+  documented trap: passing `--tries=1` to `queue:work` fails these jobs on the first
+  release. The job declares `$tries = 25` for that reason — do not override it.
+- Three failed jobs in `failed_jobs` are from **2026-09-14**, not this session.
+
+**Then the staff list was cleared again, on purpose.** The owner chose to import the
+real roster from HR rather than keep 355 employees whose names came from 24-byte device
+fields. `identity:reset --employees-only` was added for it: it clears people,
+employments, mappings, templates and cards, while **keeping** roster entries, attendance
+and every `ignored` decision. Claims are released and adopted devices drop back to
+`read_only`, because an adopted device with undecided entries is the state that allowed
+the original overwrite.
+
+**`staff:import` was built for the import** (`app/Console/Commands/StaffImport.php`,
+5 tests). CSV with `name, employee_code, national_id, email, department, tenant`. The
+same `national_id` appearing twice is **not** an error — it is one human at two sister
+companies, and becomes one Person with two Employments. Normalisation strips case,
+spaces and punctuation, so `860101123` and `860-101-123` match. A re-import that omits
+the column never detaches an already-identified person.
+
+There was previously **no bulk employee import at all** — only the one-at-a-time form on
+the Employees screen, which is unusable for ~300 people.
+
+**Docs updated** (rule 12): new `docs/device-identity-and-adoption.md`; corrected
+`enrollment-flow.md`, `attendance-sync-flow.md`, `api-endpoints.md`,
+`error-handling.md`, `integration-laravel.md`.
+
+**Still open.**
+
+- **Commit and push.** Nothing from this session is in git.
+- **The HR staff CSV.** Everything downstream is blocked on it. **Owed to Ghassan.**
+- **No UI for claiming.** The API exists; no screen calls it. Around 91 entries will
+  stay ambiguous whatever the CSV says.
+- **C3/CSL panels cannot write.** `saveUser()`/`deleteUser()` throw
+  `UnsupportedCommandException` — declared, not silently plausible (rule 9).
 
 ### 2026-09-14 — Everything committed; readUsers added to the contract; all operations verified on hardware
 
@@ -1044,7 +1911,20 @@ php artisan serve --host=0.0.0.0 --port=8010     # or start-server.bat
 npm run dev                                       # Vite on 5173
 ```
 
-- `.env` has `APP_ENV=production`, `DB_CONNECTION=sqlite`, `APP_URL=http://192.168.1.180:8010`.
+- `.env` has `APP_ENV=production`, `APP_URL=http://192.168.0.39`, and **since
+  2026-09-21 `DB_CONNECTION=sqlsrv`** — the app no longer runs on SQLite. It points
+  at `NewAttendance` on **`192.168.7.8:1433`** (instance `SVRP7H-Tally\SQLEXPRESS`,
+  SQL Server 2022 **Express**, login `sa`). The database name has **no space**; with
+  one, login fails with error 4060. Full detail, including the five ways SQL Server
+  is stricter than SQLite and how to build `pdo_sqlsrv`, is in
+  **`docs/database-sql-server.md`** — read it before touching migrations.
+- The old SQLite file is still on disk at `database/database.sqlite`, readable
+  through the `sqlite_legacy` connection, and `php artisan legacy:sqlite-copy`
+  re-copies it (safely re-runnable). Keep both until SQL Server has a proven backup.
+- That server also hosts the customer's other databases — `HRMSLive`/`HRMSTest`
+  (509 tables, the HRMS proper), `zkbiotime` (a ZKBioTime install), `ZKAttendance`,
+  and the empty shells `Attendance` and `HRMSAttendance`. **Do not write to any of
+  them**; only `NewAttendance` belongs to this app.
 - `QUEUE_CONNECTION=database`. A worker now runs as the systemd service
   **`zkt-queue.service`** (`systemctl status zkt-queue`) — `php artisan queue:work
   database` as `www-data`, enabled at boot, added 2026-09-14. Every device action is
@@ -1056,14 +1936,33 @@ npm run dev                                       # Vite on 5173
 
 ### The terminals
 
-| # | Terminal | Address | Model | Attendance table | State |
-|---|---|---|---|---|---|
-| 2 | IT Room | `192.168.7.62:4370` | F18 | 420,004 B | LAN. Reads clean, windowed, 100%. |
-| 5 | Good Wheels | `46.184.163.106:4370` | ? | not measured | **Public IP.** Not yet re-tested. The most valuable untested control — a second remote device. |
-| 6 | On The Road | `192.168.7.63:4370` | **F22** | 326,124 B | LAN. Push reads fail; **windowed reads fixed it**, 6 of 6. |
-| 13 | **"Glass Door"** ⚠ | `192.168.7.61:4370` | **inBIO460** | **87,756 rows / 320 users** | **WORKING** through `C3Driver`, protocol `c3`. Session-less over TCP. Busiest terminal in the estate. Reads only; writes unbuilt. ⚠ **The NAME is wrong** — see below. |
-| 14 | **"Entrance"** ⚠ | `192.168.7.60:4370` | **TF1700** | **21,005 rows / 320 users** | **WORKING** through `C3Driver`, protocol `c3`. A C3 panel, NOT standalone. **Requires `0x01`**; without it it reports zero records without erroring. ⚠ **The NAME is wrong** — see below. |
-| 9 | Camelot | `87.237.196.60:4370` | F18 | **1,664,804 B** | **Public IP.** Handshake solved 2026-09-13 (needs AUTH, key 0). Bulk read still fails — see *Where we stopped*. |
+Device **row ids changed** when the estate was re-seeded; the ids below are current as
+of 2026-09-15. Roster and punch figures are from the post-wipe re-read that day.
+
+| # | Terminal | Address | Model | Roster | Punches re-read | Adoption | State |
+|---|---|---|---|---|---|---|---|
+| 2 | IT Room | `192.168.7.62:4370` | F18 | 18 | 10,540 | `read_only` — **3 undecided** | LAN. Reads clean, windowed, 100%. The reference path (rule 15). |
+| 5 | Good Wheels | `46.184.163.106:4370` | F18 family | 18 | 11,126 | **`adopted`** | **Public IP.** Reads fine. Entirely separate staff — **zero name overlap** with the rest of the estate. |
+| 11 | On The Road | `192.168.7.63:4370` | **F22** | 11 | 8,172 | `read_only` — **3 undecided** | LAN. Push reads fail; **windowed reads fixed it**. |
+| 12 | Camelot | `87.237.196.60:4370` | F18 | 24 | 13,110 | **`adopted`** | **Public IP.** Needs AUTH, key 0. Slow: **exceeds the default worker timeout**, and the stale-lock trap below follows from that. 7,242 records archived undecodable. |
+| 13 | **"Glass Door"** ⚠ | `192.168.7.61:4370` | **inBIO460** | 320 | 87,349 | `read_only` — **85 undecided** | **WORKING** through `C3Driver`, protocol `c3`. Session-less over TCP. Busiest terminal in the estate. **Reads only — `saveUser()`/`deleteUser()` throw.** ⚠ **The NAME is wrong** — see below. |
+| 14 | **"Entrance"** ⚠ | `192.168.7.60:4370` | **TF1700** | 320 | 20,967 | **`adopted`** | **WORKING** through `C3Driver`, protocol `c3`. A C3 panel, NOT standalone. **Requires `0x01`**; without it it reports zero records without erroring. **Reads only.** ⚠ **The NAME is wrong** — see below. |
+
+**Entrance and Glass Door hold IDENTICAL rosters** — 320 entries, 259 distinct names,
+the same people. They are the two C3 panels at the same site. Adopting one does not
+adopt the other: 85 of Glass Door's entries are same-name duplicates that name matching
+cannot separate, and they wait on a human.
+
+**A PIN means nothing across terminals.** Sixteen PINs resolve to different people on
+different devices — PIN `1` is "akram" on IT Room, Entrance and Glass Door, "HABIB UR
+RAHMAN" on Good Wheels and "Ghassan" on Camelot. Never join on it.
+
+**Camelot's stale lock.** Its sync outlives the default worker timeout. The
+`WithoutOverlapping` lock then survives the dead job, and every requeue returns in
+~11 ms without contacting the device while the command row sits at `running` — which
+looks exactly like a device fault and is not. Clear
+`cache_locks WHERE key LIKE '%device:12'`, reset the row, redispatch, and give the
+worker `--timeout=900`. Do **not** pass `--tries=1`.
 
 **⚠ Device rows 13 and 14 still carry each other's NAME.** Their `model` and
 `protocol` were also transposed and were corrected on 2026-09-14 after reading
@@ -1176,6 +2075,20 @@ before the code.
 
 ## Housekeeping debt
 
+- **The test suite runs on in-memory SQLite while production is SQL Server**
+  (`phpunit.xml`). All 334 tests pass, but they exercise a different database from the
+  one that serves users, so not one of the five incompatibilities found on 2026-09-21
+  could have been caught by CI — every one was found by hand. A SQL Server test job is
+  the obvious gap.
+- **`NewAttendance` has never been backed up.** The instance takes a nightly full
+  backup of every other database at 23:51, but this one was created after the
+  2026-09-20 run. **Confirm it appears in `msdb.dbo.backupset` after the next run** —
+  if the job names its databases explicitly rather than enumerating them, it will be
+  skipped silently forever. The database is in `SIMPLE` recovery, so there is no log
+  chain and no point-in-time restore.
+- **Rollbacks do not work on SQL Server.** Several migration `down()` methods drop a
+  column while an index still depends on it, which SQL Server refuses. Recovery is
+  restore-from-backup, not `migrate:rollback`.
 - Stale `packages/zkteco-protocol` directory, above.
 - **The library is UDP-only, and that is the root of "Incomplete transfer".**
   See the TCP finding under "Where we stopped" — this is now a known fix awaiting

@@ -8,11 +8,33 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Capability\CapabilitySet;
 
 class Device extends Model
 {
     use BelongsToTenant, HasFactory;
+
+    /*
+     * ADOPTION — a device is read-only until somebody has looked at who is on it.
+     *
+     * A terminal that has been running for years already holds people: leavers nobody
+     * deleted, contractors, the installer's test account. Writing to it before those
+     * are accounted for overwrites them, and a fingerprint template destroyed that way
+     * cannot be restored from any backup — the employee must re-enrol in person.
+     *
+     * This is a GATE, not a label. assertWritable() is called before every device
+     * write, and nothing may bypass it.
+     */
+
+    /** Just added. Nothing read yet — no writes, no attendance. */
+    public const UNADOPTED = 'unadopted';
+
+    /** Roster read; attendance syncs; entries awaiting a human decision. No writes. */
+    public const READ_ONLY = 'read_only';
+
+    /** Every roster entry decided. Writes permitted. */
+    public const ADOPTED = 'adopted';
 
     public const PROTOCOL_BINARY = 'binary';
 
@@ -45,6 +67,10 @@ class Device extends Model
         'web_password',
         'location',
         'is_active',
+        'adoption_status',
+        'roster_read_at',
+        'adopted_at',
+        'adopted_by',
         'last_synced_at',
         'last_sync_status',
         'last_sync_error',
@@ -84,10 +110,25 @@ class Device extends Model
         'web_password',
     ];
 
+    /**
+     * A device is unadopted until proven otherwise, in memory as well as in the table.
+     *
+     * The column has the same default, but a freshly created model does not read it
+     * back, so adoption_status would be null on the instance the caller is holding.
+     * Null is not ADOPTED, so assertWritable() would still refuse — but code that
+     * compares against UNADOPTED would silently miss, and a safety gate that depends
+     * on which constant you compared against is not a gate.
+     */
+    protected $attributes = [
+        'adoption_status' => self::UNADOPTED,
+    ];
+
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
+            'roster_read_at' => 'datetime',
+            'adopted_at' => 'datetime',
             'last_synced_at' => 'datetime',
             'info_read_at' => 'datetime',
             'last_seen_at' => 'datetime',
@@ -101,6 +142,90 @@ class Device extends Model
             'fingerprint_capacity' => 'integer',
             'attendance_imported_total' => 'integer',
         ];
+    }
+
+    /**
+     * Refuses any write to a device whose roster has not been accounted for.
+     *
+     * CALL THIS BEFORE EVERY DEVICE WRITE. The production incident on 2026-09-15 was
+     * a push to a terminal nobody had read first: each employee written by payroll
+     * code landed on top of a stranger who already held that number, taking their
+     * fingerprints with them.
+     *
+     * Reads are deliberately NOT gated — reading is how a device gets adopted, and it
+     * cannot destroy anything.
+     */
+    public function assertWritable(): void
+    {
+        if ($this->adoption_status === self::ADOPTED) {
+            return;
+        }
+
+        $why = $this->adoption_status === self::UNADOPTED
+            ? 'its user roster has never been read'
+            : 'its roster still has entries nobody has claimed or ignored';
+
+        throw new \App\Exceptions\DeviceNotAdoptedException(
+            $this,
+            "{$this->name} is read-only because {$why}. Writing now could overwrite a person "
+            ."already enrolled on the hardware. Read the roster and decide every entry first."
+        );
+    }
+
+    public function isWritable(): bool
+    {
+        return $this->adoption_status === self::ADOPTED;
+    }
+
+    /**
+     * Why an employee record cannot be written to this terminal, in words an
+     * operator can act on — or null when it can.
+     *
+     * Lives on the model rather than in the service that asks, because answering it
+     * needs the capability set, and rule 8 keeps the library's vocabulary to the
+     * short list of classes that may name it. A caller gets a sentence instead of a
+     * Capability constant, which is also what it wants: three different refusals
+     * with three different fixes, said once, in the same words everywhere.
+     */
+    public function userWriteRefusal(): ?string
+    {
+        if (! $this->is_active) {
+            return 'it is disabled';
+        }
+
+        /*
+         * The one that matters. A terminal whose existing roster has not been read
+         * and decided is read-only ON PURPOSE: a write addresses a slot, and writing
+         * a slot somebody already occupies replaces them — fingerprints included,
+         * with no error, and no way back short of that person standing at the
+         * terminal again.
+         */
+        if (! $this->isWritable()) {
+            return 'its roster has not been read and claimed yet, so it is read-only';
+        }
+
+        if (! $this->supports(Capability::USER_WRITE)) {
+            return 'this protocol cannot write users';
+        }
+
+        return null;
+    }
+
+    /**
+     * Roster entries nobody has claimed or ignored yet.
+     *
+     * A relation rather than a count query so the devices list can `withCount` it in
+     * one statement. Adoption is refused while this is above zero: each one is a
+     * person already on the hardware whose PIN a write could overwrite.
+     */
+    public function unclaimedRosterEntries(): HasMany
+    {
+        return $this->rosterEntries()->where('claim_status', DeviceRosterEntry::UNCLAIMED);
+    }
+
+    public function rosterEntries(): HasMany
+    {
+        return $this->hasMany(DeviceRosterEntry::class);
     }
 
     /**
@@ -141,6 +266,32 @@ class Device extends Model
         return $this->last_seen_at->gt(
             now()->subSeconds((int) config('attendance.offline_after_seconds', 300)),
         );
+    }
+
+    /**
+     * Deletes the device's sync runs before the device itself.
+     *
+     * WHY THIS IS NOT A DATABASE CASCADE. It used to be. SQL Server refuses a schema
+     * with two cascade paths into one table, and attendance_raw_logs had two: from
+     * devices directly, and from devices through attendance_sync_runs. Both of the
+     * cascades into attendance_raw_logs are load-bearing -- pruning runs must clear
+     * their raw rows, and deleting a device must clear its own -- so the duplicate
+     * path was broken at attendance_sync_runs.device_id instead, which is now
+     * NO ACTION. See 2026_07_26_160400_create_attendance_sync_tables.php.
+     *
+     * That leaves exactly one gap, closed here: without it, deleting a device that
+     * has ever synced fails on a foreign key. Deleting the runs through the relation
+     * lets THEIR cascade clear the raw logs, so the outcome matches what the database
+     * used to do on its own.
+     *
+     * It lives on the model, not in DeviceController::destroy, so every path that
+     * deletes a device is covered rather than only the HTTP one.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (self $device) {
+            $device->syncRuns()->get()->each->delete();
+        });
     }
 
     public function groups(): BelongsToMany

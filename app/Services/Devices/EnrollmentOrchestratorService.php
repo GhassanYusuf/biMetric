@@ -32,6 +32,7 @@ class EnrollmentOrchestratorService
     public function __construct(
         private readonly BiometricDeviceDriver $driver,
         private readonly DeviceUserSyncService $users,
+        private readonly DeviceIdentityResolver $identity,
         private readonly MqttPublisher $mqtt,
     ) {}
 
@@ -46,6 +47,8 @@ class EnrollmentOrchestratorService
         int $fingerSlot,
         ?DeviceCommand $command = null,
     ): array {
+        $device->assertWritable();
+
         $this->driver->capabilities($device)->require(Capability::FINGERPRINT_ENROLL);
 
         if ($fingerSlot < 0 || $fingerSlot > 9) {
@@ -59,7 +62,7 @@ class EnrollmentOrchestratorService
             $device,
             $employee,
             fn (ProtocolDevice $d) => $d->enrollment()->captureFingerprint(
-                $employee->employee_code,
+                $this->identity->pinFor($device, $employee),
                 $fingerSlot,
                 $this->progressReporter($session),
             ),
@@ -73,6 +76,8 @@ class EnrollmentOrchestratorService
      */
     public function captureCard(Device $device, Employee $employee, ?DeviceCommand $command = null): array
     {
+        $device->assertWritable();
+
         $this->driver->capabilities($device)->require(Capability::CARD_ENROLL);
 
         $session = $this->openSession($device, $employee, EnrollmentSession::TYPE_CARD, $command);
@@ -82,7 +87,7 @@ class EnrollmentOrchestratorService
             $device,
             $employee,
             fn (ProtocolDevice $d) => $d->enrollment()->captureCardForUser(
-                $employee->employee_code,
+                $this->identity->pinFor($device, $employee),
                 $this->progressReporter($session),
             ),
         );
@@ -95,6 +100,8 @@ class EnrollmentOrchestratorService
      */
     public function deleteFingerprint(Device $device, Employee $employee, int $fingerSlot): array
     {
+        $device->assertWritable();
+
         $this->driver->capabilities($device)->require(Capability::TEMPLATE_DELETE);
 
         if ($fingerSlot < 0 || $fingerSlot > 9) {
@@ -105,7 +112,7 @@ class EnrollmentOrchestratorService
         // verify — a silent no-op on biometric data is worse than an error.
         $remaining = $this->driver->run(
             $device,
-            fn (ProtocolDevice $d) => $d->templates()->deleteSlot($employee->employee_code, $fingerSlot),
+            fn (ProtocolDevice $d) => $d->templates()->deleteSlot($this->identity->pinFor($device, $employee), $fingerSlot),
         );
 
         BiometricTemplate::query()
@@ -138,7 +145,7 @@ class EnrollmentOrchestratorService
 
         $before = $this->driver->run(
             $device,
-            fn (ProtocolDevice $d) => $d->users()->find($employee->employee_code),
+            fn (ProtocolDevice $d) => $d->users()->find($this->identity->pinFor($device, $employee)),
         );
 
         if ($before === null) {
@@ -154,7 +161,7 @@ class EnrollmentOrchestratorService
 
         $after = $this->driver->run(
             $device,
-            fn (ProtocolDevice $d) => $d->users()->setCard($employee->employee_code, null),
+            fn (ProtocolDevice $d) => $d->users()->setCard($this->identity->pinFor($device, $employee), null),
         );
 
         if ($after->hasCard()) {
@@ -282,10 +289,24 @@ class EnrollmentOrchestratorService
          * The device attaches a credential to an EXISTING user record. Rather than
          * failing with "push them first" — which made adding a new person a two-step
          * dance with an error in the middle — ensure the record exists first.
+         *
+         * THIS IS A WRITE, and it used to address the slot by $employee->employee_code.
+         * On a terminal that already had somebody at that number, ensureExists() found
+         * the stranger's record and quietly enrolled a fingerprint onto it. So it takes
+         * the same three guards as an explicit push: the device must be adopted, the
+         * PIN comes from the stored mapping, and the slot is read before it is touched.
          */
-        $this->driver->run($device, function (ProtocolDevice $d) use ($employee) {
-            $d->users()->ensureExists($employee->employee_code, $employee->name);
-        });
+        $device->assertWritable();
+
+        $pin = $this->identity->pinFor($device, $employee);
+
+        $this->driver->saveUser(
+            $device,
+            $pin,
+            $employee->name,
+            $this->identity->slotGuard($device, $employee, $pin),
+            onlyIfMissing: true,
+        );
 
         $session->transitionTo(EnrollmentSession::SENT);
         $this->publish($session);

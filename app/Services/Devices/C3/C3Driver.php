@@ -192,7 +192,63 @@ class C3Driver implements BiometricDeviceDriver
      */
     public function readUsers(Device $device, bool $withFingerprints = false): array
     {
-        return $this->attempt($device, fn (Panel $panel) => $panel->readUsers());
+        // Slots come from a second table (templatev10) and are only fetched when
+        // asked for — see Panel::readUsers(). Until 2026-09-15 they were always null
+        // here, which the roster correctly but unhelpfully rendered as "unknown".
+        return $this->attempt($device, fn (Panel $panel) => $panel->readUsers(null, $withFingerprints));
+    }
+
+    /**
+     * Template digests from the panel's own `templatev10` table.
+     *
+     * Was declared unreadable on this family until 2026-09-15. It was not: the table
+     * was simply never asked for, and when it was, its blob field turned out to use a
+     * TWO-byte length prefix where every other C3 field uses one — see RecordCodec.
+     *
+     * CONFIRMED on the inBIO460 (.61) and the TF1700 (.60): 238 templates each, which
+     * is exactly the fingercount the vendor software reports for those panels.
+     *
+     * The blob is dropped here, at the lowest layer that can drop it: the app receives
+     * a SHA-1 and a size, never biometric bytes.
+     */
+    public function readTemplateDigests(Device $device): array
+    {
+        $records = $this->attempt($device, fn (Panel $panel) => $panel->readTemplates());
+
+        return array_map(static fn (array $r) => [
+            'user_id' => $r['user_id'],
+            'uid' => $r['uid'],
+            'slot' => $r['fid'],
+            'size' => $r['size'],
+            'sha1' => $r['sha1'],
+        ], $records);
+    }
+
+    /**
+     * Not implemented for this family (rule 9: declared, not silently plausible).
+     *
+     * Writing a user record here would mean a different mechanism entirely, and an
+     * unguarded one would carry exactly the overwrite risk BiometricDeviceDriver::
+     * saveUser() exists to remove. Until that is written and confirmed against real
+     * hardware, this refuses rather than returning something that looks like success.
+     */
+    public function saveUser(
+        Device $device,
+        string $userId,
+        string $name,
+        ?\Closure $guard = null,
+        bool $onlyIfMissing = false,
+    ): DeviceUser {
+        throw new UnsupportedCommandException(
+            "{$device->name} (C3/PullSDK panel) does not support writing user records through this driver."
+        );
+    }
+
+    public function deleteUser(Device $device, string $userId): void
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (C3/PullSDK panel) does not support deleting user records through this driver."
+        );
     }
 
     /**

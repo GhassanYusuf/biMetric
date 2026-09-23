@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader, SelectField } from '../../shared/ui';
+import { describeRunMode } from './parts';
 import { CountChips, DeviceError, RUN_STATUSES, RunStatusBadge, formatDuration, shortTime } from './statusParts';
 
 /*
@@ -76,7 +77,7 @@ export default function SyncRunsMobile({ runs, devices, meta, filters, loading, 
                                 </div>
                             </div>
                             <div className="mt-1 text-xs text-slate-500">
-                                {shortTime(run.started_at)} · {run.mode} · {formatDuration(run.duration_ms)}
+                                {shortTime(run.started_at)} · {describeRunMode(run)} · {formatDuration(run.duration_ms)}
                             </div>
                             <div className="mt-2.5">
                                 <CountChips counts={run.counts} />

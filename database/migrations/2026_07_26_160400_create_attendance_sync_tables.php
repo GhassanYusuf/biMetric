@@ -22,9 +22,22 @@ return new class extends Migration
     {
         Schema::create('attendance_sync_runs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
-            $table->foreignId('device_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('device_command_id')->nullable()->constrained()->nullOnDelete();
+            // tenant_id is NO ACTION, not CASCADE: SQL Server rejects two cascade paths
+            // into one table, and tenants reach most of these both directly and via
+            // devices. Tenant soft-deletes, so the cascade never fired. See
+            // 2026_07_26_080003_add_tenant_id_to_domain_tables.php.
+            $table->foreignId('tenant_id')->nullable()->constrained();
+            /**
+             * NO ACTION, not CASCADE. Both cascades into attendance_raw_logs are
+             * load-bearing -- pruning runs must clear their raw rows, and deleting
+             * a device must clear its own -- so the duplicate path SQL Server
+             * objects to is broken on THIS edge instead. Device::deleting removes a
+             * device's sync runs first; see the note there.
+             */
+            $table->foreignId('device_id')->constrained();
+            // NO ACTION: devices reach this table directly and again through
+            // device_commands, which SQL Server counts as two cascade paths.
+            $table->foreignId('device_command_id')->nullable()->constrained();
 
             // full = whole table imported; incremental = filtered against the watermark
             $table->string('mode')->default('incremental');
@@ -55,7 +68,7 @@ return new class extends Migration
 
         Schema::create('attendance_raw_logs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('tenant_id')->nullable()->constrained();
             $table->foreignId('device_id')->constrained()->cascadeOnDelete();
             $table->foreignId('attendance_sync_run_id')->nullable()->constrained()->cascadeOnDelete();
 

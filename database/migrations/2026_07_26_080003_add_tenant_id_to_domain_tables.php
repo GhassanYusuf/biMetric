@@ -10,6 +10,15 @@ use Illuminate\Support\Facades\Schema;
  * (SQLite only allows ADD COLUMN ... REFERENCES when the default is NULL);
  * existing rows are backfilled to a bootstrap tenant by the seeder / the
  * BackfillDefaultTenant migration that follows.
+ *
+ * tenant_id is deliberately NO ACTION rather than ON DELETE CASCADE. SQL Server
+ * refuses a schema with two cascade paths into the same table, and there are two
+ * here: tenants -> employees directly, and tenants -> departments -> employees.
+ * Same story for attendance_logs, reachable from tenants both directly and via
+ * devices. Nothing is lost by dropping the cascade: Tenant soft-deletes, so the
+ * database-level cascade never fired in the first place, and the cascades that
+ * do real work (device -> its logs) live on the owning entity and are untouched.
+ * Confirmed against SQL Server 2022 Express on 2026-09-21.
  */
 return new class extends Migration
 {
@@ -19,7 +28,7 @@ return new class extends Migration
     {
         foreach ($this->tables as $name) {
             Schema::table($name, function (Blueprint $table) {
-                $table->foreignId('tenant_id')->nullable()->after('id')->constrained()->cascadeOnDelete();
+                $table->foreignId('tenant_id')->nullable()->after('id')->constrained();
                 $table->index('tenant_id');
             });
         }

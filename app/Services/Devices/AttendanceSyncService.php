@@ -31,6 +31,12 @@ use Promoseven\Biometric\Exception\DeviceException;
  * watermark. That saves the database, not the network. Anyone expecting a cheap
  * incremental read should use the realtime listener instead.
  *
+ * The same limit is why a DATE RANGE is a client-side window and not a device
+ * query: asking for August still transfers every record the terminal holds. What a
+ * range buys is not a faster read but a bounded IMPORT — a month re-imported after
+ * a decoder fix, or a backfill of the gap a dead worker left, without reconsidering
+ * 90,000 rows and without disturbing where ordinary syncing is up to.
+ *
  * Three guarantees this makes:
  *   1. Raw bytes are archived BEFORE parsing, so a decoder fix can be applied
  *      retroactively to punches a device has since rolled over.
@@ -47,22 +53,47 @@ class AttendanceSyncService
      *
      * @param  bool  $full  ignore the watermark and reconsider every record. Slower,
      *                      and the way to recover after a decoder fix.
+     * @param  ?string  $from  first device-local DATE to import (Y-m-d), inclusive.
+     * @param  ?string  $to  last device-local DATE to import (Y-m-d), inclusive.
      * @return array{message:string, raw:array<string,mixed>}
      */
-    public function sync(Device $device, bool $full = false, ?DeviceCommand $command = null): array
-    {
+    public function sync(
+        Device $device,
+        bool $full = false,
+        ?DeviceCommand $command = null,
+        ?string $from = null,
+        ?string $to = null,
+    ): array {
         $this->driver->capabilities($device)->require(Capability::ATTENDANCE_READ);
 
-        $watermarkBefore = $full ? null : $device->attendance_watermark;
+        [$rangeFrom, $rangeTo] = $this->resolveRange($device, $from, $to);
+        $ranged = $rangeFrom !== null || $rangeTo !== null;
+
+        /*
+         * A range REPLACES the watermark rather than narrowing it.
+         *
+         * Keeping both would make the commonest request impossible: the window an
+         * operator asks for is almost always one the watermark has already passed —
+         * a month that imported wrongly, or a gap left while the worker was down —
+         * and a range read that still refused everything below the watermark would
+         * report "read 9,579, imported 0" and look broken.
+         */
+        $watermarkBefore = ($full || $ranged) ? null : $device->attendance_watermark;
 
         $run = AttendanceSyncRun::create([
             'tenant_id' => $device->tenant_id,
             'device_id' => $device->id,
             'device_command_id' => $command?->id,
-            'mode' => $full ? AttendanceSyncRun::MODE_FULL : AttendanceSyncRun::MODE_INCREMENTAL,
+            'mode' => match (true) {
+                $ranged => AttendanceSyncRun::MODE_RANGE,
+                $full => AttendanceSyncRun::MODE_FULL,
+                default => AttendanceSyncRun::MODE_INCREMENTAL,
+            },
             'status' => AttendanceSyncRun::STATUS_RUNNING,
             'started_at' => now(),
             'watermark_before' => $watermarkBefore,
+            'range_from' => $rangeFrom,
+            'range_to' => $rangeTo,
         ]);
 
         $startedAt = microtime(true);
@@ -89,15 +120,28 @@ class AttendanceSyncService
 
             $records = $this->driver->readAttendance($device, $progress);
 
-            $result = $this->ingest($device, $run, $records, $watermarkBefore, $progress);
+            $result = $this->ingest($device, $run, $records, $watermarkBefore, $progress, $rangeFrom, $rangeTo);
 
             // The final counters on the row are the authority from here on; a stale
             // in-flight reading would make a finished run look like it is still going.
             $progress->finish();
 
-            $newWatermark = $result['newest'] ?? $watermarkBefore;
+            /*
+             * A RANGE READ MUST NOT MOVE THE WATERMARK.
+             *
+             * The watermark means "everything up to here has been considered by
+             * ordinary syncing". A backfill of last March says nothing about that,
+             * and writing March's newest punch into it would tell the next
+             * incremental sync to reconsider six months — while a window ending
+             * today would push it past punches that were never looked at, and those
+             * punches would then be skipped forever. Leaving it alone is the only
+             * option that can cost extra work but never loses a punch.
+             */
+            $newWatermark = $ranged
+                ? $device->attendance_watermark
+                : ($result['newest'] ?? $watermarkBefore);
 
-            $device->forceFill([
+            $updates = [
                 /*
                  * UTC, explicitly. Laravel does NOT convert timezones on save — it
                  * formats whatever wall-clock the value carries and assumes it is
@@ -117,7 +161,13 @@ class AttendanceSyncService
                 'last_sync_status' => 'success',
                 'last_sync_error' => null,
                 'last_seen_at' => now(),
-            ])->save();
+            ];
+
+            if ($ranged) {
+                unset($updates['attendance_watermark']);
+            }
+
+            $device->forceFill($updates)->save();
 
             $run->forceFill([
                 'status' => $result['undecodable'] > 0 || $result['unmatched'] > 0
@@ -130,20 +180,23 @@ class AttendanceSyncService
                 'records_duplicate' => $result['duplicate'],
                 'records_undecodable' => $result['undecodable'],
                 'records_unmatched' => $result['unmatched'],
+                'records_out_of_range' => $result['out_of_range'],
                 'watermark_after' => $newWatermark === null
                     ? null
                     : Carbon::instance($newWatermark)->utc(),
-                'message' => $this->summarise($result),
+                'message' => $this->summarise($result, $rangeFrom, $rangeTo),
             ])->save();
 
             return [
-                'message' => $this->summarise($result),
+                'message' => $this->summarise($result, $rangeFrom, $rangeTo),
                 'raw' => [
                     'run_id' => $run->id,
                     'mode' => $run->mode,
                     'counts' => $result,
                     'watermark_before' => $watermarkBefore?->format('c'),
                     'watermark_after' => $newWatermark?->format('c'),
+                    'range_from' => $rangeFrom?->format('Y-m-d'),
+                    'range_to' => $rangeTo?->format('Y-m-d'),
                 ],
             ];
         } catch (DeviceException $e) {
@@ -205,8 +258,7 @@ class AttendanceSyncService
          * two versions of one person's day.
          */
         $employeeId = EmployeeDeviceMap::query()
-            ->where('device_id', $device->id)
-            ->where('device_user_id', $deviceUserId)
+            ->inForceAt($device->id, $deviceUserId, $record['timestamp'])
             ->value('employee_id');
 
         /*
@@ -263,7 +315,9 @@ class AttendanceSyncService
      * Stores raw records, then imports the ones that qualify.
      *
      * @param  list<array<string,mixed>>  $records
-     * @return array{read:int,imported:int,duplicate:int,undecodable:int,unmatched:int,newest:?Carbon}
+     * @param  ?\DateTimeInterface  $rangeFrom  earliest instant to import, or null for no lower bound
+     * @param  ?\DateTimeInterface  $rangeTo  latest instant to import, or null for no upper bound
+     * @return array{read:int,imported:int,duplicate:int,undecodable:int,unmatched:int,out_of_range:int,newest:?Carbon}
      */
     private function ingest(
         Device $device,
@@ -271,15 +325,24 @@ class AttendanceSyncService
         array $records,
         ?\DateTimeInterface $watermark,
         ?SyncProgressRecorder $progress = null,
+        ?\DateTimeInterface $rangeFrom = null,
+        ?\DateTimeInterface $rangeTo = null,
     ): array {
-        $counts = ['read' => count($records), 'imported' => 0, 'duplicate' => 0, 'undecodable' => 0, 'unmatched' => 0];
+        $counts = ['read' => count($records), 'imported' => 0, 'duplicate' => 0, 'undecodable' => 0, 'unmatched' => 0, 'out_of_range' => 0];
         $newest = null;
 
-        // One query for the device's mappings instead of one per record.
-        $employeeByDeviceUserId = EmployeeDeviceMap::query()
-            ->where('device_id', $device->id)
-            ->pluck('employee_id', 'device_user_id')
-            ->all();
+        /*
+         * One query for the device's mappings, INCLUDING closed ones.
+         *
+         * A punch resolves to whoever held that PIN AT THE TIME IT WAS MADE, not to
+         * whoever holds it now. Terminals reassign a departed employee's number to a
+         * new hire, and taking only the live mapping would silently re-credit the
+         * leaver's entire history to the joiner — a payroll error with no symptom.
+         *
+         * Resolved in PHP rather than per-record SQL: a 90,000-record table would
+         * otherwise mean 90,000 queries.
+         */
+        $mappingsByPin = $this->mappingsByPin($device);
 
         $rawRows = [];
         $candidates = [];
@@ -308,12 +371,31 @@ class AttendanceSyncService
                 $newest = $punchedAt;
             }
 
+            /*
+             * --- Outside the requested window: counted, not imported.
+             *
+             * The comparison is between two instants, so the device's +03:00 offset
+             * and the bound's device-local midnight line up without either being
+             * normalised first — which is the whole reason the bounds are built in
+             * the device's timezone rather than the app's.
+             *
+             * Deliberately NOT archived to attendance_raw_logs. A range read is a
+             * targeted import, and archiving the rest would write the terminal's
+             * entire table as raw rows on every run; a full re-read is the thing
+             * that archives everything.
+             */
+            if (($rangeFrom !== null && $punchedAt < $rangeFrom) || ($rangeTo !== null && $punchedAt > $rangeTo)) {
+                $counts['out_of_range']++;
+
+                continue;
+            }
+
             // --- Below the watermark: already considered on a previous run.
             if ($watermark !== null && $punchedAt <= $watermark) {
                 continue; // not archived again — it was archived when first seen
             }
 
-            $employeeId = $employeeByDeviceUserId[$deviceUserId] ?? null;
+            $employeeId = $this->employeeAt($mappingsByPin, $deviceUserId, $punchedAt);
 
             if ($employeeId === null) {
                 $counts['unmatched']++;
@@ -427,6 +509,62 @@ class AttendanceSyncService
      * @param  array<string,mixed>|null  $candidate
      * @return array<string,mixed>
      */
+    /**
+     * Every mapping this device has ever had, grouped by PIN, newest window first.
+     *
+     * @return array<string,list<array{employee_id:int,from:?int,to:?int}>>
+     */
+    private function mappingsByPin(Device $device): array
+    {
+        $grouped = [];
+
+        $rows = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->get(['employee_id', 'device_user_id', 'valid_from', 'valid_to']);
+
+        foreach ($rows as $row) {
+            $grouped[(string) $row->device_user_id][] = [
+                'employee_id' => $row->employee_id,
+                // Null bounds mean "unbounded on that side". A mapping adopted from a
+                // terminal that predates this system has no known start — the person
+                // was already enrolled — so it must match punches older than the row.
+                'from' => $row->valid_from?->getTimestamp(),
+                'to' => $row->valid_to?->getTimestamp(),
+            ];
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * Who held this PIN when the punch was made.
+     *
+     * Returns null when nobody did — a PIN deleted from the device before we ever read
+     * it, or one still awaiting a claim. Null is honest: the punch is stored with its
+     * raw device_user_id and counted as unmatched, so it can be attributed later
+     * without re-reading the terminal (which by then may have rolled the record off).
+     *
+     * @param  array<string,list<array{employee_id:int,from:?int,to:?int}>>  $mappingsByPin
+     */
+    private function employeeAt(array $mappingsByPin, string $devicePin, \DateTimeInterface $punchedAt): ?int
+    {
+        $at = $punchedAt->getTimestamp();
+
+        foreach ($mappingsByPin[$devicePin] ?? [] as $window) {
+            if ($window['from'] !== null && $at < $window['from']) {
+                continue;
+            }
+
+            if ($window['to'] !== null && $at >= $window['to']) {
+                continue;
+            }
+
+            return $window['employee_id'];
+        }
+
+        return null;
+    }
+
     private function rawRow(
         Device $device,
         ?AttendanceSyncRun $run,
@@ -459,10 +597,19 @@ class AttendanceSyncService
     }
 
     /** @param array<string,mixed> $counts */
-    private function summarise(array $counts): string
+    private function summarise(array $counts, ?\DateTimeInterface $rangeFrom = null, ?\DateTimeInterface $rangeTo = null): string
     {
         $parts = ["read {$counts['read']}", "imported {$counts['imported']}"];
 
+        /*
+         * The window is named in the message, not only in the columns. "read 9,579,
+         * imported 640" on its own reads as a failure; "read 9,579, 8,912 outside
+         * 2026-08-01…2026-08-31" is the same run explaining itself to whoever finds
+         * it in the history a month later.
+         */
+        if (($counts['out_of_range'] ?? 0) > 0) {
+            $parts[] = "{$counts['out_of_range']} outside ".$this->describeRange($rangeFrom, $rangeTo);
+        }
         if ($counts['duplicate'] > 0) {
             $parts[] = "{$counts['duplicate']} already known";
         }
@@ -474,5 +621,48 @@ class AttendanceSyncService
         }
 
         return 'Sync complete: '.implode(', ', $parts).'.';
+    }
+
+    /**
+     * Turns two operator-supplied dates into instants in the DEVICE's day.
+     *
+     * The dates mean what the terminal's own clock means by them. Its punches are
+     * stamped in local time (+03:00 here), so a window built in the app timezone
+     * would be three hours out at both ends and would quietly move one evening's
+     * punches into the wrong day — the same offset class of bug rule 10 exists for.
+     *
+     * Either bound may be null: "everything from 1 August onwards" and "everything
+     * up to 31 March" are both legitimate requests, and only both being null means
+     * "no window at all".
+     *
+     * @return array{0:?Carbon,1:?Carbon}
+     */
+    private function resolveRange(Device $device, ?string $from, ?string $to): array
+    {
+        if ($from === null && $to === null) {
+            return [null, null];
+        }
+
+        $timezone = $device->timezone ?: config('attendance.device_timezone', '+03:00');
+
+        return [
+            // Inclusive at both ends: a day named is a day imported, all 24 hours
+            // of it. An operator asking for "the 31st" means the punches made ON
+            // the 31st, not the ones made before 00:00 on it.
+            $from === null ? null : Carbon::parse($from, $timezone)->startOfDay(),
+            $to === null ? null : Carbon::parse($to, $timezone)->endOfDay(),
+        ];
+    }
+
+    /** "2026-08-01…2026-08-31", or an open-ended half of one. */
+    private function describeRange(?\DateTimeInterface $from, ?\DateTimeInterface $to): string
+    {
+        if ($from !== null && $to !== null) {
+            return $from->format('Y-m-d').'…'.$to->format('Y-m-d');
+        }
+
+        return $from !== null
+            ? 'dates from '.$from->format('Y-m-d')
+            : 'dates up to '.($to?->format('Y-m-d') ?? '');
     }
 }

@@ -44,6 +44,21 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        // The database this app ran on before the move to SQL Server (rule 14:
+        // recorded, not remembered). Kept so the historical data stays readable
+        // after DB_DATABASE started naming a SQL Server database. Not the
+        // default connection; nothing writes to it.
+        'sqlite_legacy' => [
+            'driver' => 'sqlite',
+            'database' => env('SQLITE_LEGACY_DATABASE', database_path('database.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => false,
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),
@@ -110,8 +125,30 @@ return [
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
-            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
+            'encrypt' => env('DB_ENCRYPT', 'yes'),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
+
+            /*
+             * Return integers as PHP integers rather than strings.
+             *
+             * pdo_sqlsrv stringifies every numeric column by default, where the SQLite
+             * driver this app ran on until 2026-09-21 returned native ints. Without
+             * this, values that were numbers before the move silently become strings
+             * in every API response -- "port":"4370", "attendance_logs_count":"21088"
+             * -- and anything downstream doing a strict comparison or arithmetic on
+             * them changes behaviour with nothing logged and no error raised.
+             *
+             * It is safe here specifically because the schema has no decimal, money or
+             * float column; the usual objection to this flag is float rounding, and
+             * there is nothing for it to round. Re-check that before adding one.
+             *
+             * Guarded by extension_loaded so this file still parses where pdo_sqlsrv
+             * is absent -- the test suite runs on SQLite and would otherwise fatal on
+             * an undefined constant.
+             */
+            'options' => extension_loaded('pdo_sqlsrv')
+                ? [PDO::SQLSRV_ATTR_FETCHES_NUMERIC_TYPE => true]
+                : [],
         ],
 
     ],

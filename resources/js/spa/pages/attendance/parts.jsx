@@ -1,4 +1,6 @@
-import { Button } from '../../shared/ui';
+import { useState } from 'react';
+import { FOCUS } from '../../shared/theme';
+import { Button, TextField } from '../../shared/ui';
 
 /*
 | Verify-method decoding, matching the devices_table schema comment and the
@@ -65,6 +67,92 @@ export function Pager({ pagination, onPage, loading }) {
                     Next
                 </Button>
             </div>
+        </div>
+    );
+}
+
+/*
+| National ID -> this person's punches.
+|
+| Lives here, not in either presentation file, so desktop and mobile cannot drift
+| apart (rule 5): one field, one keyboard behaviour, one set of rules about what
+| is kept.
+|
+| THE TYPED NUMBER IS HELD HERE AND NOWHERE ELSE. On a match it is wiped
+| immediately and the screen shows a name instead — a terminal left unattended in
+| an HR office then displays "Ali Jaafar", not somebody's government id. On a miss
+| it is deliberately LEFT in place: the likeliest cause is a mistyped digit, and
+| making somebody retype sixteen of them to fix one is its own failure.
+|
+| autoComplete="off" is not decoration. A browser that remembers this field offers
+| one employee's national id while an operator is looking up another's.
+*/
+export function NationalIdLookup({ onLookup, busy }) {
+    const [value, setValue] = useState('');
+
+    async function submit(event) {
+        event.preventDefault();
+        if (await onLookup(value)) setValue('');
+    }
+
+    return (
+        <div className="space-y-1.5">
+            <form onSubmit={submit} className="flex items-end gap-3">
+                <div className="min-w-[11rem] flex-1">
+                    <TextField
+                        label="National ID"
+                        className="font-mono"
+                        value={value}
+                        onChange={(e) => setValue(e.target.value)}
+                        placeholder="Whole number"
+                        autoComplete="off"
+                        spellCheck={false}
+                        disabled={busy}
+                    />
+                </div>
+                <Button type="submit" loading={busy} disabled={busy || !value.trim()}>
+                    Find
+                </Button>
+            </form>
+            {/*
+              | Says the one thing that surprises people: this is not the search box
+              | from the Employees screen. It matches the whole document or nothing,
+              | because the column it searches is a hash — there is no prefix to
+              | match on. Spacing and dashes are normalised away, so those are safe.
+            */}
+            <p className="text-xs text-slate-500">
+                Matches the whole number. Spaces and dashes do not matter; a partial number will not match.
+            </p>
+        </div>
+    );
+}
+
+/*
+| Persistent page STATE, not an event (rule 2): while this is on screen the punch
+| list below is one person's, and that stays true until it is dismissed. The toast
+| that announced the match is long gone by then.
+|
+| Rendered in the same place on both presentations — directly under the header,
+| never inside a collapsible filter panel. On mobile the filters collapse, and a
+| list silently narrowed to one employee with nothing on screen saying so is how
+| somebody concludes the terminal stopped recording punches.
+*/
+export function MatchedEmployee({ employee, onClear }) {
+    return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-violet-50 px-4 py-3 ring-1 ring-violet-200">
+            <span className="text-sm text-violet-900">
+                Showing punches for <span className="font-semibold">{employee.name}</span>
+                {employee.employee_code && (
+                    <span className="font-mono text-xs text-violet-800"> · {employee.employee_code}</span>
+                )}
+            </span>
+            <button
+                type="button"
+                onClick={onClear}
+                className={`ml-auto rounded-lg px-2.5 py-1 text-xs font-semibold text-violet-800 hover:bg-violet-100 ${FOCUS}`}
+            >
+                Show everyone
+            </button>
         </div>
     );
 }

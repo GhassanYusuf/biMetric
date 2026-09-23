@@ -2,10 +2,11 @@
 // ("MENU", "WORKFORCE"). Shared by both mobile and desktop chrome. `permission`
 // (when set) gates the item against the user's effective permissions.
 //
-// Sections are collapsible. An item may also carry `children` — a nested list
-// rendered as an indented, collapsible tree (the reference's "Ticket
-// Configuration" pattern). Devices uses this for its four supporting screens.
-// Add `children: [{ to, label, permission }]` to an item and it renders as a tree.
+// Sections are collapsible; items are FLAT inside them. There is deliberately no
+// nesting: Devices used to carry the other hardware screens as a sub-tree, which
+// made the sidebar's own main screen the one thing in it you could not click, and
+// buried four destinations one disclosure deep for no gain over four plain rows.
+//
 // `mobileBar: true` promotes an item into the mobile bottom tab bar. Only four
 // fit comfortably beside the "More" tab; everything else stays reachable there.
 export const NAV_SECTIONS = [
@@ -27,26 +28,19 @@ export const NAV_SECTIONS = [
     },
     {
         label: 'Hardware',
+        /*
+         * Four siblings, no tree. Each is a screen an operator goes to directly, and
+         * the section header already collapses the whole group when it is in the way.
+         *
+         * `/device-groups` is NOT listed. The route still exists and still works —
+         * see App.jsx — it is simply not in the menu. Put it back as a fifth item
+         * here if grouping becomes something operators do day to day.
+         */
         items: [
-            {
-                to: '/devices',
-                label: 'Devices',
-                icon: 'device',
-                permission: 'devices.view',
-                mobileBar: true,
-                /*
-                 * The device layer's four supporting screens. Nested rather than
-                 * promoted to top level: each one only makes sense in the context of
-                 * the terminals, and a flat sidebar of five hardware entries buries
-                 * the workforce sections that most users open far more often.
-                 */
-                children: [
-                    { to: '/device-groups', label: 'Groups', icon: 'sliders', permission: 'devices.view' },
-                    { to: '/device-sync-runs', label: 'Sync history', icon: 'refresh', permission: 'devices.view' },
-                    { to: '/enrollment-sessions', label: 'Enrollments', icon: 'bolt', permission: 'employees.view' },
-                    { to: '/reconciliation', label: 'Reconciliation', icon: 'search', permission: 'devices.view' },
-                ],
-            },
+            { to: '/devices', label: 'Devices', icon: 'device', permission: 'devices.view', mobileBar: true },
+            { to: '/device-sync-runs', label: 'Sync history', icon: 'refresh', permission: 'devices.view' },
+            { to: '/enrollment-sessions', label: 'Enrollments', icon: 'bolt', permission: 'employees.view' },
+            { to: '/reconciliation', label: 'Reconciliation', icon: 'search', permission: 'devices.view' },
         ],
     },
 ];
@@ -58,16 +52,13 @@ export const NAV_ITEMS = NAV_SECTIONS.flatMap((s) => s.items);
 export const MOBILE_BAR_ITEMS = NAV_ITEMS.filter((i) => i.mobileBar);
 
 /*
-| Everything the "More" sheet lists.
+| Everything the "More" sheet lists: every destination that is not already a tab.
 |
-| Nested children are FLATTENED in here rather than skipped. The mobile chrome has no
-| tree affordance, so a child that only appears in the desktop sidebar would be
-| unreachable on a phone — a whole screen that exists but cannot be opened.
+| The nav is flat, so this is a straight filter. It used to also flatten a nested
+| child list, because the mobile chrome has no tree affordance and a desktop-only
+| child would have been a screen that exists but cannot be opened on a phone.
 */
-export const MOBILE_MORE_ITEMS = NAV_ITEMS.flatMap((item) => [
-    ...(item.mobileBar ? [] : [item]),
-    ...(item.children ?? []),
-]);
+export const MOBILE_MORE_ITEMS = NAV_ITEMS.filter((item) => !item.mobileBar);
 
 export function Icon({ name, className = 'h-[18px] w-[18px]' }) {
     const paths = {

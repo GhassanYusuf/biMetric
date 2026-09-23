@@ -91,7 +91,7 @@ table behind this endpoint.
 | PUT/PATCH | `/api/devices/{device}` | blank secrets mean "leave unchanged" |
 | DELETE | `/api/devices/{device}` | punch history is retained |
 | POST | `/api/devices/{device}/test-connection` | synchronous, fast |
-| POST | `/api/devices/{device}/sync-attendance` | legacy direct sync |
+| POST | `/api/devices/{device}/sync-attendance` | queues a read: `full`, or `from`/`to` |
 | POST | `/api/devices/{device}/sync-enrollment` | legacy direct sync |
 | POST | `/api/devices/{device}/import-employees` | |
 | GET | `/api/devices/{device}/status-history` | transitions only |
@@ -128,6 +128,34 @@ punch index prevents duplicates. The response's `mode` field says which ran.
 The queued equivalent is `POST /api/devices/{device}/commands` with
 `{"command":"sync_attendance","full":true}`, and the console equivalent is
 `php artisan app:sync-biometric-devices --full`.
+
+### Reading one range of dates
+
+The same endpoint takes a window instead:
+
+```json
+{ "from": "2026-08-01", "to": "2026-08-31" }
+```
+
+- Both dates are **inclusive**, `Y-m-d`, and are the **device's** calendar days —
+  its punches carry its local offset, and the service widens each date to that day's
+  start and end in `device.timezone`.
+- Either half may stand alone. `from` only means "everything since"; `to` only means
+  "everything up to".
+- `to` before `from` is a **422 on the field**. Nothing is queued: it could only ever
+  import nothing, which on screen is indistinguishable from a dead terminal.
+- Like `full`, it changes **nothing about the transfer** — the terminal always sends
+  its whole table. It bounds what is imported.
+- **It does not move the device's watermark**, so a backfill never changes where
+  ordinary syncing is up to. See `docs/attendance-sync-flow.md` for why that
+  direction is the only safe one.
+
+The run comes back with `mode: "range"`, `range_from` / `range_to` (plain `Y-m-d`, so
+no browser can shift them a day), and a `counts.out_of_range` saying how many records
+the terminal offered from outside the window.
+
+The queued equivalent is `POST /api/devices/{device}/commands` with
+`{"command":"sync_attendance","from":"2026-08-01","to":"2026-08-31"}`.
 
 ### Live sync progress
 
@@ -174,6 +202,8 @@ breaks the transfer.
 POST /api/devices/2/commands
 { "command": "sync_attendance", "full": false }
 ```
+
+`sync_attendance` also accepts `from` / `to` here, with exactly the meaning above.
 
 Accepted: `sync_attendance`, `sync_enrollment`, `import_employees`,
 `reconcile_users`, `health_check`, `read_info`, `probe_capabilities`, `sync_time`.
@@ -238,6 +268,36 @@ Progress publishes on `tenant/{tenantId}/module/enrollment/{sessionId}` — the
 payload carries `session_id`, `status`, `event` and `message`, **not** the
 accumulated trail. Fetch the session for that.
 
+## Adoption — bringing an existing terminal under management
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/devices/{device}/roster` | stored roster, **no device contact**; `?claim_status=unclaimed\|claimed\|ignored` |
+| POST | `/api/devices/{device}/roster/read` | contacts the device. **Read-only**, repeatable |
+| POST | `/api/devices/{device}/roster/{entry}/claim` | `{employee_id}` — binds the entry to an employee |
+| POST | `/api/devices/{device}/roster/{entry}/ignore` | `{reason}` — not a person we track |
+| POST | `/api/devices/{device}/adopt` | unlocks writes; 422 while anything is undecided |
+
+**A device is read-only until it is adopted.** Every terminal here was in service before
+this system existed and already holds people; writing to one before its occupants are
+accounted for overwrites them, taking fingerprint templates that cannot be restored.
+Push and enrollment endpoints throw until `adoption_status = adopted`.
+
+`GET .../roster` returns `meta.adoption_status`, `meta.pending` and `meta.writable`.
+
+`fingerprint_count: null` means the template table would not decode — **unknown**, not
+zero. Render the two differently: a wrong "0" leads an operator to re-enrol somebody who
+is already enrolled.
+
+Claiming takes over the PIN the device **already** uses, and writes nothing to the
+hardware — that is what preserves the person's existing fingerprints.
+
+There is **no bulk employee import over HTTP**. `POST /api/employees` creates one at a
+time; the estate-sized path is `php artisan staff:import staff.csv`, which also
+populates the Person layer from `national_id`.
+
+Full background: `docs/device-identity-and-adoption.md`.
+
 ## Reconciliation
 
 | Method | Path | Notes |
@@ -245,7 +305,7 @@ accumulated trail. Fetch the session for that.
 | GET | `/api/device-maps` | `?device_id= &status= &needs_attention=` |
 | GET | `/api/device-maps/summary` | **stored state, no device contact** |
 | POST | `/api/devices/{device}/reconcile` | queues a fresh read |
-| POST | `/api/devices/{device}/reconcile/import-unknown` | resolves `missing_in_system` |
+| POST | `/api/devices/{device}/reconcile/import-unknown` | creates one employee per **unclaimed roster entry**; matches nothing against existing records |
 | POST | `/api/devices/{device}/reconcile/employees/{employee}/push` | resolves `missing_on_device` |
 
 Reporting is read-only by design. Auto-resolving means deciding whose version
@@ -258,12 +318,73 @@ that the employee has no fingerprints.
 
 ## Employees
 
+### Identity — the national ID
+
+| Method | Path | Notes |
+|---|---|---|
+| PUT | `/api/employees/{employee}/national-id` | `{national_id}` — **write-only** |
+| POST | `/api/employees/lookup` | `{national_id}` — resolves a number to an employee. `employees.view`, throttled 20/min |
+
+**Nothing reads a national ID back.** The employee resource carries `has_national_id`,
+`national_id_masked` (e.g. `••••••123`) and `exportable` — enough to confirm the right
+document was entered, not enough to harvest the roster. It is government ID and the
+HRMS join key.
+
+The same ID **already in this company** is refused (422): one human cannot be employed
+twice by one employer, so it is a typo, and accepting it would share one Person between
+two people — after which editing either rewrites the document for both.
+
+The same ID **at a sister company** is the same human: one Person, two Employments.
+
+Re-submitting a different ID for someone who has one is a **renewal** — the old number
+is superseded, not overwritten, so payroll exports made under it still reconcile.
+
+#### `POST /api/employees/lookup` — the one direction that IS readable
+
+It answers "whose number is this?", never "what is their number". You must already
+hold the document to get anything back, and the response is the ordinary employee
+resource — `national_id_masked` and nothing more.
+
+- **POST, not GET, deliberately.** A number in a query string is written to the
+  access log, kept in browser history, and sent in the `Referer` of whatever the
+  page loads next. The body is none of those places.
+- **Exact match only**, and permanently so: the column searched is an HMAC blind
+  index, which has no prefix to match on. Punctuation and case are normalised away
+  (`830-108-246` = `830108246`), a partial number matches nothing, and a `LIKE`
+  search would require storing the document in plaintext.
+- **404 when nobody holds it.** An honest miss, not an empty list.
+- **Scoped to the signed-in company.** `people` is not tenant-scoped — that is how
+  sister companies share one human — so the lookup resolves through `employees`,
+  which is. A number held only at another company does not resolve here.
+- **Every call is audited, hit and miss**, as `employee.national_id_lookup`. The
+  misses are the point: a run of them from one user is what guessing looks like.
+  Neither the number nor its hash is written to the audit row.
+
+The Attendance screen uses it: enter a national ID, get that person's punches. See
+`resources/js/spa/pages/attendance/parts.jsx` (`NationalIdLookup`).
+
+**Straight SQL, for the same question outside the app:**
+`docs/sql/national-id-lookup.sql` — person, employments, daily in/out and raw
+punches, keyed by the same hash.
+
+### Filters on `GET /api/employees`
+
+| Parameter | |
+|---|---|
+| `search` | name, code, department or email |
+| `has_national_id` | `0` = still missing one (**the working queue** — they cannot be exported to payroll), `1` = has one |
+| `department_id` | |
+| `device_id` | enrolled on that terminal, via the live mapping |
+| `unenrolled` | `1` = on no terminal at all; they cannot clock in anywhere |
+| `is_active` | |
+
 | Method | Path | Notes |
 |---|---|---|
 | GET/POST | `/api/employees` | |
 | GET | `/api/employees/next-code` | suggests the lowest free code; declared before `{employee}` or binding would 404 |
 | GET/PUT/PATCH/DELETE | `/api/employees/{employee}` | |
 | GET | `/api/employees/{employee}/attendance-summary` | |
+| POST | `/api/employees/{employee}/propagate` | queues a write onto several terminals |
 | POST | `/api/employees/{employee}/devices/{device}/push` | |
 | POST | `/api/employees/{employee}/devices/{device}/remove` | |
 | GET | `/api/employees/{employee}/devices/{device}/enrollment` | live read from the terminal |

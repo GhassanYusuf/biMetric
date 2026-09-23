@@ -112,10 +112,78 @@ urgent part.
 
 ## The employee does not need to exist on the device first
 
-`ensureExists()` creates the record if it is missing. This used to be a two-step
-dance where adding an employee and then triggering a capture failed in the middle
-with an unhelpful error — the reported symptom was *"I added a new employee and
-the fingerprint trigger didn't work"*.
+The record is created if it is missing, so adding an employee and triggering a capture
+is one step. This used to be a two-step dance that failed in the middle with an
+unhelpful error — the reported symptom was *"I added a new employee and the fingerprint
+trigger didn't work"*.
+
+### But it is a WRITE, and it is guarded (changed 2026-09-15)
+
+It used to call `ensureExists($employee->employee_code, …)` directly. On a terminal that
+already had somebody at that number, it found the **stranger's** record and enrolled a
+fingerprint onto it. Silently.
+
+It now goes through `BiometricDeviceDriver::saveUser(…, onlyIfMissing: true)` with the
+same three guards as an explicit push:
+
+1. the device must be **adopted** — its existing roster read and every entry decided;
+2. the PIN comes from the **stored mapping**, never from `employee_code`;
+3. the slot is **read before it is touched**, in the same session, and the write is
+   abandoned if it holds anybody else.
+
+An employee with no identity on that terminal is refused rather than allocated one
+implicitly. See `docs/device-identity-and-adoption.md`.
+
+## Editing an employee, and pushing that edit to the terminals
+
+**Saving an employee changes the database and nothing else.** That is deliberate and
+it is not going to change: a corrected spelling is not a hardware operation, and a
+save that silently wrote to six terminals would be one typo away from rewriting six
+records for somebody else.
+
+What the add/edit form does instead is ask. It lists the terminals the person is
+**currently** enrolled on, pre-ticked, and the save is followed by:
+
+```
+POST /api/employees/{employee}/propagate   { "device_ids": [2, 5] }
+```
+
+which queues one `PUSH_USER` command **per device** (`EmployeeDevicePropagator`).
+
+- **Queued, never inline** (rule 11). A push opens a session, reads the target slot
+  and writes it; across several terminals that outlives a web request, and a command
+  per device is what makes *"it updated on four of five"* legible at all.
+- **A device that cannot take a write is refused before anything is queued**, with
+  the reason, because the operator is at the screen now — `Device::userWriteRefusal()`
+  returns a sentence rather than a capability constant. The three refusals are: the
+  device is disabled, its roster has not been read and claimed (so it is read-only —
+  see the guard above), or its protocol cannot write users at all.
+- **Only LIVE mappings are offered.** A closed mapping is a PIN the employee used to
+  hold on that terminal, kept so their old punches still resolve to them. Pushing to
+  it would write their name over whoever holds that slot today, so
+  `EmployeeDevicePropagator::enrolledOn()` filters on `valid_to IS NULL` and the
+  payload carries `is_live` per enrollment so the form cannot offer one either.
+- **The form names the drift.** When a terminal holds a different name from ours, the
+  checkbox says so — *holds "A. Rahman" — this will overwrite it* — because that is
+  precisely what the push is for and precisely what it will do.
+
+On a NEW employee the same section lists every writable terminal and starts
+**unticked**: which terminals a joiner belongs on is a decision nobody else can make,
+and "all of them" is not a safe default.
+
+### Pushing without editing
+
+The **Push** button on an employee row opens the same checklist without touching a
+field, and posts to the same endpoint. It separates the terminals they are already on
+(pre-ticked — re-pushing where they already are is a repair) from the writable ones
+they are not (unticked — adding somebody to a new site is a different decision).
+
+Both it and the add/edit form render one `DeviceTargets` component, so there is a
+single place where "which terminals, and is this mapping live" is decided.
+
+The single-device route (`POST /employees/{employee}/devices/{device}/push`) is
+unchanged and still runs inline. It belongs to the enrollment dialog, which pushes as
+the precondition for capturing a finger and needs the answer in the same breath.
 
 ## Deleting one finger
 

@@ -1,14 +1,23 @@
 import { useState } from 'react';
 import { FOCUS } from '../../shared/theme';
 import { Badge, Button, Card, EmptyState, PageHeader, SelectField, Skeleton, TextField } from '../../shared/ui';
-import { Pager, formatPunch, groupByDay, verifyLabel } from './parts';
+import { MatchedEmployee, NationalIdLookup, Pager, formatPunch, groupByDay, verifyLabel } from './parts';
+
+// Same object as the desktop's, for the same reason: one place that knows what a
+// cleared filter bar is.
+const NO_FILTERS = { employee_id: '', device_id: '', from: '', to: '' };
 
 // Mobile attendance: collapsed filters behind a toggle (they'd otherwise eat the
 // whole first screen), then punches grouped under sticky day headers.
-export default function AttendanceMobile({ rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting }) {
+export default function AttendanceMobile({
+    rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting,
+    matched, onLookup, onClearMatch, lookingUp, canLookup,
+}) {
     const [filtersOpen, setFiltersOpen] = useState(false);
-    const hasFilters = !!(filters.device_id || filters.from || filters.to);
-    const activeCount = [filters.device_id, filters.from, filters.to].filter(Boolean).length;
+    const hasFilters = !!(filters.employee_id || filters.device_id || filters.from || filters.to);
+    // The employee counts too: with the panel shut, the badge is the only thing
+    // saying the list has been narrowed by something.
+    const activeCount = [filters.employee_id, filters.device_id, filters.from, filters.to].filter(Boolean).length;
 
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
@@ -39,8 +48,21 @@ export default function AttendanceMobile({ rows, devices, filters, onFilter, loa
                 </Button>
             </PageHeader>
 
+            {/*
+              | Outside the collapsible panel deliberately. The panel is shut by
+              | default, and a list quietly showing one employee with nothing on
+              | screen saying so reads as "the device stopped recording".
+            */}
+            {matched && <MatchedEmployee employee={matched} onClear={onClearMatch} />}
+
             {filtersOpen && (
                 <Card className="space-y-3 p-4">
+                    {canLookup && (
+                        <>
+                            <NationalIdLookup onLookup={onLookup} busy={lookingUp} />
+                            <div className="h-px bg-slate-100" />
+                        </>
+                    )}
                     <SelectField label="Device" value={filters.device_id} onChange={(e) => set('device_id', e.target.value)}>
                         <option value="">All devices</option>
                         {devices.map((d) => (
@@ -52,7 +74,7 @@ export default function AttendanceMobile({ rows, devices, filters, onFilter, loa
                         <TextField label="To" type="date" value={filters.to} onChange={(e) => set('to', e.target.value)} />
                     </div>
                     {hasFilters && (
-                        <Button variant="secondary" className="w-full" onClick={() => onFilter({ device_id: '', from: '', to: '' })}>
+                        <Button variant="secondary" className="w-full" onClick={() => onFilter(NO_FILTERS)}>
                             Clear filters
                         </Button>
                     )}
@@ -79,7 +101,7 @@ export default function AttendanceMobile({ rows, devices, filters, onFilter, loa
                         title="No punches found"
                         hint={hasFilters ? 'No punches match these filters. Try widening the date range.' : 'Sync a device to pull attendance in.'}
                         action={hasFilters && (
-                            <Button variant="secondary" onClick={() => onFilter({ device_id: '', from: '', to: '' })}>
+                            <Button variant="secondary" onClick={() => onFilter(NO_FILTERS)}>
                                 Clear filters
                             </Button>
                         )}

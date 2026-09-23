@@ -22,6 +22,16 @@ class AttendanceSyncRun extends Model
 
     public const MODE_INCREMENTAL = 'incremental';
 
+    /**
+     * Bounded to a window of device-local dates.
+     *
+     * Distinct from FULL because it answers a different question. A full re-read
+     * reconsiders everything and moves the watermark; a range read reconsiders one
+     * window, imports only what falls inside it, and LEAVES THE WATERMARK ALONE —
+     * it is a targeted backfill, not a change to where ordinary syncing is up to.
+     */
+    public const MODE_RANGE = 'range';
+
     public const STATUS_RUNNING = 'running';
 
     public const STATUS_SUCCEEDED = 'succeeded';
@@ -47,8 +57,9 @@ class AttendanceSyncRun extends Model
         'tenant_id', 'device_id', 'device_command_id', 'mode', 'status',
         'started_at', 'finished_at', 'duration_ms',
         'records_read', 'records_imported', 'records_duplicate',
-        'records_undecodable', 'records_unmatched',
-        'watermark_before', 'watermark_after', 'message', 'error',
+        'records_undecodable', 'records_unmatched', 'records_out_of_range',
+        'watermark_before', 'watermark_after', 'range_from', 'range_to',
+        'message', 'error',
         'progress_phase', 'progress_read', 'progress_total', 'progress_unit',
         'progress_attempt', 'progress_updated_at',
     ];
@@ -60,6 +71,8 @@ class AttendanceSyncRun extends Model
             'finished_at' => 'datetime',
             'watermark_before' => 'datetime',
             'watermark_after' => 'datetime',
+            'range_from' => 'date',
+            'range_to' => 'date',
             'error' => 'array',
             'duration_ms' => 'integer',
             'records_read' => 'integer',
@@ -67,6 +80,7 @@ class AttendanceSyncRun extends Model
             'records_duplicate' => 'integer',
             'records_undecodable' => 'integer',
             'records_unmatched' => 'integer',
+            'records_out_of_range' => 'integer',
             'progress_read' => 'integer',
             'progress_total' => 'integer',
             'progress_attempt' => 'integer',

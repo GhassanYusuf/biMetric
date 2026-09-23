@@ -56,6 +56,11 @@ class DeviceCommandHandler
                 $device,
                 full: (bool) ($payload['full'] ?? false),
                 command: $command,
+                // Device-local dates, or null for the ordinary watermark read. Kept
+                // as strings all the way from the request: the service owns turning
+                // them into instants, because only it knows the device's timezone.
+                from: $payload['from'] ?? null,
+                to: $payload['to'] ?? null,
             ),
 
             DeviceCommand::SYNC_ENROLLMENT => $this->users->syncEnrollmentState($device),

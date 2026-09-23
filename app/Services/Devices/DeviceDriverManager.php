@@ -8,6 +8,7 @@ use App\Services\Devices\C3\C3Driver;
 use App\Services\Devices\Csl\CslHttpDriver;
 use Promoseven\Biometric\Capability\CapabilitySet;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Value\DeviceUser;
 
 /**
  * Picks the driver for a device by its protocol, and forwards to it.
@@ -97,6 +98,26 @@ class DeviceDriverManager implements BiometricDeviceDriver
     public function readUsers(Device $device, bool $withFingerprints = false): array
     {
         return $this->driverFor($device)->readUsers($device, $withFingerprints);
+    }
+
+    public function readTemplateDigests(Device $device): array
+    {
+        return $this->driverFor($device)->readTemplateDigests($device);
+    }
+
+    public function saveUser(
+        Device $device,
+        string $userId,
+        string $name,
+        ?\Closure $guard = null,
+        bool $onlyIfMissing = false,
+    ): DeviceUser {
+        return $this->driverFor($device)->saveUser($device, $userId, $name, $guard, $onlyIfMissing);
+    }
+
+    public function deleteUser(Device $device, string $userId): void
+    {
+        $this->driverFor($device)->deleteUser($device, $userId);
     }
 
     /**

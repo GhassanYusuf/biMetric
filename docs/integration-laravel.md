@@ -3,6 +3,12 @@
 This is how *this* application does it, and it is the reference for anyone wiring
 the package into another Laravel app.
 
+> **The database underneath is SQL Server**, not SQLite, since 2026-09-21. Nothing
+> in this file depends on that, but anything that persists what a device said does:
+> see [`database-sql-server.md`](database-sql-server.md) for the cascade rules,
+> the UTF-8 constraint on raw device values, and why a device id must never be
+> `CAST` to an integer.
+
 ## The seam
 
 ```php
@@ -257,14 +263,43 @@ stops answering never gets the chance to mark itself offline, so a stored flag
 would keep claiming it is up. This is why the UI can show `health_status: online`
 with `is_online: false` — rendered as **"Stale"**.
 
+## Never address a device by `employee_code`
+
+Added 2026-09-15, after doing so destroyed enrollments in production.
+
+A device user id (the "PIN") is a **slot number local to one terminal**. It is not a
+payroll number and it is not portable: on the six devices in this estate, PIN `1` is
+three different humans. Deriving it from `employees.employee_code` merged unrelated
+people and, because `save()` is an upsert, wrote over the person already in the slot.
+
+```php
+// WRONG — and this is exactly what the old code did
+$driver->run($device, fn ($d) => $d->users()->save($employee->employee_code, $employee->name));
+
+// RIGHT — mapped PIN, adoption gate, slot guard, one session
+$device->assertWritable();
+$pin = $identity->pinFor($device, $employee);
+$driver->saveUser($device, $pin, $employee->name, $identity->slotGuard($device, $employee, $pin));
+```
+
+`DeviceIdentityResolver::pinFor()` throws when the employee has no identity on that
+terminal, rather than inventing one. Creating an identity is `claim()` or the adoption
+flow, both of which check the slot is free first.
+
+See `docs/device-identity-and-adoption.md`.
+
 ## Checklist for a new device operation
 
 1. Add a `DeviceCommand::*` constant.
 2. Handle it in `DeviceCommandHandler`.
 3. Gate it on a `Capability` in the controller — 422 before queueing.
 4. Expose it through `BiometricDeviceDriver`, not by importing the library.
-5. Record its outcome on the command row (message *and* error), and report
+5. **If it writes to the device**: call `Device::assertWritable()`, take the PIN from
+   `DeviceIdentityResolver::pinFor()`, and pass `slotGuard()` so the read that proves
+   the slot is free shares a session with the write. There is no unguarded write path
+   above the driver, and there must not become one.
+6. Record its outcome on the command row (message *and* error), and report
    failures through `DeviceErrorReporter` — never a bare `Log::error`.
-6. Publish progress over MQTT if it is long-running, non-fatally.
-7. Add the UI action behind both the permission and the capability.
-8. Write the doc — see rule 12 in `CLAUDE.md`.
+7. Publish progress over MQTT if it is long-running, non-fatally.
+8. Add the UI action behind both the permission and the capability.
+9. Write the doc — see rule 12 in `CLAUDE.md`.
