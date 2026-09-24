@@ -77,7 +77,8 @@ export default function EnrollmentSessions() {
     const topics = user?.tenant ? [`tenant/${user.tenant.id}/module/enrollment/+`] : [];
     useMqtt(topics, (_topic, payload) => {
         const id = payload?.session_id;
-        if (!id) return;
+        // null = the live poller saying "enrollment changed" (rule 18): re-fetch.
+        if (!id) { if (payload === null) load(); return; }
 
         let known = false;
         setSessions((prev) => {

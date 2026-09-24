@@ -178,6 +178,28 @@ After `CMD_USER_WRQ`, `CMD_DELETE_USER` or a template delete, the device
 acknowledges the write and then discards it unless `CMD_REFRESH_DATA` (1013)
 follows. The ack is not a commit. Every write path in the library sends it.
 
+### Uploading a user with templates: SAVE_USERTEMPS (EXPERIMENTAL, 2026-09-24)
+
+Transcribed from fananimi/pyzk (commit `f29709c1`: `zk/base.py`
+`HR_save_usertemplates` / `_send_with_buffer`, `zk/const.py`), never yet run
+against hardware here:
+
+```
+FREE_DATA (1502)
+PREPARE_DATA (1500)   payload uint32 total size
+DATA (1501) × n       the buffer in 1,024-byte chunks, each acknowledged
+SAVE_USERTEMPS (110)  payload pack('<IHH', 12, 0, 8)
+REFRESH_DATA (1013)
+```
+
+Buffer: `uint32 len(users) | uint32 len(table) | uint32 len(templates)`, then each
+user as `0x02` + the 72-byte record, then per template an 8-byte entry
+`(u8 2, u16 uid, u8 0x10+slot, u32 offset into templates)`, then per template
+`u16 length + blob`. `Packet::buildUserTemplatesUpload()` is checked byte-for-byte
+against pyzk's own struct output (`tests/Unit/UserReuploadTest.php`). Only the
+9-byte user-id field is rewritten in the record; bytes 57..71 are carried over as
+read, because whether they belong to the id is unresolved.
+
 ## Windowed reads: the flow-controlled alternative (CONFIRMED, F22)
 
 **Status: CONFIRMED on the F22, 2026-09-13.** This is now the preferred path for

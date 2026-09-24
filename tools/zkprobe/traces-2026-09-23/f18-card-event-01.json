@@ -1,0 +1,19 @@
+{
+    "label": "f18-card-event",
+    "host": "192.168.7.62",
+    "started_at": "2026-09-23T11:38:58+00:00",
+    "question": "Which realtime push carries a tapped card number, and at what offset?",
+    "probe_card": {
+        "decimal": 2862247,
+        "hex_le": "a7ac2b00"
+    },
+    "probe_pin": "960802797",
+    "listen_seconds": 5,
+    "events": [],
+    "subscribe_reply": {
+        "command": 2000,
+        "data": ""
+    },
+    "finished_at": "2026-09-23T11:39:03+00:00",
+    "found_card_in": []
+}

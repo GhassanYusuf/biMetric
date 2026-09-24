@@ -1,0 +1,24 @@
+{
+    "label": "renumber-itroom",
+    "host": "192.168.7.62",
+    "started_at": "2026-09-23T12:19:02+00:00",
+    "device": "IT Room F18",
+    "employee": "ali-it2 (test user)",
+    "from": "960802797",
+    "to": "5",
+    "result": "error",
+    "error": "Promoseven\\Biometric\\Exception\\ProtocolException: The device refused to change user id 960802797 to 5 (Device rejected the user write (ACK_ERROR).). Nothing was changed: 960802797 is still on the device with its card and fingerprints.",
+    "readback_uid6": {
+        "uid": 6,
+        "user_id": "960802797",
+        "name": "ali-it2",
+        "privilege": 0,
+        "card_number": 2862247,
+        "has_card": true,
+        "card_suspect": false,
+        "finger_slots": [
+            5
+        ],
+        "fingerprint_count": 1
+    }
+}

@@ -82,15 +82,90 @@ class EnrollmentOrchestratorService
 
         $session = $this->openSession($device, $employee, EnrollmentSession::TYPE_CARD, $command);
 
-        return $this->runCapture(
+        $pin = $this->identity->pinFor($device, $employee);
+
+        /*
+         * The card they hold BEFORE the scan, read off the device, so a bad scan can
+         * be undone. The library's capture writes whatever it took as the card before
+         * we see it (see isNotACard()), so "undo" is the only safe option left here.
+         */
+        $before = null;
+        foreach ($this->driver->readUsers($device) as $user) {
+            if ($user->userId === $pin) {
+                $before = $user->cardNumber;
+                break;
+            }
+        }
+
+        $result = $this->runCapture(
             $session,
             $device,
             $employee,
-            fn (ProtocolDevice $d) => $d->enrollment()->captureCardForUser(
-                $this->identity->pinFor($device, $employee),
-                $this->progressReporter($session),
-            ),
+            fn (ProtocolDevice $d) => $d->enrollment()->captureCardForUser($pin, $this->progressReporter($session)),
+            vet: function (EnrollmentResult $result) use ($device, $employee, $pin, $before): ?string {
+                if (! self::isNotACard($result->cardNumber)) {
+                    return null;
+                }
+
+                // Put back what they had. 0 clears, for someone who had no real card.
+                $restore = $before !== null && ! self::isNotACard($before) ? $before : 0;
+                $this->driver->setUserCard($device, $pin, $restore);
+
+                return "The scan at {$device->name} did not return a card number (it reported "
+                    .sprintf('0x%08X', $result->cardNumber).'), so nothing was saved. '
+                    .($restore > 0 ? "{$employee->name} still has card #{$restore}. " : '')
+                    .'Tap the card again, or type the number instead.';
+            },
         );
+
+        /*
+         * Read back (rule 10). finishSuccess() re-read the device into the mapping, so
+         * the stored card is now what the terminal says, not what the scan claimed.
+         */
+        $captured = $result['raw']['card_number'] ?? null;
+        if (($result['raw']['success'] ?? false) && $captured !== null) {
+            $stored = EmployeeDeviceMap::query()
+                ->where('device_id', $device->id)
+                ->where('employee_id', $employee->id)
+                ->live()
+                ->value('card_number');
+
+            if ((int) $stored !== (int) $captured) {
+                $result['raw']['success'] = false;
+                $result['message'] = "The terminal reported card #{$captured} but holds "
+                    .($stored ? "#{$stored}" : 'no card').' when read back. Tap again, or type the number.';
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * True when a "card number" from a scan is certainly not a card.
+     *
+     * EXPERIMENTAL, from what IT Room (F18, 192.168.7.62) produced on 2026-09-23:
+     *
+     *   0             an empty card field
+     *   0xFFFFFFFF    EF_VERIFY's "user not identified" (adrobinoga/zk-protocol,
+     *                 sections/realtime.md), taken as a card by the library
+     *   four ASCII digits, e.g. 0x38303639 = "9608": the start of a user id string
+     *                 from another push. A real card with all four bytes in 0x30-0x39
+     *                 is about 1 in 430,000; refusing one costs a retype, while
+     *                 accepting a fake one overwrote ali-test2's card.
+     *
+     * A safety net until the library listens for the right event (rule 16 probe:
+     * tools/zkprobe/f18-card-event.php). It cannot catch a wrong number that looks
+     * like a card; the operator-facing message shows the number for that reason.
+     */
+    public static function isNotACard(?int $cardNumber): bool
+    {
+        if ($cardNumber === null || $cardNumber <= 0 || $cardNumber >= AccessCard::SENTINEL) {
+            return true;
+        }
+
+        $bytes = pack('V', $cardNumber);
+
+        return strspn($bytes, '0123456789') === 4;
     }
 
     /**
@@ -192,6 +267,82 @@ class EnrollmentOrchestratorService
     }
 
     /**
+     * Writes a card NUMBER onto the employee's record, for when the card is in hand
+     * and printed, and walking it to the terminal to tap is the only thing standing
+     * between the operator and done.
+     *
+     * Same end state as captureCard(), without the terminal waiting for a tap. Name,
+     * privilege and fingerprints are kept; the library reads the record first and
+     * rewrites only the card field (UserService::setCard).
+     *
+     * Refused when somebody else on THIS terminal already holds the number. A card
+     * on two records makes every tap ambiguous, and nothing the device reports
+     * would tell us which of the two it credited.
+     *
+     * VERIFIED ON READ-BACK, not on the ACK (rule 10). The card in the returned
+     * record must be the one we sent, or the write is reported as failed.
+     *
+     * CONFIRMED on the F18 (IT Room, 192.168.7.62), 2026-09-23: card 2862247 written
+     * to PIN 960802797 and read back. Unknown on every other model (rule 15).
+     *
+     * @return array{message:string, raw:array<string,mixed>}
+     */
+    public function assignCard(Device $device, Employee $employee, int $cardNumber): array
+    {
+        $device->assertWritable();
+
+        $this->driver->capabilities($device)->require(Capability::CARD_WRITE);
+
+        // 0 is "no card" in the record, and 0xFFFFFFFF is this family's empty marker
+        // (see AccessCard::SENTINEL), so neither can be anybody's card.
+        if ($cardNumber < 1 || $cardNumber >= AccessCard::SENTINEL) {
+            throw new \InvalidArgumentException('A card number must be between 1 and 4294967294.');
+        }
+
+        $pin = $this->identity->pinFor($device, $employee);
+
+        $holder = EmployeeDeviceMap::query()
+            ->with('employee')
+            ->where('device_id', $device->id)
+            ->where('card_number', $cardNumber)
+            ->where('employee_id', '!=', $employee->id)
+            ->live()
+            ->first();
+
+        if ($holder !== null) {
+            throw new \DomainException(
+                "Card #{$cardNumber} is already on ".($holder->employee?->name ?? "PIN {$holder->device_user_id}")
+                ." on {$device->name}. Remove it from them first."
+            );
+        }
+
+        $after = $this->driver->setUserCard($device, $pin, $cardNumber);
+
+        if ($after->cardNumber !== $cardNumber) {
+            throw new \RuntimeException(
+                "{$device->name} accepted the card but reports "
+                .($after->hasCard() ? "#{$after->cardNumber}" : 'no card')
+                .' when read back. Try again; if it persists, the terminal may need a restart.'
+            );
+        }
+
+        $this->users->recordCard($device, $employee->id, $after);
+
+        // Only the card column: the returned record does not carry fingerprint slots,
+        // and writing its null over the stored slots would turn "known" into "unknown".
+        EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->where('employee_id', $employee->id)
+            ->live()
+            ->update(['card_number' => $cardNumber, 'synced_at' => now()]);
+
+        return [
+            'message' => "Card #{$cardNumber} written to {$employee->name} on {$device->name}.",
+            'raw' => ['card_number' => $cardNumber, 'pin' => $pin],
+        ];
+    }
+
+    /**
      * Abandons an active session.
      *
      * Also tells the device to stop capturing — otherwise the terminal sits in
@@ -284,6 +435,7 @@ class EnrollmentOrchestratorService
         Device $device,
         Employee $employee,
         \Closure $capture,
+        ?\Closure $vet = null,
     ): array {
         /*
          * The device attaches a credential to an EXISTING user record. Rather than
@@ -323,6 +475,16 @@ class EnrollmentOrchestratorService
          * it again produced a visibly doubled history:
          *   beeped -> waiting_for_finger -> timeout -> beeped -> waiting_for_finger -> timeout
          */
+
+        // A capture that "succeeded" with something that is not a credential is a
+        // failure. The vet undoes it on the device and says why, before we record it.
+        if ($vet !== null && $result->succeeded() && ($reason = $vet($result)) !== null) {
+            $session->transitionTo(EnrollmentSession::FAILED, $reason);
+            $this->publish($session);
+            $this->users->syncEnrollmentState($device);
+
+            return ['message' => $reason, 'raw' => ['success' => false, 'outcome' => 'not_a_card', 'reported' => $result->cardNumber]];
+        }
 
         return match (true) {
             $result->succeeded() => $this->finishSuccess($session, $device, $employee, $result),

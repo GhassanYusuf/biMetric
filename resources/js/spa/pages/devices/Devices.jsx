@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMqtt } from '../../shared/useMqtt';
 import { api, ApiError } from '../../shared/api';
 import { useAuth } from '../../shared/auth';
 import { useDeviceClass } from '../../shared/useDeviceClass';
@@ -25,7 +26,7 @@ const SYNCING_KEYS = ['sync-attendance', 'full-resync', 'range-read'];
 // back to the UI rather than silently succeeding.
 export default function Devices() {
     const deviceClass = useDeviceClass();
-    const { can } = useAuth();
+    const { can, user } = useAuth();
     const confirm = useConfirm();
     const toast = useToast();
     const [rows, setRows] = useState([]);
@@ -43,6 +44,9 @@ export default function Devices() {
             setLoading(false);
         }
     }, []);
+
+    // LIVE (CLAUDE.md rule 18): refresh in place when devices change anywhere.
+    useMqtt(user?.tenant ? [`tenant/${user.tenant.id}/module/devices/+`] : [], () => load());
 
     useEffect(() => {
         load();

@@ -185,10 +185,20 @@ class ProtocolLibraryBoundaryTest extends TestCase
              * UnsupportedCommandException ONLY, to tell "this family has no readable
              * template table" apart from "the read failed" — the first must leave the
              * stored digests alone, the second is a device fault. It reaches hardware
-             * solely through BiometricDeviceDriver::readTemplateDigests(), which
-             * returns sizes and SHA-1s and never lets a template blob cross the seam.
+             * solely through BiometricDeviceDriver::readTemplates(); since 2026-09-24
+             * the blobs it receives go straight to FingerprintVault, encrypted, and
+             * are never logged or printed.
              */
             'app/Console/Commands/DeviceReadTemplates.php',
+            /*
+             * The system's fingerprint copy (2026-09-24). Names
+             * UnsupportedCommandException ONLY, for the same reason as the command
+             * above: "this terminal has no template table" is a per-terminal SKIP in
+             * the reply, "the read failed" is a FAILURE — and neither may delete a
+             * stored copy. Reaches hardware solely through
+             * BiometricDeviceDriver::readTemplates().
+             */
+            'app/Services/Employees/FingerprintVault.php',
             /*
              * The PIN-to-employee resolver. Names DeviceUser only — the occupant of a
              * slot, handed to it by the driver so it can decide whether a write may

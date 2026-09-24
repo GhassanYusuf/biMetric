@@ -19,7 +19,8 @@ AttendanceSyncService::sync()
         ├── archive raw payloads        → attendance_raw_logs
         ├── filter to > watermark
         ├── map device user id → employee
-        ├── insertOrIgnore in 500-row chunks, punched_at explicitly ->utc()
+        ├── de-dupe on the unique key, then upsert (no-op on match) in
+        │   parameter-safe chunks, punched_at explicitly ->utc()
         ├── advance watermark (UTC)
         └── close run with five counts
 ```
@@ -105,7 +106,7 @@ The device stamps records with **its own local time** (`+03:00`), carrying no
 timezone. Everything downstream stores UTC. Two separate mistakes came from that
 gap.
 
-### 1. `insertOrIgnore` bypasses Eloquent casts
+### 1. The bulk insert bypasses Eloquent casts
 
 The fast path writes device-local time straight into a UTC column. The result was
 **6,432 rows duplicated at exactly a 3-hour offset** — the same punch stored twice,
@@ -469,6 +470,31 @@ survives after the cache entry expires.
 
 Early versions opened one `DB::transaction` per punch. `insertOrIgnore` in 500-row
 chunks replaced that.
+
+### SQL Server broke that path (found 2026-09-23)
+
+After the move to SQL Server on 2026-09-21 **every attendance sync failed**:
+`RuntimeException: This database engine does not support inserting while ignoring
+errors.` Laravel has no SQL Server grammar for `insertOrIgnore`. Observed on IT Room
+(F18, `192.168.7.62`), command 67; its newest stored punch was 2026-09-16. Nothing
+was lost on the devices — they keep their logs — but no punch reached the app.
+
+Now, in `AttendanceSyncService::ingest()`:
+
+- **`upsert()` on the same unique index** (`attendance_unique_punch`), with the only
+  "update" being `device_user_id` set to itself. An existing punch is matched and
+  left exactly as it was, attribution included; a new one is inserted. It is still
+  the index, not a SELECT, that decides what is a duplicate.
+- **De-duplicated on that key first.** SQL Server's `MERGE` refuses a source holding
+  the same key twice, which `insertOrIgnore` used to absorb silently.
+- **Chunks sized from the row width** (`paramSafeChunk()`), because SQL Server allows
+  2,100 parameters per statement: 500 rows x 9 columns would be 4,500. The same
+  applies to the `attendance_raw_logs` insert (13 columns).
+
+Verified 2026-09-23 on the production SQL Server inside a rolled-back transaction:
+200-row chunk, 199 new rows inserted, an existing IT Room punch left with the same
+`employee_id` and `updated_at`, a re-run inserting 0. The tests run on SQLite, where
+the same `upsert()` compiles to `ON CONFLICT DO UPDATE`.
 
 Per-punch `PunchRecorded` events were also removed from the bulk path: firing them
 during a historical sync would flood MQTT with thousands of "just clocked in"

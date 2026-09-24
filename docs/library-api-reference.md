@@ -77,8 +77,38 @@ save(string $userId, string $name, ?int $privilege = null, ?int $cardNumber = nu
 ensureExists(string $userId, string $name, ?int $cardNumber = null): DeviceUser
 delete(string $userId): void
 setCard(string $userId, ?int $cardNumber): DeviceUser
+renumber(string $fromUserId, string $toUserId): DeviceUser   // EXPERIMENTAL, 2.7.0
 softDisable(string $userId): DeviceUser
 ```
+
+### `renumber()` — change a user id without losing the record
+
+Rewrites the same `uid` under `$toUserId`, carrying name, privilege and card across,
+and refuses when `$toUserId` is already on the device. It verifies rather than trusts
+the ACK: the new id must sit on the same uid, the old id must be gone, and every
+fingerprint slot filled before must still be filled afterwards — otherwise
+`VerificationException`. Delete-and-recreate is never used, because template upload is
+not implemented and it would destroy every finger. **EXPERIMENTAL** (capability
+`user.renumber` = `implemented`): not yet run against real firmware. The returned
+user's `fingerSlots` is `null` (unknown) when the template table would not decode.
+
+### `renumberByReupload()` — change a user id on firmware that refuses `renumber()` (2.8.0)
+
+```php
+renumberByReupload(string $fromUserId, string $toUserId, ?callable $onSnapshot = null): DeviceUser
+```
+
+Deletes the record and re-uploads it — the device's own 72-byte row with only the
+id changed, and every template the table held for that uid — on the SAME uid via
+`DeviceClient::saveUserWithTemplates()` (`SAVE_USERTEMPS`). Refuses before writing
+anything if the old id is missing, the new id is taken or not 1-9 digits, or the
+template table would not decode. `$onSnapshot` receives
+`{uid, user_id, record, templates[{fid, valid, template, sha1}]}` BEFORE the first
+write; if it throws, nothing is written — persist it, it is the only copy of their
+fingerprints if everything else fails. After the upload it verifies (new id on the
+same uid, old id gone, every slot back); on any failure it re-uploads the original
+and verifies that, then throws `VerificationException` with context
+`restored: true|false`. **EXPERIMENTAL** — never run on hardware.
 
 ### `save()` — the nullable arguments are the whole point
 

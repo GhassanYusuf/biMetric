@@ -152,6 +152,18 @@ interface BiometricDeviceDriver
     public function readTemplateDigests(Device $device): array;
 
     /**
+     * Every template on the device WITH its bytes — biometric data.
+     *
+     * Exists for one consumer: App\Services\Employees\FingerprintVault, which keeps an
+     * encrypted copy per employee (owner's decision, 2026-09-24). Nothing else may call
+     * it, log its result, or return it over HTTP. Same table, same read as
+     * readTemplateDigests(); `valid` is the record's own flag byte.
+     *
+     * @return list<array{user_id:?string,uid:int,slot:int,valid:int,size:int,sha1:string,template:string}>
+     */
+    public function readTemplates(Device $device): array;
+
+    /**
      * Writes a user record, having first proved the slot is not somebody else's.
      *
      * WHY THIS IS ON THE CONTRACT rather than done by a service inside a run()
@@ -196,6 +208,29 @@ interface BiometricDeviceDriver
      * in order to remove somebody.
      */
     public function deleteUser(Device $device, string $userId): void;
+
+    /**
+     * Moves an existing user record to a different user id ("PIN") in one session,
+     * keeping its card, privilege and fingerprints, and returns it as read back.
+     *
+     * Refuses when the new id is held by anyone on the device. A driver MUST verify
+     * rather than trust the ACK: that the record now sits under the new id, that the
+     * old id is gone, and — where its family can read templates — that no finger was
+     * lost. EXPERIMENTAL on every model as of 2026-09-23; see
+     * docs/device-capabilities.md (user.renumber).
+     */
+    public function renumberUser(Device $device, string $fromUserId, string $toUserId): DeviceUser;
+
+    /**
+     * Writes a card number onto an EXISTING user record, keeping name, privilege and
+     * fingerprints, and returns the record as read back afterwards.
+     *
+     * A contract method rather than a run() closure for the same reason as
+     * deleteUser(). The caller compares the returned card with the one it asked for:
+     * this firmware family ACKs writes it then drops (rule 10), so the ACK proves
+     * nothing. 0 clears the card.
+     */
+    public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser;
 
     /**
      * What this device can do.

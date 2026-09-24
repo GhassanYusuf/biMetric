@@ -5,13 +5,16 @@ namespace App\Services\Devices;
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\Device;
 use App\Support\DeviceProgress;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Promoseven\Biometric\Capability\CapabilitySet;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
 use Promoseven\Biometric\Codec\AttendanceCodec;
 use Promoseven\Biometric\Codec\RecordBuffer;
 use Promoseven\Biometric\Contracts\ProgressListener;
 use Promoseven\Biometric\Exception\DeviceException;
+use Promoseven\Biometric\Exception\VerificationException;
 use Promoseven\Biometric\Value\DeviceConfig;
 use Promoseven\Biometric\Value\DeviceUser;
 use Promoseven\Biometric\Value\Progress;
@@ -219,6 +222,25 @@ class ZktecoDriver implements BiometricDeviceDriver
     }
 
     /**
+     * The same read as readTemplateDigests(), keeping the bytes — for
+     * FingerprintVault only (2026-09-24). See BiometricDeviceDriver::readTemplates().
+     */
+    public function readTemplates(Device $device): array
+    {
+        $records = $this->run($device, fn (ProtocolDevice $d) => $d->templates()->allWithTemplates());
+
+        return array_map(static fn (array $r) => [
+            'user_id' => $r['user_id'],
+            'uid' => $r['uid'],
+            'slot' => $r['fid'],
+            'valid' => $r['valid'],
+            'size' => $r['size'],
+            'sha1' => $r['sha1'],
+            'template' => $r['template'],
+        ], $records);
+    }
+
+    /**
      * Guarded write. The read and the write share ONE session, deliberately.
      *
      * The guard runs between them, still inside that session, so nothing can take the
@@ -254,6 +276,65 @@ class ZktecoDriver implements BiometricDeviceDriver
     public function deleteUser(Device $device, string $userId): void
     {
         $this->run($device, fn (ProtocolDevice $d) => $d->users()->delete($userId));
+    }
+
+    /*
+     * DELETE + RE-UPLOAD, not the in-place rewrite. The F18 refuses to change the user
+     * id of an existing uid (ACK_ERROR, 2026-09-23, IT Room), so in-place renumber() is
+     * a dead end on the reference model. renumberByReupload() copies the record and
+     * every fingerprint template, deletes, writes them back under the new id with
+     * SAVE_USERTEMPS, verifies, and restores the original on any failure.
+     *
+     * EXPERIMENTAL: gated by `user.renumber`, still `not_implemented` in
+     * CapabilitySet::defaults() until the owner-authorised run on a test user
+     * (tools/zkprobe/renumber-reupload.php) has succeeded on the F18.
+     *
+     * THE SNAPSHOT is written BEFORE the first device write — encrypted, because it
+     * holds fingerprint templates — and deleted only once the move is verified. If the
+     * library's own restore also fails, that file is the only copy of this person's
+     * fingerprints, and the error names it.
+     */
+    public function renumberUser(Device $device, string $fromUserId, string $toUserId): DeviceUser
+    {
+        $path = sprintf('renumber-snapshots/device-%d-%s-%s.json.enc', $device->id, $fromUserId, now()->format('Ymd-His'));
+
+        $snapshot = function (array $s) use ($path, $device) {
+            Storage::disk('local')->put($path, Crypt::encryptString(json_encode([
+                'device_id' => $device->id,
+                'uid' => $s['uid'],
+                'user_id' => $s['user_id'],
+                'record' => base64_encode($s['record']),
+                'templates' => array_map(fn (array $t) => [
+                    'fid' => $t['fid'], 'valid' => $t['valid'], 'sha1' => $t['sha1'],
+                    'template' => base64_encode($t['template']),
+                ], $s['templates']),
+                'taken_at' => now()->toIso8601String(),
+            ], JSON_THROW_ON_ERROR)));
+        };
+
+        try {
+            $user = $this->run($device, fn (ProtocolDevice $d) => $d->users()->renumberByReupload($fromUserId, $toUserId, $snapshot));
+        } catch (VerificationException $e) {
+            if (($e->context()['restored'] ?? true) === false) {
+                Log::channel('device')->critical('Renumber failed AND restore failed; snapshot kept.', [
+                    'device_id' => $device->id, 'from' => $fromUserId, 'to' => $toUserId, 'snapshot' => $path,
+                ]);
+                throw new VerificationException($e->getMessage()." Snapshot: storage/app/private/{$path}", $e->context() + ['snapshot' => $path], 0, $e);
+            }
+            Storage::disk('local')->delete($path);
+            throw $e;
+        }
+
+        Storage::disk('local')->delete($path);
+
+        return $user;
+    }
+
+    public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser
+    {
+        // UserService::setCard() refuses a user the device does not hold, keeps name
+        // and privilege from the record it just read, and reads back after writing.
+        return $this->run($device, fn (ProtocolDevice $d) => $d->users()->setCard($userId, $cardNumber));
     }
 
     public function capabilities(Device $device): CapabilitySet

@@ -22,6 +22,11 @@ class AttendanceLogResource extends JsonResource
             'punched_at' => $this->punched_at?->toIso8601String(),
             'verify_method' => $this->verify_method,
             'status' => $this->status,
+            // Unmatched punches only: the terminal's own name for the PIN and whether
+            // it was claimed/ignored at adoption. NOT an employee — see
+            // AttendanceController::attachTerminalNames().
+            'terminal_user_name' => $this->when($this->employee_id === null, fn () => $this->terminal_user_name),
+            'terminal_user_status' => $this->when($this->employee_id === null, fn () => $this->terminal_user_status),
         ];
     }
 }

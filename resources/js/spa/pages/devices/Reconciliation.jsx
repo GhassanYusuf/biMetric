@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMqtt } from '../../shared/useMqtt';
 import { api, ApiError } from '../../shared/api';
 import { useAuth } from '../../shared/auth';
 import { useConfirm } from '../../shared/confirm';
@@ -21,7 +22,7 @@ import ReconciliationMobile from './ReconciliationMobile';
 */
 export default function Reconciliation() {
     const deviceClass = useDeviceClass();
-    const { can } = useAuth();
+    const { can, user } = useAuth();
     const confirm = useConfirm();
     const toast = useToast();
 
@@ -57,6 +58,9 @@ export default function Reconciliation() {
             setLoading(false);
         }
     }, [query, toast]);
+
+    // LIVE (CLAUDE.md rule 18): refresh in place when devices, employees change anywhere.
+    useMqtt(user?.tenant ? [`tenant/${user.tenant.id}/module/devices/+`, `tenant/${user.tenant.id}/module/employees/+`] : [], () => load());
 
     useEffect(() => {
         load();

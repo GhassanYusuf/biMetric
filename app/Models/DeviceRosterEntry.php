@@ -37,6 +37,13 @@ class DeviceRosterEntry extends Model
     protected function casts(): array
     {
         return [
+            // Keys are cast because SQL Server hands every integer column back as a
+            // string, and the ownership checks compare them strictly: "1414" !== 1414
+            // refused a push to the employee who owns the slot (2026-09-23).
+            'tenant_id' => 'integer',
+            'device_id' => 'integer',
+            'claimed_employee_id' => 'integer',
+            'claimed_by' => 'integer',
             'fingerprint_slots' => 'array',
             'device_uid' => 'integer',
             'device_privilege' => 'integer',

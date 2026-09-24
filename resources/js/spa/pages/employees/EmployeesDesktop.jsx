@@ -1,15 +1,18 @@
-import { Button, EmptyState, InlineAlert, PageHeader, TableShell, Thead } from '../../shared/ui';
+import { ActionMenu, Button, EmptyState, InlineAlert, PageHeader, TableShell, Thead } from '../../shared/ui';
+import AutoPushToggle from './AutoPushToggle';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, FingerprintCell, TerminalsCell, syncedAgo } from './enrollmentCells';
 import EmployeeFilters from './EmployeeFilters';
 import NationalIdCell from './NationalIdCell';
+import { employeeRowActions } from './rowActions';
 
 // Desktop employees: toolbar + wide data table.
 export default function EmployeesDesktop({
     rows, search, onSearch, filters, onFilters, departments, devices,
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice, canSetNationalId,
     readingDevice, total, perPage,
-    onAdd, onDelete, onEdit, onPush, onMerge, onEnroll, onView, onReadFromDevice, onSaveNationalId,
+    autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
+    onAdd, onDelete, onEdit, onPush, onMerge, onEnroll, onReadFingerprints, onView, onReadFromDevice, onSaveNationalId,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -38,6 +41,12 @@ export default function EmployeesDesktop({
                 )}
                 {canCreate && <Button onClick={onAdd}>+ Add employee</Button>}
             </PageHeader>
+
+            {canManageSettings && (
+                <div className="flex justify-end">
+                    <AutoPushToggle on={autoPush} busy={savingAutoPush} onToggle={onToggleAutoPush} />
+                </div>
+            )}
 
             {/* The endpoint paginates; never let a partial list read as the whole roster. */}
             {truncated && (
@@ -152,45 +161,20 @@ export default function EmployeesDesktop({
                                 {(e.attendance_logs_count ?? 0).toLocaleString()}
                             </td>
                             {showActions && (
-                                <td className="px-5 py-3.5" onClick={(event) => event.stopPropagation()}>
-                                    <div className="flex items-center justify-end gap-1.5">
-                                        {canUpdate && (
-                                            /* Before Enroll: correcting who somebody is
-                                               comes before putting them on hardware, and
-                                               this is the dialog that can also push the
-                                               correction out to the terminals. */
-                                            <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" onClick={() => onEdit(e)}>
-                                                Edit
-                                            </Button>
-                                        )}
-                                        {canEnroll && (
-                                            /* Writes them onto terminals WITHOUT editing
-                                               them first. Saving can push too, but making
-                                               somebody re-save an unchanged record to
-                                               trigger a device write teaches them to
-                                               distrust the save button. */
-                                            <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" onClick={() => onPush(e)}>
-                                                Push
-                                            </Button>
-                                        )}
-                                        {canEnroll && (
-                                            <Button variant="secondary" className="min-h-[34px] px-2.5 text-xs" onClick={() => onEnroll(e)}>
-                                                Enroll
-                                            </Button>
-                                        )}
-                                        {canUpdate && canDelete && (
-                                            /* Not danger-coloured here: the destructive
-                                               half is inside the dialog, behind a summary
-                                               of exactly what moves and what is deleted. */
-                                            <button onClick={() => onMerge(e)} className="rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100">
-                                                Merge
-                                            </button>
-                                        )}
-                                        {canDelete && (
-                                            <button onClick={() => onDelete(e)} className="rounded-lg px-2 py-1 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50">
-                                                Delete
-                                            </button>
-                                        )}
+                                <td
+                                    className="px-5 py-3.5"
+                                    onClick={(event) => event.stopPropagation()}
+                                    // The row opens the employee on Enter/Space and cancels
+                                    // the key's default. The menu's panel is portalled but
+                                    // React still bubbles its keys here, so without this a
+                                    // keyboard user choosing "Delete" would open the detail.
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                >
+                                    <div className="flex justify-end">
+                                        <ActionMenu
+                                            label="Actions"
+                                            items={employeeRowActions(e, { canUpdate, canEnroll, canDelete, onEdit, onPush, onEnroll, onReadFingerprints, onMerge, onDelete })}
+                                        />
                                     </div>
                                 </td>
                             )}

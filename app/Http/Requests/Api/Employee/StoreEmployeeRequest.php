@@ -8,6 +8,8 @@ use Illuminate\Validation\Rule;
 
 class StoreEmployeeRequest extends FormRequest
 {
+    use EmployeeProfileRules;
+
     public function authorize(): bool
     {
         return true; // policy is enforced in the controller
@@ -15,13 +17,13 @@ class StoreEmployeeRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
+        return $this->profileRules() + [
             'name' => ['required', 'string', 'max:255'],
             // Uniqueness is per-tenant: the raw unique rule ignores the global
             // scope, so we pin tenant_id explicitly to avoid false collisions
             // with another company's identical employee code.
             'employee_code' => [
-                'required', 'string', 'max:255',
+                'required', 'string', 'max:255', $this->codeFormatRule(),
                 Rule::unique('employees', 'employee_code')->where('tenant_id', Tenancy::id()),
             ],
             'email' => ['nullable', 'email', 'max:255'],

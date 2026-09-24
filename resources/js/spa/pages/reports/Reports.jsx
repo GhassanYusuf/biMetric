@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../../shared/auth';
+import { useMqtt } from '../../shared/useMqtt';
 import { api, ApiError } from '../../shared/api';
 import { useDeviceClass } from '../../shared/useDeviceClass';
 import { useToast } from '../../shared/toast';
@@ -35,6 +37,7 @@ export default function Reports() {
         return params.toString();
     }, [filters]);
 
+    const { user } = useAuth();
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -46,6 +49,9 @@ export default function Reports() {
             setLoading(false);
         }
     }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // LIVE (CLAUDE.md rule 18): refresh in place when attendance, employees, holidays change anywhere.
+    useMqtt(user?.tenant ? [`tenant/${user.tenant.id}/module/attendance/+`, `tenant/${user.tenant.id}/module/employees/+`, `tenant/${user.tenant.id}/module/holidays/+`] : [], () => load());
 
     useEffect(() => {
         load();

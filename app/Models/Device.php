@@ -239,6 +239,22 @@ class Device extends Model
         return app(BiometricDeviceDriver::class)->capabilities($this);
     }
 
+    /**
+     * Whether this terminal can move a user to a new user ID in place. Asked by the
+     * propagator, which may not name the library's vocabulary itself (rule 8). The F18
+     * refuses it — ACK_ERROR on 2026-09-23, docs/device-capabilities.md.
+     */
+    public function canRenumberUsers(): bool
+    {
+        return $this->supports(Capability::USER_RENUMBER);
+    }
+
+    /** Whether a name/card can be written to a user here (a C3 panel: no, 2026-09-24). */
+    public function canWriteUsers(): bool
+    {
+        return $this->supports(Capability::USER_WRITE);
+    }
+
     /** Whether the UI should offer an action, e.g. Capability::TEMPLATE_DELETE. */
     public function supports(string $capability): bool
     {

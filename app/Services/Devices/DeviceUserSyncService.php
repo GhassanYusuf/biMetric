@@ -2,6 +2,8 @@
 
 namespace App\Services\Devices;
 
+use Illuminate\Support\Facades\Log;
+use App\Services\Employees\FingerprintVault;
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\AccessCard;
 use App\Models\BiometricTemplate;
@@ -9,6 +11,7 @@ use App\Models\Device;
 use App\Models\DeviceRosterEntry;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
+use Illuminate\Support\Facades\DB;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Value\DeviceUser;
 
@@ -203,6 +206,35 @@ class DeviceUserSyncService
         }
 
         $employee->update($attributes);
+
+        /*
+         * The per-terminal row is what the dialogs show (docs/enrollment-flow.md,
+         * "Enrollment belongs to ONE terminal"), so a read must land there too, or
+         * "Read from device" changes nothing on screen. Same rule as above: slots only
+         * when they decoded.
+         */
+        $mapAttributes = ['card_number' => $cardNumber, 'synced_at' => now()];
+        if ($slots !== null) {
+            $mapAttributes['fingerprint_slots'] = $slots;
+        }
+        // Through the model, not the query builder, so the array cast encodes the slots.
+        $map->update($mapAttributes);
+
+        /*
+         * Keep the system's copy of their fingerprints current (2026-09-24). A second
+         * read of the template table, WITH bytes; only when the table decoded above, so
+         * an unreadable table never becomes "their copies were dropped". Best effort: a
+         * failure here must not fail the enrollment read the operator asked for.
+         */
+        if ($slots !== null) {
+            try {
+                app(FingerprintVault::class)->capture($device, $this->driver->readTemplates($device), $employee->id);
+            } catch (\Throwable $e) {
+                Log::channel('device')->warning('Fingerprint copy not refreshed after the enrollment read.', [
+                    'device_id' => $device->id, 'employee_id' => $employee->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return [
             'on_device' => true,
@@ -447,6 +479,69 @@ class DeviceUserSyncService
     }
 
     /**
+     * Moves an employee to a new user ID ("PIN") on this device, keeping their record,
+     * card and fingerprints. Added 2026-09-23 so an employee code change can follow
+     * them onto the terminal, at the operator's explicit choice.
+     *
+     * EXPERIMENTAL (capability user.renumber is `implemented`, never confirmed). The
+     * driver verifies the move and the fingerprints on the hardware; if it throws,
+     * nothing here is changed, so our records never claim a move the device did not
+     * make.
+     *
+     * HISTORY IS KEPT. The old mapping is CLOSED, not edited: punches already recorded
+     * under the old PIN resolve through it by punch time and stay this employee's, and
+     * the old PIN stays reserved so it is never handed to anyone else.
+     *
+     * @return array{message:string, from:string, to:string}
+     */
+    public function renumberEmployee(Device $device, Employee $employee, string $newPin): array
+    {
+        $device->assertWritable();
+
+        $this->driver->capabilities($device)->require(Capability::USER_RENUMBER);
+
+        $oldPin = $this->identity->pinFor($device, $employee);
+
+        if ($oldPin === $newPin) {
+            return ['message' => "{$employee->name} is already user ID {$newPin} on {$device->name}.", 'from' => $oldPin, 'to' => $newPin];
+        }
+
+        $this->identity->assertPinFreeFor($device, $employee, $newPin);
+
+        $user = $this->driver->renumberUser($device, $oldPin, $newPin);
+
+        DB::transaction(function () use ($device, $employee, $oldPin, $user) {
+            $previous = $this->identity->activeMap($device, $employee);
+            $previous?->close("Renumbered to {$user->userId}");
+
+            // The roster mirrors the device, and on the device it is the same record
+            // (same uid) under a new number — so the entry moves with it.
+            DeviceRosterEntry::query()
+                ->where('device_id', $device->id)
+                ->where('device_user_id', $oldPin)
+                ->update(['device_user_id' => $user->userId, 'last_seen_at' => now()]);
+
+            $map = $this->upsertMap($device, $employee->id, $user);
+
+            // Same record, same fingers. When the driver could not read them this time,
+            // carry the last known answer across rather than resetting it to unknown.
+            if ($user->fingerSlots === null && $previous?->fingerprint_slots !== null) {
+                $map->update([
+                    'fingerprint_slots' => $previous->fingerprint_slots,
+                    'template_digests' => $previous->template_digests,
+                    'templates_read_at' => $previous->templates_read_at,
+                ]);
+            }
+        });
+
+        return [
+            'message' => "{$employee->name} moved from user ID {$oldPin} to {$user->userId} on {$device->name}.",
+            'from' => $oldPin,
+            'to' => $user->userId,
+        ];
+    }
+
+    /**
      * Removes an employee's record from the device — templates and card with it.
      *
      * @return array{message:string, raw:array<string,mixed>}
@@ -567,11 +662,21 @@ class DeviceUserSyncService
             'device_name' => $user->name,
             'device_privilege' => $user->privilege,
             'card_number' => $user->cardNumber,
-            'fingerprint_slots' => $user->fingerSlots,
             'synced_at' => now(),
             'reconciliation_status' => EmployeeDeviceMap::IN_SYNC,
             'reconciliation_detail' => null,
         ];
+
+        /*
+         * Slots only when this read DECODED them. null means "the table would not
+         * decode" or "templates were not asked for" — neither is evidence about the
+         * fingers, so it must not erase a known answer (rule 10; readEnrollment()
+         * already works this way). On 2026-09-23 a re-read after a card scan on IT Room
+         * wiped ali-test2's known slot [5] to unknown through exactly this line.
+         */
+        if ($user->fingerSlots !== null) {
+            $attributes['fingerprint_slots'] = $user->fingerSlots;
+        }
 
         $map = EmployeeDeviceMap::query()
             ->where('device_id', $device->id)
@@ -595,17 +700,27 @@ class DeviceUserSyncService
         ]);
     }
 
-    /** Records the card the device holds, as history rather than overwriting. */
-    private function recordCard(Device $device, int $employeeId, DeviceUser $user): void
+    /**
+     * Records the card the device holds, as history rather than overwriting.
+     *
+     * Public so a card written by number (EnrollmentOrchestratorService::assignCard)
+     * lands in exactly the same history as one read off the device.
+     */
+    public function recordCard(Device $device, int $employeeId, DeviceUser $user): void
     {
         if (! $user->hasCard()) {
             return;
         }
 
+        // Only an ACTIVE row for this number means "already recorded". A card that was
+        // replaced and has now come back (ali-test2, 2026-09-23: 2862247 was replaced
+        // by a bad scan, then written again) must become active again, or the history
+        // keeps naming the wrong card as current.
         $existing = AccessCard::query()
             ->where('device_id', $device->id)
             ->where('employee_id', $employeeId)
             ->where('card_number', $user->cardNumber)
+            ->where('status', AccessCard::ACTIVE)
             ->first();
 
         if ($existing !== null) {

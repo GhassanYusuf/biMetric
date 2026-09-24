@@ -137,6 +137,12 @@ final class Probe
         return ($d === false) ? '' : $d;
     }
 
+    /** Sends pre-built bytes with no reply expected, e.g. a realtime-event ACK. */
+    public function writeRaw(string $bytes): void
+    {
+        @fwrite($this->sock, $bytes);
+    }
+
     /** One request, one reply. Returns the parsed packet, or [] on timeout. */
     public function cmd(int $command, string $data = ''): array
     {

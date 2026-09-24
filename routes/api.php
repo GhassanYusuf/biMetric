@@ -5,7 +5,9 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\ClientErrorController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\AccessLevelController;
 use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\MultiCardGroupController;
 use App\Http\Controllers\Api\DeviceAdoptionController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\DeviceEnrollmentController;
@@ -13,6 +15,8 @@ use App\Http\Controllers\Api\DeviceGroupController;
 use App\Http\Controllers\Api\DeviceReconciliationController;
 use App\Http\Controllers\Api\DeviceSyncController;
 use App\Http\Controllers\Api\EmployeeController;
+use App\Http\Controllers\Api\LiveController;
+use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\HolidayController;
 use App\Http\Controllers\Api\NotificationController;
@@ -73,6 +77,18 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Departments
     Route::apiResource('departments', DepartmentController::class)->names('api.departments');
 
+    // "What changed?" stamps per module — the live fallback when MQTT is down (rule 18).
+    Route::get('live', [LiveController::class, 'index']);
+
+    // Company settings, allow-listed (TenantSettings::DEFAULTS).
+    Route::get('settings', [SettingController::class, 'index']);
+    Route::put('settings', [SettingController::class, 'update']);
+
+    // Access levels + multi-card groups for the employee form. Database only —
+    // nothing here writes to a panel (2026-09-23).
+    Route::apiResource('access-levels', AccessLevelController::class)->except('show')->names('api.access-levels');
+    Route::apiResource('multi-card-groups', MultiCardGroupController::class)->except('show')->names('api.multi-card-groups');
+
     // Employees + attendance summary + device enrollment actions
     // Must precede the resource: `employees/next-code` would otherwise be matched
     // by `employees/{employee}` and 404 on model binding.
@@ -107,6 +123,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
      * them. See EmployeeController::setNationalId().
      */
     Route::put('employees/{employee}/national-id', [EmployeeController::class, 'setNationalId']);
+    Route::post('employees/{employee}/photo', [EmployeeController::class, 'uploadPhoto']);
+    Route::delete('employees/{employee}/photo', [EmployeeController::class, 'removePhoto']);
     /*
      * Writes one employee onto SEVERAL terminals, queued one command each. What the
      * add/edit form calls after saving; the single-device route below stays for the
@@ -125,6 +143,10 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('employees/{employee}/devices/{device}/push', [EmployeeController::class, 'pushToDevice']);
     Route::post('employees/{employee}/devices/{device}/remove', [EmployeeController::class, 'removeFromDevice']);
 
+    // Reads their fingerprints from the terminals they are on into the system's
+    // encrypted copy. Read-only on the terminals (FingerprintVault, 2026-09-24).
+    Route::post('employees/{employee}/fingerprints/read', [EmployeeController::class, 'readFingerprints']);
+
     // Live read of one employee's enrollment (which finger slots, which card).
     Route::get('employees/{employee}/devices/{device}/enrollment', [EmployeeController::class, 'enrollment']);
 
@@ -139,6 +161,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
     // Clears the card, leaving the record and fingerprints intact.
     Route::delete('employees/{employee}/devices/{device}/card', [EmployeeController::class, 'deleteCard']);
+    // Writes a typed card number, the alternative to waiting for a tap.
+    Route::put('employees/{employee}/devices/{device}/card', [EmployeeController::class, 'assignCard']);
 
     // Devices + operations
     // Read a device's identity before it is saved, so the add form can auto-select

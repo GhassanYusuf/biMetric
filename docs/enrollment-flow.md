@@ -141,6 +141,33 @@ it is not going to change: a corrected spelling is not a hardware operation, and
 save that silently wrote to six terminals would be one typo away from rewriting six
 records for somebody else.
 
+**Changing the employee code does NOT move the terminal's user ID — the F18 refuses it.**
+Built and tried on 2026-09-23 (below), and IT Room answered ACK_ERROR for every target id
+with the record untouched, so the prompt is gated on `user.renumber` and no terminal
+offers it today. What follows describes the path for firmware that does accept it.
+
+**The path, when a terminal's capability allows it** (owner, 2026-09-23). Saving never touches a terminal. The push prompt after
+saving lists what changes per terminal, and where a terminal's user ID differs from the
+(digits-only) code, a second prompt offers *"Change user ID 960802797 → 205?"*.
+Answering yes sends `to_employee_code: true` to `/propagate`, which for each terminal:
+
+1. refuses the new ID if anyone else ever held it there, or it sits in that terminal's
+   roster for someone else (`DeviceIdentityResolver::assertPinFreeFor` — the employee's
+   own earlier PIN is allowed back, so typo fixes work);
+2. moves the record in place (`DeviceUserSyncService::renumberEmployee` →
+   `BiometricDeviceDriver::renumberUser` → `UserService::renumber`): same uid, card and
+   fingers kept, verified by read-back including the template table;
+3. closes the old mapping and opens a new one, so punches under the old PIN stay theirs
+   and the old PIN stays reserved; the roster entry follows the record;
+4. then pushes the name under the new ID.
+
+If the move fails, nothing is written to that terminal and it is reported as failed. A
+terminal whose capability says it cannot renumber (every F18 today) is never asked: the
+name is pushed under its existing ID with a note saying the ID was kept. On
+a terminal they are new to, the code is claimed as their PIN when it is free there.
+Declining pushes the name under the existing ID. `user.renumber` is EXPERIMENTAL — see
+`docs/device-capabilities.md`.
+
 What the add/edit form does instead is ask. It lists the terminals the person is
 **currently** enrolled on, pre-ticked, and the save is followed by:
 
@@ -148,11 +175,12 @@ What the add/edit form does instead is ask. It lists the terminals the person is
 POST /api/employees/{employee}/propagate   { "device_ids": [2, 5] }
 ```
 
-which queues one `PUSH_USER` command **per device** (`EmployeeDevicePropagator`).
+which writes to each device **immediately, inside the request** (`EmployeeDevicePropagator`).
 
-- **Queued, never inline** (rule 11). A push opens a session, reads the target slot
-  and writes it; across several terminals that outlives a web request, and a command
-  per device is what makes *"it updated on four of five"* legible at all.
+- **Synchronous by the owner's instruction (2026-09-15)**, a recorded exception to
+  rule 11: the operator presses Push to learn whether the terminal took it, and a queue
+  receipt is not that. Each device is attempted in its own try, so one unreachable
+  terminal cannot cancel the others, and the result is split written / skipped / failed.
 - **A device that cannot take a write is refused before anything is queued**, with
   the reason, because the operator is at the screen now — `Device::userWriteRefusal()`
   returns a sentence rather than a capability constant. The three refusals are: the
@@ -214,6 +242,99 @@ Card `4294967295` (`0xFFFFFFFF`) appears on a real employee. It is flagged suspe
 (`AccessCard::looksLikeSentinel()`) rather than trusted; we do not know whether the
 device means "none", "error", or a genuine value.
 
+Since 2026-09-23 the UI does not display it as a card number. The enrollment and
+detail dialogs show **"Probably no card"** and name the value, as a state separate
+from both a real card and "no card registered". The same value is refused as input
+by the typed-card write below, so the app can never create one.
+
+**Observed 2026-09-23, IT Room (F18, `192.168.7.62`), PIN 960802797:** the roster
+read at 10:48 recorded card `2857525`. The mapping, refreshed at 11:09 after an
+edit-form push, recorded `4294967295`. `UserService::save()` re-sends the card it
+read in the same session, so the push should not have changed it. **Most likely
+explained** later the same day: live card capture writes `0xFFFFFFFF` (see
+docs/device-capabilities.md, "`card.enroll` — WITHDRAWN"), and a scan attempt in
+that window would account for it.
+
+### Unknown slots no longer erase known ones (2026-09-23)
+
+`upsertMap()` copied `fingerSlots` into `employee_device_maps` even when it was null,
+meaning either "the template table did not decode" or "templates were not asked for".
+The re-read that follows every card scan therefore wiped ali-test2's known IT Room
+slot `[5]` to unknown. It now writes slots only when they decoded, as
+`readEnrollment()` always did. `readEnrollment()` ("Read from device") also now
+updates the terminal's mapping row. Before, it updated only the flat employee
+snapshot, so a successful read changed nothing in the dialogs, which read the row.
+Tests are in `CardAssignmentTest`.
+
+**Not explained:** why the template table failed to decode on some re-reads of IT
+Room (F18) that day, when it decoded at 11:09. Every failing read followed a card
+capture that had left the device in `REG_EVENT` streaming. That is a suspicion,
+not a finding, and it needs a control (rule 16).
+
+### Writing a card by number (2026-09-23)
+
+`PUT /api/employees/{employee}/devices/{device}/card` with `{card_number: "2857525"}`,
+behind the **Save card** field in the enrollment dialog. It exists because Scan card
+means walking to the terminal to tap a card whose number is already printed on it.
+
+- **App → contract, never `run()`.** `EnrollmentOrchestratorService::assignCard()` calls
+  `BiometricDeviceDriver::setUserCard()`. `ZktecoDriver` maps it to the library's
+  existing `UserService::setCard()`, which reads the record, keeps name and
+  privilege, rewrites only the card and reads back. C3 and CSL throw
+  `UnsupportedCommandException` (422).
+- **Verified on read-back.** If the returned card is not the one sent, the request
+  fails (502) and nothing is recorded. The ACK proves nothing on this family.
+- **Refused (422)** for 0, for `0xFFFFFFFF` and above, for non-digits, and when
+  another live mapping on the same terminal already holds the number.
+- Only `card_number` is written to the mapping. The read-back record carries no
+  fingerprint slots, and copying its null over them would turn "known" into
+  "unknown".
+- Synchronous, like the direct `deleteCard` it sits beside. It is not a
+  queued `enrollment/*` command.
+- **CONFIRMED on the F18** (IT Room, `192.168.7.62`) on 2026-09-23 at 11:30 UTC:
+  card 2862247 written to ali-test2 (PIN 960802797) and read back. It is unknown on
+  every other model. Tests: `tests/Feature/Devices/CardAssignmentTest.php`.
+- `recordCard()` now treats only an ACTIVE row as "already recorded". Before this,
+  a card that had been replaced and was then written back left the old card listed
+  as active.
+
+**From the employee edit form (2026-09-24).** The Card number field on the Personnel
+profile tab is editable, as it is in ZKAccess. It is **not** saved with the employee:
+`employees.card_number` stays "what a terminal last reported". A changed card is
+written, after the save and the push, to each ticked terminal that the push reached,
+through the same `PUT …/card` (or `DELETE …/card` when the field is emptied), one
+terminal at a time. Each terminal gets its own result row (written, refused, or skipped
+when it lacks `card.write`), and Retry re-runs the push and the card for that terminal.
+The form refuses a changed card with no terminal on the Access levels tab's right list,
+because there would be nowhere to put it. Declining "Push now" writes no card either.
+Wiring: `Employees.jsx` `writeCard()` / `withCard()`.
+
+### Choosing terminals in the employee form (2026-09-24)
+
+The Access levels tab lists **terminals**, ZKAccess-style: left = every terminal this
+app can write a user to (`writableTargets`, binary protocol and active), right = the
+terminals the person is on (their live mappings, `enrolledTargets`). This replaced
+both the old "Update them on" checklist and the database-only access-level lists
+(the `access_levels` tables and endpoints still exist; the form no longer uses them).
+
+On save, in this order (`Employees.jsx` `updateEmployee` / `createEmployee`):
+
+1. **Moved left → removed.** A separate red confirmation names every terminal, then
+   `POST employees/{e}/devices/{d}/remove` for each. That deletes the record,
+   fingerprints and card on the device. Declining keeps them on all of them.
+2. **On the right → pushed.** The existing "Push now / Not now" prompt on an edit
+   (a create pushes directly), then `propagate`.
+3. **Card**, if it changed, on each terminal the push reached.
+4. **Read back** from each terminal the push reached:
+   `GET employees/{e}/devices/{d}/enrollment`, which also writes the slots and card
+   onto that terminal's mapping row. Shown as "not found", "fingerprints unknown"
+   (template table did not decode) or a real count, never collapsed (rule 3).
+
+A terminal the person is on that this app cannot write to (a C3 panel) sits on the
+right **locked**: it cannot be moved left, because nothing here can remove them from
+it. Every step reports one row per terminal; Retry re-runs push → card → read for
+that terminal and is never offered on a removal row.
+
 ## What has never been proven
 
 **A successful fingerprint capture has not been observed end to end.** Every
@@ -273,6 +394,16 @@ columns when it is false.
 
 ### What the UI does with it
 
+**Never read vs. undecodable (fixed 2026-09-23).** Both arrive as
+`fingerprint_slots: null`, and until this date `FingerPicker` rendered both as
+"This firmware's fingerprint table couldn't be decoded". So ali-test2, who has slot
+5 on IT Room and has never been read on Camelot, showed a decode failure for
+Camelot. No row for the selected terminal, or a row with no `synced_at`, now renders
+as "Not read from this terminal yet". The amber decode message is kept for a read
+that really failed to decode. `EnrollModal` also stopped seeding from the flat
+employee snapshot and uses the selected terminal's row, re-seeded when the terminal
+changes.
+
 - **Roster** — an `Enrolled on` column (`TerminalsCell`), one badge per terminal
   with its finger count and a card glyph when a card is present. Compact on
   purpose: a stacked hand diagram per terminal would double the height of every
@@ -302,3 +433,45 @@ selected device. With the terminals above, an operator could read "slot 1, slot 
 off IT Room's snapshot with Good Wheels selected and press `Delete` on slot 1 —
 against a terminal that holds slots 6 and 7. No row for the selected device now
 falls through to "never read" rather than rendering as zero.
+
+## The system's copy of each fingerprint (2026-09-24)
+
+Owner's decision: keep a copy of every employee's fingerprint templates in the
+system, "in case we need to change the id or bring in a new device". This reverses
+the earlier rule that template bytes are never stored (reasoning in
+`docs/PROJECT-STATE.md`).
+
+- **Where:** `biometric_templates.template` — the column that table always reserved
+  for it — one row per employee x terminal x finger. Base64 of the device's blob,
+  encrypted with the `encrypted` cast (APP_KEY), `$hidden`. `template_sha1` is the
+  plaintext digest; `template_format` is `<protocol>:<model>` of the source terminal.
+- **Who touches bytes:** only `App\Services\Employees\FingerprintVault`, fed by the
+  new contract method `BiometricDeviceDriver::readTemplates()` (ZKTeco and C3; CSL
+  throws unsupported). No resource, log line or audit row carries a byte; the audit
+  row `employee.fingerprints_captured` holds counts. The API exposes only
+  `stored_fingerprint_slots`.
+- **When copies are taken:** `php artisan device:read-templates [device]` (all
+  terminals, read-only), and after every per-person enrollment read (dialog open,
+  post-push read-back) — best effort, a failure there never fails the read.
+- **On demand, one person:** "Read fingerprints to system" in the roster row menu
+  and "Read to system" beside Fingerprints in the edit form —
+  `POST /api/employees/{employee}/fingerprints/read` (optional `device_ids`), which
+  reads the template table of each terminal they are on and stores their copies.
+  Read-only on the terminals. One row per terminal: `read` (with slots), `skipped`
+  (no template table / terminal switched off) or `failed` (unreachable; nothing
+  captured, nothing deleted). Answers 503 with a plain message until the storage
+  migration has run.
+- **Capture rules:** a finger on the terminal is stored, or refreshed when its digest
+  changed; a finger row missing from a table that DECODED is dropped; a failed or
+  unsupported read changes nothing. Copies from different terminals never overwrite
+  each other.
+- **Lifecycle:** rows follow their terminal — "Remove from terminal", deleting a
+  finger there, or deleting the terminal from the app removes that terminal's copies
+  (existing `device_id` cascade). Deleting the employee removes all of them.
+- **Compatibility:** `FingerprintVault::templatesFor($employee, $protocol, $model)`
+  returns only copies from the same family. An F18 template is `unknown` on an F22
+  until a real upload says otherwise (rule 15).
+- **Not built yet:** writing a stored copy to a NEW terminal. It needs the same
+  `SAVE_USERTEMPS` upload the Personnel ID change uses, which has not yet been run on
+  hardware; it is the next step once the IT Room test passes.
+

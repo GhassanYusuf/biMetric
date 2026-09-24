@@ -1,8 +1,10 @@
-import { Badge, Button, Card, EmptyState, InlineAlert, PageHeader } from '../../shared/ui';
+import { ActionMenu, Badge, Button, Card, EmptyState, InlineAlert, PageHeader } from '../../shared/ui';
+import AutoPushToggle from './AutoPushToggle';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
 import EmployeeFilters from './EmployeeFilters';
 import NationalIdCell from './NationalIdCell';
+import { employeeRowActions } from './rowActions';
 
 /*
 | Mobile employees: search + stacked tap-friendly cards (no wide table).
@@ -15,7 +17,8 @@ export default function EmployeesMobile({
     rows, search, onSearch, filters, onFilters, departments, devices,
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice, canSetNationalId,
     readingDevice, total, perPage,
-    onAdd, onDelete, onEdit, onPush, onMerge, onEnroll, onView, onReadFromDevice, onSaveNationalId,
+    autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
+    onAdd, onDelete, onEdit, onPush, onMerge, onEnroll, onReadFingerprints, onView, onReadFromDevice, onSaveNationalId,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -31,6 +34,12 @@ export default function EmployeesMobile({
             >
                 {canCreate && <Button onClick={onAdd} className="px-3">+ Add</Button>}
             </PageHeader>
+
+            {canManageSettings && (
+                <div className="flex justify-end">
+                    <AutoPushToggle on={autoPush} busy={savingAutoPush} onToggle={onToggleAutoPush} />
+                </div>
+            )}
 
             {/* Rule 5: the same filters as desktop, stacked rather than in a row. */}
             <EmployeeFilters
@@ -142,36 +151,17 @@ export default function EmployeesMobile({
 
                             {(canEnroll || canUpdate || canDelete) && (
                                 <div
-                                    className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3"
+                                    className="mt-3 flex justify-end border-t border-slate-100 pt-3"
                                     onClick={(event) => event.stopPropagation()}
+                                    // Same reason as the desktop cell: the card's Enter/Space
+                                    // opens the employee, and the menu's keys bubble to it.
+                                    onKeyDown={(event) => event.stopPropagation()}
                                 >
-                                    {/* Same order and same words as the desktop row — rule 5. */}
-                                    {canUpdate && (
-                                        <button onClick={() => onEdit(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-slate-600 ${FOCUS}`}>
-                                            Edit
-                                        </button>
-                                    )}
-                                    {/* Same actions and same words as the desktop row — rule 5. */}
-                                    {canEnroll && (
-                                        <button onClick={() => onPush(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-violet-700 ${FOCUS}`}>
-                                            Push
-                                        </button>
-                                    )}
-                                    {canEnroll && (
-                                        <button onClick={() => onEnroll(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-violet-700 ${FOCUS}`}>
-                                            Enroll
-                                        </button>
-                                    )}
-                                    {canUpdate && canDelete && (
-                                        <button onClick={() => onMerge(e)} className={`rounded-lg px-1 py-0.5 text-sm font-medium text-slate-600 ${FOCUS}`}>
-                                            Merge
-                                        </button>
-                                    )}
-                                    {canDelete && (
-                                        <button onClick={() => onDelete(e)} className={`ml-auto rounded-lg px-1 py-0.5 text-sm font-medium text-rose-600 ${FOCUS}`}>
-                                            Delete
-                                        </button>
-                                    )}
+                                    {/* The same list as the desktop row — rule 5. */}
+                                    <ActionMenu
+                                        label="Actions"
+                                        items={employeeRowActions(e, { canUpdate, canEnroll, canDelete, onEdit, onPush, onEnroll, onReadFingerprints, onMerge, onDelete })}
+                                    />
                                 </div>
                             )}
                         </Card>

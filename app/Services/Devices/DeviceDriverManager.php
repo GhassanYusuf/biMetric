@@ -105,6 +105,11 @@ class DeviceDriverManager implements BiometricDeviceDriver
         return $this->driverFor($device)->readTemplateDigests($device);
     }
 
+    public function readTemplates(Device $device): array
+    {
+        return $this->driverFor($device)->readTemplates($device);
+    }
+
     public function saveUser(
         Device $device,
         string $userId,
@@ -118,6 +123,16 @@ class DeviceDriverManager implements BiometricDeviceDriver
     public function deleteUser(Device $device, string $userId): void
     {
         $this->driverFor($device)->deleteUser($device, $userId);
+    }
+
+    public function renumberUser(Device $device, string $fromUserId, string $toUserId): DeviceUser
+    {
+        return $this->driverFor($device)->renumberUser($device, $fromUserId, $toUserId);
+    }
+
+    public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser
+    {
+        return $this->driverFor($device)->setUserCard($device, $userId, $cardNumber);
     }
 
     /**

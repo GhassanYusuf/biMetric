@@ -13,6 +13,7 @@ use Promoseven\Biometric\Capability\CapabilitySet;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
 use Promoseven\Biometric\Exception\DeviceException;
 use Promoseven\Biometric\Exception\UnsupportedCommandException;
+use Promoseven\Biometric\Exception\VerificationException;
 use Promoseven\Biometric\Value\DeviceConfig;
 use Promoseven\Biometric\Value\DeviceUser;
 use Promoseven\Biometric\Value\Progress;
@@ -225,6 +226,25 @@ class C3Driver implements BiometricDeviceDriver
     }
 
     /**
+     * The same read as readTemplateDigests(), keeping the bytes — for
+     * FingerprintVault only (2026-09-24). See BiometricDeviceDriver::readTemplates().
+     */
+    public function readTemplates(Device $device): array
+    {
+        $records = $this->attempt($device, fn (Panel $panel) => $panel->readTemplates());
+
+        return array_map(static fn (array $r) => [
+            'user_id' => $r['user_id'],
+            'uid' => $r['uid'],
+            'slot' => $r['fid'],
+            'valid' => $r['valid'],
+            'size' => $r['size'],
+            'sha1' => $r['sha1'],
+            'template' => $r['template'],
+        ], $records);
+    }
+
+    /**
      * Not implemented for this family (rule 9: declared, not silently plausible).
      *
      * Writing a user record here would mean a different mechanism entirely, and an
@@ -248,6 +268,39 @@ class C3Driver implements BiometricDeviceDriver
     {
         throw new UnsupportedCommandException(
             "{$device->name} (C3/PullSDK panel) does not support deleting user records through this driver."
+        );
+    }
+
+    /*
+     * Moves a person to a new Pin on the panel: user row, door permissions
+     * (`userauthorize`) and fingerprints (`templatev10`, under the panel's NEW UID),
+     * copy-verify-then-remove (Panel::moveUser). Gated by `user.renumber`, enabled per
+     * panel after an owner-approved run on a test user there — CONFIRMED on the TF1700
+     * (Entrance) 2026-09-24, trace tools/zkprobe/traces-2026-09-24/c3-user-move-02.json.
+     */
+    public function renumberUser(Device $device, string $fromUserId, string $toUserId): DeviceUser
+    {
+        if (! ctype_digit($fromUserId) || ! ctype_digit($toUserId)) {
+            throw new UnsupportedCommandException("A C3 panel's user ids are numbers; cannot move {$fromUserId} to {$toUserId}.");
+        }
+
+        return $this->attempt($device, function (Panel $panel) use ($fromUserId, $toUserId) {
+            $panel->moveUser((int) $fromUserId, (int) $toUserId);
+
+            foreach ($panel->readUsers(null, true) as $user) {
+                if ($user->userId === $toUserId) {
+                    return $user;
+                }
+            }
+
+            throw new VerificationException("{$toUserId} was written but is not on the panel when read back.");
+        });
+    }
+
+    public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (C3/PullSDK panel) does not support writing cards through this driver."
         );
     }
 

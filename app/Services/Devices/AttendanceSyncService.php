@@ -429,11 +429,29 @@ class AttendanceSyncService
         // The read is only half the wait on a large table. Without this the bar
         // would hit 100% and then sit there for the whole insert, which reads as a
         // hang rather than as work.
-        $progress?->beginImport(count($candidates));
         $written = 0;
 
-        foreach (array_chunk($candidates, 500) as $chunk) {
-            AttendanceLog::insertOrIgnore(array_map(fn (array $c) => [
+        /*
+         * SQL SERVER (since 2026-09-21). Two things the SQLite-era code relied on do
+         * not exist there, and every sync failed on the first of them until
+         * 2026-09-23:
+         *
+         *   - insertOrIgnore: Laravel has no SQL Server grammar for it ("This database
+         *     engine does not support inserting while ignoring errors"). Replaced by
+         *     upsert() on the SAME unique index, whose only "update" is a key column
+         *     set to itself — so an existing punch is matched and left exactly as it
+         *     was (employee attribution included), and a new one is inserted. Still
+         *     the index, not a SELECT, that decides what is a duplicate.
+         *   - 2,100 parameters per statement: 500 rows x 9 columns is 4,500. Chunks
+         *     are sized from the column count instead (see paramSafeChunk()).
+         *
+         * MERGE also refuses a source holding the same key twice, which
+         * insertOrIgnore used to absorb silently — so the rows are de-duplicated on
+         * that key first. The archive below still records EVERY candidate.
+         */
+        $rows = [];
+        foreach ($candidates as $c) {
+            $row = [
                 'tenant_id' => $device->tenant_id,
                 'device_id' => $device->id,
                 'device_user_id' => $c['device_user_id'],
@@ -459,10 +477,23 @@ class AttendanceSyncService
                 'status' => $c['status'],
                 'created_at' => now(),
                 'updated_at' => now(),
-            ], $chunk));
+            ];
+            $rows[$row['device_user_id'].'|'.$row['punched_at'].'|'.$row['verify_method']] ??= $row;
+        }
+        $rows = array_values($rows);
+
+        // Counted after de-duplication, so the bar reaches 100% on the last chunk.
+        $progress?->beginImport(count($rows));
+
+        foreach (array_chunk($rows, self::paramSafeChunk($rows)) as $chunk) {
+            AttendanceLog::query()->toBase()->upsert(
+                $chunk,
+                ['device_id', 'device_user_id', 'punched_at', 'verify_method'],
+                ['device_user_id'], // a key column set to itself: matched rows are untouched
+            );
 
             $written += count($chunk);
-            $progress?->importedSoFar($written, count($candidates));
+            $progress?->importedSoFar($written, count($rows));
         }
 
         $counts['imported'] = AttendanceLog::query()->where('device_id', $device->id)->count() - $before;
@@ -470,7 +501,7 @@ class AttendanceSyncService
 
         /*
          * Archive every candidate. imported/skip_reason is decided per row from the
-         * aggregate outcome rather than per insert, because insertOrIgnore does not
+         * aggregate outcome rather than per insert, because the bulk upsert does not
          * report which rows it skipped — the alternative would be re-querying each
          * one, which is the per-record cost this rewrite exists to remove.
          */
@@ -498,7 +529,7 @@ class AttendanceSyncService
          */
 
         // Chunked so a 9,000-record device does not build one enormous insert.
-        foreach (array_chunk($rawRows, 500) as $chunk) {
+        foreach (array_chunk($rawRows, self::paramSafeChunk($rawRows)) as $chunk) {
             AttendanceRawLog::insert($chunk);
         }
 
@@ -563,6 +594,20 @@ class AttendanceSyncService
         }
 
         return null;
+    }
+
+    /**
+     * Rows per statement that stay under SQL Server's 2,100-parameter limit, with
+     * headroom. Derived from the row's width so a column added later cannot quietly
+     * push a chunk over it. Capped at 500, the size used before SQL Server.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private static function paramSafeChunk(array $rows): int
+    {
+        $columns = max(1, count($rows[0] ?? []));
+
+        return max(1, min(500, intdiv(2000, $columns)));
     }
 
     private function rawRow(

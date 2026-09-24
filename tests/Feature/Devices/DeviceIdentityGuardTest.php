@@ -166,6 +166,28 @@ class DeviceIdentityGuardTest extends TestCase
         $this->assertSame([['5', 'Nadia']], $this->driver->writes);
     }
 
+    /**
+     * SQL Server returns integer columns as strings. The ownership check compares ids
+     * strictly, so an uncast "1414" !== 1414 refused a push to the employee who owned
+     * the slot (IT Room, 2026-09-23). SQLite returns integers, so the flow test above
+     * cannot catch it; this pins the casts instead.
+     */
+    public function test_ownership_keys_are_integers_whatever_the_driver_returns(): void
+    {
+        $entry = (new DeviceRosterEntry())->setRawAttributes([
+            'tenant_id' => '1', 'device_id' => '2', 'claimed_employee_id' => '1414', 'claimed_by' => '7',
+        ]);
+        $map = (new EmployeeDeviceMap())->setRawAttributes([
+            'tenant_id' => '1', 'device_id' => '2', 'employee_id' => '1414',
+        ]);
+
+        $this->assertSame(1414, $entry->claimed_employee_id);
+        $this->assertSame(2, $entry->device_id);
+        $this->assertSame(7, $entry->claimed_by);
+        $this->assertSame(1414, $map->employee_id);
+        $this->assertSame(2, $map->device_id);
+    }
+
     public function test_a_stale_mapping_does_not_authorise_writing_over_the_hardware(): void
     {
         /*

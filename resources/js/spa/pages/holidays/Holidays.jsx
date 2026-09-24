@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useMqtt } from '../../shared/useMqtt';
 import { api } from '../../shared/api';
 import { useAuth } from '../../shared/auth';
 import { useDeviceClass } from '../../shared/useDeviceClass';
@@ -13,7 +14,7 @@ import HolidayFormModal from './HolidayFormModal';
 // the date field.
 export default function Holidays() {
     const deviceClass = useDeviceClass();
-    const { can } = useAuth();
+    const { can, user } = useAuth();
     const confirm = useConfirm();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -28,6 +29,9 @@ export default function Holidays() {
             setLoading(false);
         }
     }, []);
+
+    // LIVE (CLAUDE.md rule 18): refresh in place when holidays change anywhere.
+    useMqtt(user?.tenant ? [`tenant/${user.tenant.id}/module/holidays/+`] : [], () => load());
 
     useEffect(() => {
         load();

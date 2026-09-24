@@ -5,14 +5,16 @@ namespace App\Console\Commands;
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\Device;
 use App\Models\EmployeeDeviceMap;
+use App\Services\Employees\FingerprintVault;
 use Illuminate\Console\Command;
 use Promoseven\Biometric\Exception\UnsupportedCommandException;
 
 /**
- * Records a digest of every fingerprint template the terminals hold.
+ * Records a digest of every fingerprint template the terminals hold, and keeps the
+ * system's encrypted COPY of each template (FingerprintVault, 2026-09-24).
  *
- * READ-ONLY. It runs the template-table read the enrollment sync already performs;
- * what is new is keeping a SHA-1 of each blob instead of only the slot number.
+ * READ-ONLY on the terminals. It runs the template-table read the enrollment sync
+ * already performs; what it keeps is a SHA-1 per blob and, since 2026-09-24, the blob.
  *
  * WHY: a vendor tool that enrols a finger once and pushes it to the other terminals
  * leaves byte-identical templates behind. A matching digest is therefore the device's
@@ -20,9 +22,11 @@ use Promoseven\Biometric\Exception\UnsupportedCommandException;
  * a card can only approximate. Confirmed 2026-09-15: PIN 261 slot 3 returned the same
  * 1,054 bytes from the F18 at 192.168.7.62 and the F22 at 192.168.7.63.
  *
- * THE BYTES ARE NOT STORED, and that is deliberate. They are biometric data; the
- * digest answers the only question we are asking, is not reversible, and cannot leak
- * a fingerprint into a log line.
+ * THE BYTES WERE ONCE DELIBERATELY NOT STORED. On 2026-09-24 the owner decided the
+ * system keeps a copy, so a Personnel ID change or a new terminal does not depend on
+ * the one terminal holding the enrollment (docs/PROJECT-STATE.md has the reasoning).
+ * They are stored encrypted, only by FingerprintVault, and never logged or returned
+ * over HTTP. The digest logic below is unchanged.
  *
  * READ THE RESULT THE RIGHT WAY ROUND: matching digests mean one enrolment copied.
  * DIFFERENT digests mean nothing at all — the same finger presented twice produces a
@@ -32,9 +36,9 @@ class DeviceReadTemplates extends Command
 {
     protected $signature = 'device:read-templates {device? : Device id or name; omit for every active device}';
 
-    protected $description = 'Record SHA-1 digests of the fingerprint templates each terminal holds (read-only)';
+    protected $description = 'Record template digests and store the encrypted fingerprint copies (read-only on the terminals)';
 
-    public function handle(BiometricDeviceDriver $driver): int
+    public function handle(BiometricDeviceDriver $driver, FingerprintVault $vault): int
     {
         $devices = $this->resolve();
 
@@ -46,7 +50,7 @@ class DeviceReadTemplates extends Command
 
         foreach ($devices as $device) {
             try {
-                $records = $driver->readTemplateDigests($device);
+                $records = $driver->readTemplates($device);
             } catch (UnsupportedCommandException $e) {
                 // Declared, not silently plausible (rule 9). The stored digests are
                 // left alone: "we cannot read this" must not erase a previous read.
@@ -100,12 +104,17 @@ class DeviceReadTemplates extends Command
                 $written++;
             }
 
+            $copies = $vault->capture($device, $records);
+
             $this->line(sprintf(
-                '  %-14s %3d template(s) across %d person(s); %d mapping(s) updated',
+                '  %-14s %3d template(s) across %d person(s); %d mapping(s) updated; copies: %d new, %d refreshed, %d dropped',
                 $device->name,
                 count($records),
                 count($bySlotDigest),
                 $written,
+                $copies['stored'],
+                $copies['refreshed'],
+                $copies['dropped'],
             ));
         }
 

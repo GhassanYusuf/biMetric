@@ -24,7 +24,8 @@ export function useUnreadCount() {
     }, [refresh]);
 
     const topics = user?.tenant ? [`tenant/${user.tenant.id}/user/${user.id}/notifications`] : [];
-    useMqtt(topics, () => setCount((c) => c + 1));
+    // A pushed notification adds one; the live poller's null means "re-count" (rule 18).
+    useMqtt(topics, (_topic, payload) => (payload === null ? refresh() : setCount((c) => c + 1)));
 
     return { count, refresh, setCount };
 }

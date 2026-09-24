@@ -20,8 +20,22 @@ import { useToast } from '../../shared/toast';
 |
 | Read-only otherwise: "Enroll or replace" hands off to the capture dialog.
 */
+// Very likely this firmware family's empty card field; unproven. See AccessCard::SENTINEL.
+const CARD_EMPTY_MARKER = 4294967295;
+
 export default function EmployeeDetailModal({ employee, devices, canEnroll, onClose, onEnroll, onRefreshed }) {
-    const eligible = devices.filter((d) => d.protocol === 'binary' && d.is_active);
+    /*
+     * The terminals they are ON RIGHT NOW come first, and the dialog opens on one of
+     * them. Opening on whichever terminal happened to be first in the list showed
+     * "never sent to a terminal" for someone who is enrolled elsewhere, which reads
+     * as though they are on none.
+     */
+    const onIds = new Set(
+        (employee.enrollments ?? []).filter((m) => m.is_live !== false).map((m) => String(m.device_id)),
+    );
+    const eligible = devices
+        .filter((d) => d.protocol === 'binary' && d.is_active)
+        .sort((a, b) => Number(onIds.has(String(b.id))) - Number(onIds.has(String(a.id))));
     const confirm = useConfirm();
     const toast = useToast();
 
@@ -198,7 +212,8 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
      | terminal for this person, so it falls through to `neverRead` rather than
      | claiming they have nothing (rule 10).
      */
-    const enrollments = Array.isArray(employee.enrollments) ? employee.enrollments : null;
+    // Live mappings only: a closed one is an old user ID, kept for past punches, not enrollment.
+    const enrollments = Array.isArray(employee.enrollments) ? employee.enrollments.filter((e) => e.is_live !== false) : null;
     const mine = enrollments?.find((e) => String(e.device_id) === String(deviceId)) ?? null;
     const stored = enrollments
         ? {
@@ -216,7 +231,15 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
         };
     const slots = live ? live.fingerprint_slots : stored.slots;
     const count = live ? live.fingerprint_count : stored.count;
-    const cardNumber = live ? live.card_number : stored.card;
+    const rawCard = live ? live.card_number : stored.card;
+    /*
+     * 0xFFFFFFFF is very likely what this firmware family stores in an EMPTY card
+     * field, so it is not shown as a card — but as its own "probably none" state,
+     * naming the value, because it is unproven (docs/enrollment-flow.md, Cards) and
+     * the terminal did report something (rule 3).
+     */
+    const cardIsMarker = rawCard === CARD_EMPTY_MARKER;
+    const cardNumber = cardIsMarker ? null : rawCard;
     const neverRead = !live && stored.syncedAt == null;
     // Freshness is this terminal's read, not the roster's newest across all of them.
     const freshness = live ? 'just now' : syncedAgo([{ enrollment_synced_at: stored.syncedAt }]);
@@ -306,8 +329,8 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                                 <span className={unknown ? 'text-amber-700' : 'text-slate-600'}>
                                                     {unknown ? 'fingerprints unknown' : `${row.fingerprint_slots.length} of 10 slots`}
                                                 </span>
-                                                <span className={row.card_number ? 'text-slate-600' : 'text-slate-500'}>
-                                                    {row.card_number ? (
+                                                <span className={row.card_number && row.card_number !== CARD_EMPTY_MARKER ? 'text-slate-600' : 'text-slate-500'}>
+                                                    {row.card_number && row.card_number !== CARD_EMPTY_MARKER ? (
                                                         <span className="inline-flex items-center gap-1">
                                                             <CardIcon className="h-3.5 w-3.5 text-slate-400" />
                                                             <span className="font-mono tabular-nums">{row.card_number}</span>
@@ -332,13 +355,13 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                 <Skeleton className="h-4 w-16" />
                             ) : (
                                 <span className="text-xs text-slate-500">
-                                    {count == null ? 'unknown' : `${count} of 10 slots`}
+                                    {count == null ? (neverRead ? 'never read' : 'unknown') : `${count} of 10 slots`}
                                 </span>
                             )}
                         </div>
 
                         <div className="mt-3">
-                            <FingerPicker readOnly enrolled={reading ? undefined : slots} />
+                            <FingerPicker readOnly enrolled={reading ? undefined : slots} neverRead={neverRead} />
                         </div>
 
                         {!reading && slots != null && (
@@ -408,13 +431,12 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                             </Button>
                                         )}
                                     </div>
-                                    {cardNumber === 4294967295 && (
-                                        <p className="mt-2 text-xs text-amber-700">
-                                            4294967295 is 0xFFFFFFFF — all bits set. On many firmwares that is the
-                                            "no card" marker rather than a real card number.
-                                        </p>
-                                    )}
                                 </>
+                            ) : cardIsMarker ? (
+                                <p className="text-sm text-slate-500">
+                                    Probably no card. The terminal reports 4294967295 (0xFFFFFFFF, all bits set),
+                                    which this firmware family usually stores in an empty card field.
+                                </p>
                             ) : (
                                 <p className="text-sm text-slate-500">No card registered.</p>
                             )}
@@ -450,7 +472,9 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                         className="w-auto py-1.5 text-xs"
                                     >
                                         {eligible.map((d) => (
-                                            <option key={d.id} value={d.id}>{d.name}</option>
+                                            <option key={d.id} value={d.id}>
+                                                {onIds.has(String(d.id)) ? `${d.name} — enrolled` : d.name}
+                                            </option>
                                         ))}
                                     </SelectField>
                                 )}

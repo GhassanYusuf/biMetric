@@ -256,6 +256,7 @@ and touches neither imported punches nor the incremental watermark. It answers w
 | GET | `/api/enrollment-sessions` | `?employee_id= &device_id= &status= &active=` |
 | GET | `/api/enrollment-sessions/{session}` | includes the device event trail |
 | POST | `/api/enrollment-sessions/{session}/cancel` | **synchronous** — releases the terminal |
+| POST | `/api/employees/{employee}/fingerprints/read` | `{device_ids?: int[]}` — copy their fingerprints from their terminals into the system (read-only on the terminals); 503 until the storage migration has run |
 | POST | `/api/employees/{employee}/devices/{device}/enrollment/fingerprint` | `{finger_slot: 0-9}` |
 | POST | `/api/employees/{employee}/devices/{device}/enrollment/card` | |
 | DELETE | `/api/employees/{employee}/devices/{device}/enrollment/fingerprints/{slot}` | |
@@ -398,9 +399,53 @@ which are only a snapshot of whichever device was read last and cannot be
 attributed to a terminal. The key is **absent** when the relation was not loaded,
 never `[]` — see docs/enrollment-flow.md.
 
+`PUT /api/employees/{employee}/devices/{device}/card` — `{card_number}` as digits —
+writes a typed card number and verifies it on read-back (`employees.push`). There is
+no queued equivalent yet. See docs/enrollment-flow.md, "Writing a card by number".
+
 `enroll-fingerprint`, `enroll-card`, `fingerprints/{slot}` and `card` under
 `/devices/{device}/` are the **direct, blocking** predecessors of the queued
 `enrollment/*` routes above. Prefer the queued ones.
+
+### Personnel fields and access levels (2026-09-23) — DATABASE ONLY
+
+`POST /api/employees` and `PUT /api/employees/{employee}` also accept the ZKAccess
+Personnel-dialog fields. **All optional, and none is sent to a terminal or panel**:
+the device push still writes PIN and name only (`DeviceUserSyncService::pushEmployee`).
+
+| Field | Rule |
+|---|---|
+| `last_name`, `mobile_phone`, `job_title`, `office`, `education`, `country`, `city`, `postal_code`, `home_phone`, `political_status`, `race`, `home_address`, `work_address` | nullable strings |
+| `gender` | `male` \| `female` \| null |
+| `hired_date`, `birthday` | dates (`birthday` before today) |
+| `device_password` | 1–8 digits. **Omitted = unchanged, `null` = clear.** Encrypted at rest; never returned — the response carries `has_device_password` instead |
+| `privilege` | `user` \| `enroller` \| `admin` \| `superadmin` \| null. Null = "not set in this app", not "user" |
+| `access_level_ids` | array of this tenant's access level ids. **Omitted = unchanged** |
+| `multi_card_group_id` | this tenant's group id, or null |
+| `valid_period_enabled` | boolean. When true, `access_valid_from` and `access_valid_to` are required |
+| `access_valid_from`, `access_valid_to` | dates; `access_valid_to` must be after `access_valid_from` |
+
+`employee_code` must be **digits only, 1–9** on create, and on update **only when it
+changes** — 101 of 356 production codes were roster keys like `10-12` on 2026-09-23,
+and an unconditional rule would make those people uneditable.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/employees/{employee}/photo` | multipart `photo` (image, ≤ 4 MB). Separate from the JSON save because PHP does not parse multipart PUT |
+| DELETE | `/api/employees/{employee}/photo` | removes the file and clears `photo_url` |
+
+The column names are `access_valid_*`, not `valid_*`, because `employee_device_maps`
+already has `valid_from`/`valid_to` and existing joins filter on them unqualified.
+
+| Method | Path | Permission |
+|---|---|---|
+| GET | `/api/access-levels` | `employees.view` |
+| POST / PUT / DELETE | `/api/access-levels[/{id}]` — `{name, time_zone?}` | `employees.update` |
+| GET | `/api/multi-card-groups` | `employees.view` |
+| POST / PUT / DELETE | `/api/multi-card-groups[/{id}]` — `{name}` | `employees.update` |
+
+`time_zone` is a free label, not a C3 panel time-zone index: no access-level write to
+a panel has been confirmed on this estate's hardware.
 
 ## Attendance, holidays, reports, notifications
 
@@ -472,3 +517,21 @@ subscribe with a leading wildcard.
 | `tenant/{t}/user/{userId}/notifications` | |
 
 MQTT only enhances. Every screen works without a broker.
+
+## Company settings (2026-09-24)
+
+| Method | Path | Body / notes |
+|---|---|---|
+| GET | `/api/settings` | `settings.view`. Every allow-listed key with its value (`TenantSettings::DEFAULTS`). |
+| PUT | `/api/settings` | `settings.manage`. Nested body, e.g. `{employees: {auto_push_on_save: true}}`; unknown keys are ignored; each change is audited as `setting.updated`. |
+
+`employees.auto_push_on_save` (default **false**): when true, saving an employee pushes
+to every terminal on their Access levels list without the "Push now / Not now" prompt.
+Removals from a terminal still ask.
+
+## Live stamps (2026-09-24, CLAUDE.md rule 18)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/live` | Any signed-in user. `{employees, devices, attendance, enrollment, holidays, notifications}` — opaque digests of (count, newest key, newest updated_at) per module, company-scoped. The SPA polls it when MQTT is unavailable and re-fetches a module when its stamp moves. |
+

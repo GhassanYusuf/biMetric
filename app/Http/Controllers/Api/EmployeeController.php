@@ -15,12 +15,17 @@ use App\Services\Devices\DeviceUserSyncService;
 use App\Services\Devices\EnrollmentOrchestratorService;
 use App\Services\Employees\EmployeeDevicePropagator;
 use App\Services\Employees\EmployeeMergeService;
+use App\Services\Employees\FingerprintVault;
 use App\Support\ApiResponse;
 use App\Support\Tenancy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Promoseven\Biometric\Exception\DeviceException;
+use Promoseven\Biometric\Exception\UnsupportedCommandException;
 
 class EmployeeController extends Controller
 {
@@ -45,7 +50,7 @@ class EmployeeController extends Controller
             // `deviceMaps` answers "enrolled on which terminal?" — the flat
             // enrollment columns on employees cannot, once there is more than
             // one device.
-            ->with(['department:id,name', 'deviceMaps.device:id,name', 'person'])
+            ->with(['department:id,name', 'deviceMaps.device:id,name', 'person', 'accessLevels:id', ...self::copyRelations()])
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = '%'.$request->string('search')->trim().'%';
                 $q->where(function ($sub) use ($term) {
@@ -136,15 +141,21 @@ class EmployeeController extends Controller
     {
         $this->authorize('create', Employee::class);
 
-        $data = $request->safe()->except('photo');
+        $data = $request->safe()->except(['photo', 'access_level_ids', 'national_id']);
 
         if ($request->hasFile('photo')) {
             $data['photo_path'] = $request->file('photo')->store('employees', 'public');
         }
 
-        $employee = Employee::create($data);
+        $employee = DB::transaction(function () use ($request, $data) {
+            $employee = Employee::create($data);
+            $this->syncAccessLevels($request, $employee);
+            $this->applyNationalIdFromForm($request, $employee);
 
-        return ApiResponse::created(new EmployeeResource($employee), 'Employee added.');
+            return $employee;
+        });
+
+        return ApiResponse::created(new EmployeeResource($employee->fresh()->load(['accessLevels:id', 'person', ...self::copyRelations()])), 'Employee added.');
     }
 
     /**
@@ -251,8 +262,26 @@ class EmployeeController extends Controller
             'national_id' => ['required', 'string', 'min:4', 'max:64'],
         ]);
 
-        $nationalId = trim($data['national_id']);
+        if (($refusal = $this->assignNationalId($employee, trim($data['national_id']))) !== null) {
+            return ApiResponse::error($refusal, status: 422);
+        }
 
+        return ApiResponse::success(
+            new EmployeeResource($employee->fresh()->load(['department:id,name', 'deviceMaps.device:id,name', 'person'])),
+            "National ID saved for {$employee->name}.",
+        );
+    }
+
+    /**
+     * Attaches a national id to the employee's Person, or says why not.
+     *
+     * One implementation for the three ways it arrives: the roster's inline editor
+     * (setNationalId) and the add / edit form (store, update — 2026-09-24, where it
+     * rides the same request so a refusal lands on the field and the whole save rolls
+     * back with it). Returns null on success, the operator-facing refusal otherwise.
+     */
+    private function assignNationalId(Employee $employee, string $nationalId): ?string
+    {
         $person = $employee->person;
         $existing = Person::findByNationalId($nationalId);
 
@@ -273,11 +302,8 @@ class EmployeeController extends Controller
                 ->first();
 
             if ($clash !== null) {
-                return ApiResponse::error(
-                    "That national ID is already on {$clash->name} (code {$clash->employee_code}) in this company. "
-                    .'Two employees here cannot be the same person — check the number, or correct the other record.',
-                    status: 422,
-                );
+                return "That national ID is already on {$clash->name} (code {$clash->employee_code}) in this company. "
+                    .'Two employees here cannot be the same person — check the number, or correct the other record.';
             }
         }
 
@@ -294,11 +320,8 @@ class EmployeeController extends Controller
             // Two records we already believed were different humans turn out to be one.
             // Merging them moves employments and attendance history, so it is not
             // something to do silently as a side effect of typing in a field.
-            return ApiResponse::error(
-                "That national ID already belongs to {$existing->full_name}. "
-                .'If they are the same person, merge the two records rather than reassigning the ID.',
-                status: 422,
-            );
+            return "That national ID already belongs to {$existing->full_name}. "
+                .'If they are the same person, merge the two records rather than reassigning the ID.';
         }
 
         /*
@@ -309,10 +332,7 @@ class EmployeeController extends Controller
          */
         $person->setNationalId($nationalId);
 
-        return ApiResponse::success(
-            new EmployeeResource($employee->fresh()->load(['department:id,name', 'deviceMaps.device:id,name', 'person'])),
-            "National ID saved for {$employee->name}.",
-        );
+        return null;
     }
 
     public function show(Employee $employee): JsonResponse
@@ -328,7 +348,7 @@ class EmployeeController extends Controller
     {
         $this->authorize('update', $employee);
 
-        $data = $request->safe()->except('photo');
+        $data = $request->safe()->except(['photo', 'access_level_ids', 'national_id']);
 
         if ($request->hasFile('photo')) {
             if ($employee->photo_path) {
@@ -337,9 +357,90 @@ class EmployeeController extends Controller
             $data['photo_path'] = $request->file('photo')->store('employees', 'public');
         }
 
-        $employee->update($data);
+        DB::transaction(function () use ($request, $employee, $data) {
+            $employee->update($data);
+            $this->syncAccessLevels($request, $employee);
+            $this->applyNationalIdFromForm($request, $employee);
+        });
 
-        return ApiResponse::success(new EmployeeResource($employee->fresh()), 'Employee updated.');
+        return ApiResponse::success(new EmployeeResource($employee->fresh()->load(['accessLevels:id', 'person', ...self::copyRelations()])), 'Employee updated.');
+    }
+
+    /**
+     * Access levels are stored in THIS DATABASE ONLY (2026-09-23) — nothing is
+     * written to a C3 panel. Omitted means unchanged, so an older client that does
+     * not know about the tab cannot wipe someone's levels by saving.
+     */
+    /**
+     * The form's national id, when one was typed. Omitted or blank means unchanged:
+     * the stored value is never sent to the browser, so an untouched field must not
+     * clear it. A refusal throws a field error, which rolls back the surrounding save.
+     */
+    private function applyNationalIdFromForm(Request $request, Employee $employee): void
+    {
+        $nationalId = trim((string) $request->validated('national_id'));
+
+        if ($nationalId === '') {
+            return;
+        }
+
+        if (($refusal = $this->assignNationalId($employee, $nationalId)) !== null) {
+            throw ValidationException::withMessages(['national_id' => $refusal]);
+        }
+    }
+
+    /**
+     * The stored-fingerprint slots for the resource, slim columns only (never the
+     * ciphertext). Empty until the 2026_09_24_100000 migration has run, so the roster
+     * keeps working on a database that has not been migrated yet — the resource then
+     * simply omits `stored_fingerprint_slots`.
+     *
+     * @return array<int,string>
+     */
+    private static function copyRelations(): array
+    {
+        static $ready = null;
+        $ready ??= Schema::hasColumn('biometric_templates', 'template_sha1');
+
+        return $ready ? ['biometricTemplates:id,employee_id,finger_slot,template_sha1'] : [];
+    }
+
+    private function syncAccessLevels(Request $request, Employee $employee): void
+    {
+        if ($request->has('access_level_ids')) {
+            $employee->accessLevels()->sync($request->validated('access_level_ids') ?? []);
+        }
+    }
+
+    /**
+     * Sets or replaces the photo on its own, so the JSON save keeps working as it did
+     * — a file cannot ride a JSON PUT, and PHP does not parse multipart PUT bodies.
+     * Stored in this app only; no terminal receives it.
+     */
+    public function uploadPhoto(Request $request, Employee $employee): JsonResponse
+    {
+        $this->authorize('update', $employee);
+
+        $request->validate(['photo' => ['required', 'image', 'max:4096']]);
+
+        if ($employee->photo_path) {
+            Storage::disk('public')->delete($employee->photo_path);
+        }
+        $employee->forceFill(['photo_path' => $request->file('photo')->store('employees', 'public')])->save();
+
+        return ApiResponse::success(new EmployeeResource($employee->fresh()->load('accessLevels:id')), 'Photo saved.');
+    }
+
+    public function removePhoto(Employee $employee): JsonResponse
+    {
+        $this->authorize('update', $employee);
+
+        if ($employee->photo_path) {
+            Storage::disk('public')->delete($employee->photo_path);
+            $employee->forceFill(['photo_path' => null])->save();
+        }
+
+        return ApiResponse::success(new EmployeeResource($employee->fresh()->load('accessLevels:id')), 'Photo removed.');
     }
 
     public function destroy(Employee $employee): JsonResponse
@@ -398,6 +499,9 @@ class EmployeeController extends Controller
              * rule would confirm another company's terminal id as valid.
              */
             'device_ids.*' => ['integer'],
+            // Also make each terminal's user ID equal the employee code. Explicit, never
+            // implied by a push: it changes the number attendance is recorded under.
+            'to_employee_code' => ['sometimes', 'boolean'],
         ]);
 
         $devices = Device::query()->whereIn('id', $data['device_ids'])->orderBy('name')->get();
@@ -411,7 +515,7 @@ class EmployeeController extends Controller
         // outcome worth paying to avoid.
         set_time_limit(180);
 
-        $result = $propagator->push($employee, $devices);
+        $result = $propagator->push($employee, $devices, (bool) ($data['to_employee_code'] ?? false));
 
         return ApiResponse::success($result, $this->describePropagation($employee, $result));
     }
@@ -548,6 +652,41 @@ class EmployeeController extends Controller
     }
 
     /**
+     * Reads this employee's fingerprints from the terminals they are on INTO THE
+     * SYSTEM (FingerprintVault), and nothing else (owner's request, 2026-09-24).
+     * Read-only on the terminals; one row per terminal in the reply.
+     */
+    public function readFingerprints(Request $request, Employee $employee, FingerprintVault $vault): JsonResponse
+    {
+        $this->authorize('pushToDevice', $employee);
+
+        $data = $request->validate([
+            'device_ids' => ['sometimes', 'array'],
+            'device_ids.*' => ['integer'],
+        ]);
+
+        set_time_limit(120);
+
+        try {
+            $rows = $vault->captureEmployee($employee, $data['device_ids'] ?? null);
+        } catch (\DomainException $e) {
+            return ApiResponse::error($e->getMessage(), [], 503);
+        }
+
+        $read = array_filter($rows, fn ($r) => $r['status'] === 'read');
+        $slots = collect($read)->flatMap(fn ($r) => $r['slots'])->unique()->count();
+        $message = $rows === []
+            ? "{$employee->name} is not on any terminal, so there is nothing to read."
+            : "Read {$employee->name}'s fingerprints from ".count($read).' of '.count($rows)
+                ." terminal(s): {$slots} finger(s) now stored in the system.";
+
+        return ApiResponse::success([
+            'terminals' => $rows,
+            'stored_fingerprint_slots' => $vault->storedSlots($employee->id),
+        ], $message);
+    }
+
+    /**
      * Live read of this employee's enrollment on a terminal — which finger slots
      * are filled and whether a card is registered. Powers the hand picker, so it
      * runs on opening the enrollment dialog rather than on any list render.
@@ -624,6 +763,37 @@ class EmployeeController extends Controller
             return ApiResponse::success($result['raw'], $result['message']);
         } catch (DeviceException $e) {
             return ApiResponse::error("Could not remove the card: {$e->getMessage()}", [], 502);
+        }
+    }
+
+    /**
+     * Writes a typed card number onto the employee's record on the terminal —
+     * the alternative to Scan card when the number is printed on the card.
+     */
+    public function assignCard(Request $request, Employee $employee, Device $device): JsonResponse
+    {
+        $this->authorize('pushToDevice', $employee);
+
+        $data = $request->validate([
+            // Digits only: the record holds one unsigned 32-bit number. Leading zeros
+            // as printed on the card ("0002857525") are the same number.
+            'card_number' => ['required', 'string', 'regex:/^\d{1,10}$/'],
+        ], [
+            'card_number.regex' => 'Enter the card number as digits only, up to 10.',
+        ]);
+
+        set_time_limit(90);
+
+        try {
+            $result = $this->enrollment->assignCard($device, $employee, (int) $data['card_number']);
+
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (\InvalidArgumentException|\DomainException $e) {
+            return ApiResponse::error($e->getMessage(), ['card_number' => [$e->getMessage()]], 422);
+        } catch (UnsupportedCommandException $e) {
+            return ApiResponse::error($e->getMessage(), [], 422);
+        } catch (DeviceException $e) {
+            return ApiResponse::error("Could not write the card: {$e->getMessage()}", [], 502);
         }
     }
 

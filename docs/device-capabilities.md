@@ -85,17 +85,69 @@ flag that should drop**, not a new one.
 | `template.slot.probe` | Per-slot occupancy check |
 | `attendance.read` | |
 
-### Implemented but unproven (7)
+### Refused by the hardware
+
+| Key | Evidence |
+|---|---|
+| `user.renumber` | **The F18 refuses it.** 2026-09-23, IT Room (F18, `192.168.7.62`), test user `ali-it2`, uid 6: rewriting the uid under a new user id (`UserService::renumber()`, `CMD_USER_WRQ`) answered **ACK_ERROR** for `000000005`, `5` and `10055`. Every time a read-back showed the record untouched — same uid, id `960802797`, card 2862247, finger slot 5. None of the target ids was held by anyone. So leading zeros are **not** the cause; this firmware will not change the user id of an existing uid. The same command with the SAME user id (a name change) succeeds. Declared `not_implemented` in `CapabilitySet::defaults()` so the UI hides it; the code stays for firmware that accepts it. Untested on the F22 and Camelot — `unknown` in fact, hidden by the shared default. The only other route, delete and re-create, needs `template.upload` and would otherwise destroy fingerprints. Trace: `tools/zkprobe/traces-2026-09-23/renumber-itroom-01.json`. **2026-09-24: that route is now written** — `UserService::renumberByReupload()` (library 2.8.0) deletes the record and re-uploads it with every template under the new id via `SAVE_USERTEMPS`, verifies, and restores the original on any failure. `ZktecoDriver::renumberUser()` now calls it. **Never run on hardware**, so `user.renumber` stays `not_implemented` in `defaults()` until the owner-authorised run on a test user (`tools/zkprobe/renumber-reupload.php`, WRITES TO THE DEVICE) succeeds on the F18. Then it is enabled for that terminal only; the F22 and Camelot stay hidden until each is run (rule 15). **Result, 2026-09-24, IT Room (F18, `192.168.7.62`), test user `ali-it` (uid 6):** 960802797 → 5 (5.95 s) and 5 → 960802797, two separate sessions, both verified — same uid, card 2862247 and privilege kept, the slot-5 template came back **byte-identical** (978 bytes, sha1 `ea11f86e…`), `valid` byte kept at 1 (so pyzk's `0x10 + slot` is right for this firmware), every other user and template unchanged. `SAVE_USERTEMPS` is therefore accepted by the F18. **Not yet checked: a real finger scan after a move.** `user.renumber` set to `implemented` for IT Room only, via its `capabilities_cache` (a re-probe may clear it, which only hides the feature again); `defaults()` unchanged. Traces: `tools/zkprobe/traces-2026-09-24/renumber-reupload-01.json`, `-02.json`. |
+
+### Implemented but unproven (6)
 
 | Key | Why it is unproven |
 |---|---|
 | `device.time.write` | Never fired. The reference device's clock is ~6.4 minutes fast, but writing a wrong clock would misstamp every future punch, so this waits for a deliberate decision. |
 | `template.delete` | `CMD_DELETE_USERTEMP` payload is inferred, not documented. |
-| `card.enroll` | Live card capture never completed on hardware. |
 | `attendance.realtime` | `REG_EVENT` subscription implemented; a live punch has not been observed arriving this way. |
 | `attendance.clear` | Destructive. Deliberately never called to verify it. |
 | `device.restart` | Deliberately never called. |
 | `user.disable` | Approximated by clearing the card — the protocol has no suspend flag. |
+
+### `card.enroll` — IMPLEMENTED, behind a safety net (F18, IT Room `192.168.7.62`, 2026-09-23)
+
+**Observed:** the first live card capture ever run. The operator tapped card
+**2862247** (`0x002BACA7`) for ali-test2 (PIN 960802797). The capture reported
+success and the user record now holds **4294967295** (`0xFFFFFFFF`). The same
+record had held `2857525` at the 10:48 roster read and `0xFFFFFFFF` by 11:09, so an
+earlier scan attempt very likely did the same thing.
+
+**Cause, from the code, not the wire:** `EnrollmentService::captureCard()` registers
+`EF_ALL`, accepts the **first** `REG_EVENT` packet with 4 or more bytes of data
+whatever its event type, reads bytes 0-3 as the card number and calls `writeUser()`
+with it, **with no read-back**. `DeviceClient::readRealtimeRaw()` drops the header
+field that carries the event type, so the caller cannot tell a card event from any
+other event. Some other event arrived first, and its first four bytes were
+`FF FF FF FF`.
+
+**Not yet known:** which event carries the card number on this firmware, and where
+in the payload it sits. Answering that needs a READ-ONLY probe (rule 16) that
+subscribes, logs every `REG_EVENT` header and payload while a KNOWN card is tapped,
+and writes nothing. With a known number, `A7 AC 2B 00` is what to look for.
+
+**Research, same day:** `adrobinoga/zk-protocol` (`sections/realtime.md`) documents
+`EF_VERIFY` as the user serial number (4 bytes) plus `0x01`, **`ffffffff` when the
+user is unidentified**. That accounts for the 4294967295s. It documents no event
+carrying a card number. The ZKTeco SDK names `OnHIDNum` for that, with a mask the
+available sources contradict (4096 vs 1<<11). Not settled.
+
+**What was done:** scanning was briefly withdrawn, then restored the same day at
+the owner's request, behind a safety net in
+`EnrollmentOrchestratorService::captureCard()`:
+- The card the user holds is read off the device before the scan.
+- `isNotACard()` rejects 0, `0xFFFFFFFF`, and four ASCII digits (a user id
+  fragment). The previous card is written back through `setUserCard()` and the scan
+  is reported as failed (422). Nothing is recorded.
+- A scan that passes is checked against the re-read mapping. If the terminal holds
+  something else, the scan is a failure.
+- The UI offers Scan card with a warning, because the level is `implemented`
+  (rule 9).
+
+The safety net cannot catch a wrong number that looks like a real card. Only
+fixing the library can. Tests are in `CardAssignmentTest`.
+
+**Library fix owed** (the product, rule 8): filter by event type, never write 0 or
+`0xFFFFFFFF`, and read back before reporting success. The owner approved this on
+2026-09-23. It is waiting on one run of `tools/zkprobe/f18-card-event.php` while
+card 2862247 is tapped, to learn which push carries the number.
 
 ### `template.blob.read` — CONFIRMED 2026-09-15 (F18 and F22)
 
@@ -215,6 +267,13 @@ what matters and it is reproduced exactly.
   trailing zero padding, 0 otherwise). See `docs/zkaccess-database.md`. What remains
   unproven is the **write command itself**. A template that appears to save and then fails to match a real
   finger is worse than no feature. Enrolment stays device-side.
+  **2026-09-24:** the write command is now transcribed from pyzk and implemented as
+  `DeviceClient::saveUserWithTemplates()` (`SAVE_USERTEMPS` 110), used only by
+  `renumberByReupload()` to put a person's OWN templates back under a new id — not
+  as a general upload. Still EXPERIMENTAL: whether the F18 accepts it, stores the
+  bytes identically, keeps the `valid` byte (pyzk sends `0x10 + slot` and drops it)
+  and — the real test — still verifies the finger, is exactly what the first run
+  must record.
 
 Neither ever blocked reading.
 
@@ -738,3 +797,78 @@ persistence) and maps the reported name onto a dropdown model by longest prefix
 the binary protocol — times out and returns a 502 telling the operator to pick the
 model by hand. **Auto-detect therefore works for the binary family today and not for
 C3**, for the same reason as everything else here: there is no C3 driver yet.
+
+## C3 panels: writing users — research (2026-09-24), NOT implemented
+
+Owner's request: a Personnel ID change must reach Glass Door (inBIO460, `192.168.7.61`)
+and Entrance (TF1700, `192.168.7.60`) as it does through ZKAccess. Today the app can
+only READ C3 panels (`user.write` = `not_implemented` in `C3Capabilities`).
+
+**What research settled (rule 17):**
+
+- Command numbers: `SET_DATA` = **0x07**, `DELETE_DATA` = **0x09** — extracted earlier
+  from ZKTeco's own `plcommpro.dll` (`src/C3/Protocol/Command.php`), and independently
+  confirmed by **xub/zkaccess-c3-py**, branch `main`, commit `a6b7b92c`
+  (`zkaccess_c3/core.py` `set_user()` / `delete_user()`), which reports both
+  validated against a live C3 (add 29→30, delete 31→30, read back via GETDATA). The
+  upstream vwout/zkaccess-c3-py and -lua implement no writes.
+- Payload per the fork: `[table, field count, field ids…]` then each value as
+  `<1-byte length><little-endian value, minimal bytes>` (0 → single `0x00`);
+  delete = `[table, 1, key field id]` + `<len><key>`.
+
+**Where OUR panel disagrees with the reference — do not transcribe its field ids:**
+
+The fork hard-codes the `user` table as 7 fields, ids 1..7 = CardNo, Pin, Password,
+Group, StartTime, EndTime, SuperAuthorize. The TF1700's own DATATABLE_CFG
+(`tests/Fixtures/c3-datatable-cfg-tf1700.txt`) says:
+
+    user=1,UID=i1,CardNo=i2,Pin=i3,Password=s4,Group=i5,StartTime=i6,EndTime=i7,Name=s8,Privilege=i9,SuperAuthorize=i10
+
+So on this panel the fork's add would write the card into UID and the PIN into
+CardNo, and its "delete by PIN" (field 2) would delete by **CardNo** — removing
+whoever holds a card with that number. A C3 write must therefore build its header
+and field ids FROM THE PANEL'S DATATABLE_CFG, per table, never from constants.
+
+**What research did NOT settle:**
+
+- The `s` (string) field encoding for writes (Password, Name) — the fork only ever
+  sent an empty password.
+- Whether an UPDATE is an upsert keyed on Pin, on UID or on CardNo.
+- A PIN change on a C3 also touches `userauthorize` (door x time-zone rows keyed by
+  Pin — without them the person opens no door) and `templatev10` (fingerprints keyed
+  by Pin). ZKAccess rewrites all three; the order and the atomicity are unknown.
+- **First live run, 2026-09-24, Entrance (TF1700, `192.168.7.60`), owner-approved:**
+  `tools/zkprobe/c3-user-write.php`, trace `tools/zkprobe/traces-2026-09-24/c3-user-write-01.json`.
+  SET_DATA with ids from the panel's catalogue (CardNo 2, Pin 3, Password 4, Group 5,
+  StartTime 6, EndTime 7, Name 8, Privilege 9, SuperAuthorize 10; no UID) was
+  **accepted session-less**; read back, the row was stored exactly as sent and the
+  panel **assigned UID 287** itself; 320 → 321 rows; every other row's digest
+  unchanged. DELETE_DATA keyed on **Pin (id 3)** removed exactly that row; 321 → 320,
+  other rows unchanged. So on the TF1700 a user row can be added and removed.
+  **CONFIRMED on the TF1700 only** — the inBIO460 is `unknown` until run there (rule 15).
+  Library: `RecordCodec::encode()` / `encodeDeleteKey()`, `Panel::writeRows()` /
+  `deleteRows()` (2.9.0). `user.write` stays `not_implemented` in `C3Capabilities`
+  until the ID-change sequence (user + `userauthorize` + `templatev10`) is proven.
+- **Move run, 2026-09-24, same panel, owner-approved:** `tools/zkprobe/c3-user-move.php`,
+  trace `traces-2026-09-24/c3-user-move-01.json`. `Panel::moveUser(99999991 → 99999992)`
+  on test user `zk-test` with one `userauthorize` row (time zone 1, door 1 — the pair
+  all 320 people on this panel hold): user row and door row written under the new Pin,
+  verified, old Pin removed from both; every other row of both tables unchanged;
+  cleanup left both tables exactly as before. **Finding: the panel assigns a NEW UID
+  on the re-written user (287 → 296)** — `templatev10` rows carry both Pin and UID, so
+  moving fingerprints must write the NEW UID.
+- **Full move, 2026-09-24, owner-approved, both panels:** `moveUser()` now also moves
+  `templatev10` rows (2-byte blob length, as on reads), re-written under the new Pin
+  AND the new UID, compared byte for byte per finger before the old Pin is removed.
+  Test user `zk-test` with one door row and one PLACEHOLDER template (random bytes
+  behind `SS21`, matches no finger): Entrance/TF1700 trace `c3-user-move-02.json`,
+  Glass Door/inBIO460 trace `c3-user-move-03.json` — all three tables moved, template
+  identical, UID 287 → 296 on both, every other row unchanged, cleanup exact. The
+  inBIO460's `user` table has **no Privilege field**; the catalogue-driven encoder
+  simply did not send it. `user.renumber` set to `implemented` on both panels via
+  `capabilities_cache` (`C3Capabilities` baseline unchanged). `user.write` stays
+  `not_implemented`: names and cards on C3 panels are still ZKAccess's.
+  **First real move, 2026-09-24:** Ghassan 656 → 830108246 on both panels from the
+  Push dialog; the owner confirmed it works at **Glass Door** → `confirmed` on the
+  inBIO460. The TF1700 (Entrance) stays `implemented` until tried at that door.
+

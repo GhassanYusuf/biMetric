@@ -150,6 +150,39 @@ class DeviceIdentityResolver
         throw new \RuntimeException("No free PIN remains on {$device->name}.");
     }
 
+    /**
+     * Refuses a PIN this employee may not move to on this device.
+     *
+     * Looser than assertPinAvailable() in exactly one way: a PIN this SAME employee
+     * held here before is allowed back, so correcting a code typo (100 → 1000 → 100)
+     * works. Attendance under that number already belongs to them, so nothing is
+     * re-attributed. A PIN anybody else ever held, or that sits unclaimed or claimed by
+     * someone else in the device's roster, is refused.
+     */
+    public function assertPinFreeFor(Device $device, Employee $employee, string $pin): void
+    {
+        $heldByOther = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $pin)
+            ->where('employee_id', '!=', $employee->id)
+            ->exists();
+
+        $entry = DeviceRosterEntry::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $pin)
+            ->first();
+
+        $rosterOther = $entry !== null
+            && ! ($entry->claim_status === DeviceRosterEntry::CLAIMED && $entry->claimed_employee_id === $employee->id);
+
+        if ($heldByOther || $rosterOther) {
+            throw new \RuntimeException(
+                "User ID {$pin} is already in use on {$device->name}, or was in the past. "
+                .'User IDs are never reissued — attendance already recorded under that number belongs to whoever held it.'
+            );
+        }
+    }
+
     // ------------------------------------------------------------------ internals
 
     /**

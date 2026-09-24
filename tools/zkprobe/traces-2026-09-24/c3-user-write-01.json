@@ -1,0 +1,111 @@
+{
+    "label": "c3-user-write",
+    "host": "192.168.7.60",
+    "started_at": "2026-09-24T13:51:43+00:00",
+    "device": {
+        "id": 14,
+        "name": "Entrance",
+        "model": "TF1700"
+    },
+    "test_pin": 99999991,
+    "steps": [
+        {
+            "step": "read-before",
+            "rows": 320,
+            "others": {
+                "count": 320,
+                "sha1": "5954de5481f643abeaf0d20b2d8c60ea68b0fb9b"
+            },
+            "test_rows": []
+        },
+        {
+            "step": "set-data",
+            "sent": {
+                "CardNo": 0,
+                "Pin": 99999991,
+                "Password": "",
+                "Group": 0,
+                "StartTime": 0,
+                "EndTime": 0,
+                "Name": "zk-test",
+                "Privilege": 0,
+                "SuperAuthorize": 0
+            },
+            "accepted": true
+        },
+        {
+            "step": "read-after-add",
+            "rows": 321,
+            "test_rows": [
+                {
+                    "UID": 287,
+                    "CardNo": 0,
+                    "Pin": 99999991,
+                    "Password": "",
+                    "Group": 0,
+                    "StartTime": 0,
+                    "EndTime": 0,
+                    "Name": "zk-test",
+                    "Privilege": 0,
+                    "SuperAuthorize": 0
+                }
+            ],
+            "others_unchanged": true
+        },
+        {
+            "step": "delete-data",
+            "accepted": true
+        },
+        {
+            "step": "read-after-delete",
+            "rows": 320,
+            "test_rows": [],
+            "others_unchanged": true,
+            "table_restored": true
+        }
+    ],
+    "user_schema": {
+        "UID": {
+            "index": 1,
+            "type": "i"
+        },
+        "CardNo": {
+            "index": 2,
+            "type": "i"
+        },
+        "Pin": {
+            "index": 3,
+            "type": "i"
+        },
+        "Password": {
+            "index": 4,
+            "type": "s"
+        },
+        "Group": {
+            "index": 5,
+            "type": "i"
+        },
+        "StartTime": {
+            "index": 6,
+            "type": "i"
+        },
+        "EndTime": {
+            "index": 7,
+            "type": "i"
+        },
+        "Name": {
+            "index": 8,
+            "type": "s"
+        },
+        "Privilege": {
+            "index": 9,
+            "type": "i"
+        },
+        "SuperAuthorize": {
+            "index": 10,
+            "type": "i"
+        }
+    },
+    "snapshot": "storage/app/private/c3-snapshots/device-14-user-20260924-135144.json.enc",
+    "finished_at": "2026-09-24T13:51:45+00:00"
+}

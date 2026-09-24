@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './shared/auth';
 import { ErrorBoundary, installGlobalErrorHandlers } from './shared/errors';
 import { useToast } from './shared/toast';
 import { Spinner } from './shared/ui';
+import { FOCUS } from './shared/theme';
+import { useDeployedVersion } from './shared/useDeployedVersion';
 import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/dashboard/Dashboard';
@@ -64,6 +66,32 @@ function GlobalErrorHandlers() {
     return null;
 }
 
+/*
+| A newer build is on the server. On NAVIGATION the tab reloads onto it (the operator is
+| leaving the page anyway, so nothing unsaved is lost); while they stay on a page it
+| only offers a reload, and never reloads under an open form.
+*/
+function DeployedVersionWatcher({ pathname }) {
+    const { newer, check } = useDeployedVersion();
+    const first = useRef(true);
+
+    useEffect(() => {
+        if (first.current) { first.current = false; return; }
+        check().then((isNewer) => { if (isNewer) window.location.reload(); });
+    }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (!newer) return null;
+
+    return (
+        <div className="fixed bottom-4 left-4 z-[70] flex items-center gap-3 rounded-xl bg-white px-4 py-2.5 text-sm text-slate-700 shadow-lg ring-1 ring-slate-200/70" role="status">
+            A newer version of this app is available.
+            <button type="button" onClick={() => window.location.reload()} className={`rounded font-semibold text-violet-700 hover:underline ${FOCUS}`}>
+                Reload
+            </button>
+        </div>
+    );
+}
+
 export default function App() {
     // Re-keying the boundary on the path clears a crash when the user navigates
     // away, so one broken screen does not wedge the whole app until a reload.
@@ -72,6 +100,7 @@ export default function App() {
     return (
         <>
             <GlobalErrorHandlers />
+            <DeployedVersionWatcher pathname={location.pathname} />
 
             <ErrorBoundary resetKey={location.pathname}>
                 <Routes>

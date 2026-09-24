@@ -199,6 +199,11 @@ class CslHttpDriver implements BiometricDeviceDriver
         );
     }
 
+    public function readTemplates(Device $device): array
+    {
+        return $this->readTemplateDigests($device);
+    }
+
     /**
      * Not implemented for this family (rule 9: declared, not silently plausible).
      *
@@ -223,6 +228,20 @@ class CslHttpDriver implements BiometricDeviceDriver
     {
         throw new UnsupportedCommandException(
             "{$device->name} (CSL web portal) does not support deleting user records through this driver."
+        );
+    }
+
+    public function renumberUser(Device $device, string $fromUserId, string $toUserId): DeviceUser
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not support changing a user id through this driver."
+        );
+    }
+
+    public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not support writing cards through this driver."
         );
     }
 

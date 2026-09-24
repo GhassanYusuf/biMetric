@@ -79,7 +79,8 @@ export default function DeviceDetail() {
      */
     const topics = user?.tenant ? [`tenant/${user.tenant.id}/module/devices/status`] : [];
     useMqtt(topics, (_topic, payload) => {
-        if (String(payload?.device_id ?? payload?.id ?? '') === String(id)) load();
+        // null = the live poller saying "devices changed" (rule 18): re-fetch.
+        if (payload === null || String(payload?.device_id ?? payload?.id ?? '') === String(id)) load();
     });
 
     /** Queues one command. 422 here is a capability refusal, which is information. */

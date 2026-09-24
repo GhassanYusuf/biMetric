@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FOCUS } from '../../shared/theme';
 import { Badge, Button, Card, EmptyState, PageHeader, SelectField, Skeleton, TextField } from '../../shared/ui';
+import UnmatchedName from './UnmatchedName';
 import { MatchedEmployee, NationalIdLookup, Pager, formatPunch, groupByDay, verifyLabel } from './parts';
 
 // Same object as the desktop's, for the same reason: one place that knows what a
@@ -155,11 +156,7 @@ function PunchCard({ log, onSelect }) {
         >
             <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-slate-900">
-                    {log.employee_name || (
-                        <span className="text-slate-500" title="This punch is not linked to an employee record">
-                            Unmatched
-                        </span>
-                    )}
+                    {log.employee_name || <UnmatchedName log={log} />}
                 </div>
                 <div className="truncate text-xs text-slate-500">
                     {log.device_name || '—'} · {verifyLabel(log.verify_method)}

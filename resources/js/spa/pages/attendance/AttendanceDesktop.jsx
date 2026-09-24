@@ -1,5 +1,6 @@
 import { FOCUS } from '../../shared/theme';
 import { Button, Card, EmptyState, PageHeader, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
+import UnmatchedName from './UnmatchedName';
 import { MatchedEmployee, NationalIdLookup, Pager, formatPunch, verifyLabel } from './parts';
 
 // Every filter this page owns, cleared. Named so "Clear filters" cannot forget one
@@ -121,14 +122,7 @@ export default function AttendanceDesktop({
                                 }`}
                             >
                                 <td className="px-5 py-3 font-medium text-slate-900">
-                                    {log.employee_name || (
-                                        <span
-                                            className="font-normal text-slate-500"
-                                            title="This punch is not linked to an employee record"
-                                        >
-                                            Unmatched
-                                        </span>
-                                    )}
+                                    {log.employee_name || <UnmatchedName log={log} />}
                                 </td>
                                 <td className="px-5 py-3 font-mono text-xs text-slate-600">{log.employee_code || '—'}</td>
                                 <td className="px-5 py-3 text-slate-600">{log.device_name || '—'}</td>

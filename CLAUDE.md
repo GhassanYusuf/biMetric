@@ -614,3 +614,41 @@ implementing the contract, never a branch inside `ZktecoDriver` (rule 8).
 headers, self-describing traces, no committed captures). It cannot check that you
 searched before you guessed. That part is discipline — and it is usually the
 difference between an afternoon and a fortnight.
+
+---
+
+## 18. Every page is live. No screen may need a refresh to show a change
+
+Owner's rule, 2026-09-24: "we are using React for a reason — the system must be
+live, any change must update on display instantly, on every page."
+
+A change made anywhere — this operator, another operator, a queued device command,
+a scheduled sync — must appear on every open screen that shows that data without
+the user reloading. A screen that shows yesterday's truth until someone presses F5
+is a bug, the same class as a wrong number.
+
+### How
+
+- **Subscribe through `useMqtt(topics, handler)`**, one call per page, on the
+  module topics the page displays (`tenant/{id}/module/<module>/+`). Never poll
+  from a page directly and never add a second real-time mechanism (rule 13).
+- **Two carriers, one API.** MQTT (`MqttPublisher` → broker → `useMqtt`) is the
+  primary. When no broker is configured or reachable, `useMqtt` drives the same
+  handler from `shared/liveFeed.js`, which polls `GET /api/live` (per-module stamps,
+  `LiveController`) every few seconds while the tab is visible. A page cannot tell
+  which carrier is running and must not care.
+- **A handler must accept `payload === null`**, which means "this module changed —
+  re-fetch". Payload-specific fast paths (patch one row from the message) are fine
+  on top of that, never instead of it.
+- **Refresh in place.** Re-fetch with the current filters and page; show a skeleton
+  only when there is nothing on screen yet (rule 6). A live update must not flash
+  the page, reset scroll, close a dialog or throw away a form being edited.
+- **A new module or table that a screen shows** gets added to `LiveController`'s
+  stamps in the same change, or its screens will silently stop being live.
+- **A deploy is a change too.** `useDeployedVersion` reloads onto a new build on
+  navigation and offers a reload otherwise; a tab must never keep running old code
+  unnoticed.
+
+`tests/Feature/Api/LiveStampsTest.php` checks the stamps move with a company's own
+changes, deletes included, and never with another company's. It cannot check that
+a page subscribed. That part is discipline.

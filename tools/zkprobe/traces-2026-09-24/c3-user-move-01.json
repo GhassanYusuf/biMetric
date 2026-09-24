@@ -1,0 +1,114 @@
+{
+    "label": "c3-user-move",
+    "host": "192.168.7.60",
+    "started_at": "2026-09-24T13:59:44+00:00",
+    "device": {
+        "id": 14,
+        "name": "Entrance",
+        "model": "TF1700"
+    },
+    "pins": [
+        99999991,
+        99999992
+    ],
+    "steps": [
+        {
+            "step": "read-before",
+            "others": {
+                "user": {
+                    "count": 320,
+                    "sha1": "5954de5481f643abeaf0d20b2d8c60ea68b0fb9b"
+                },
+                "userauthorize": {
+                    "count": 320,
+                    "sha1": "d91bb32c69d1543a9af2775924b196136934be16"
+                }
+            },
+            "test_rows": {
+                "user": [],
+                "userauthorize": []
+            }
+        },
+        {
+            "step": "setup",
+            "test_rows": {
+                "user": [
+                    {
+                        "UID": 287,
+                        "CardNo": 0,
+                        "Pin": 99999991,
+                        "Password": "",
+                        "Group": 0,
+                        "StartTime": 0,
+                        "EndTime": 0,
+                        "Name": "zk-test",
+                        "Privilege": 0,
+                        "SuperAuthorize": 0
+                    }
+                ],
+                "userauthorize": [
+                    {
+                        "Pin": 99999991,
+                        "AuthorizeTimezoneId": 1,
+                        "AuthorizeDoorId": 1
+                    }
+                ]
+            },
+            "others_unchanged": true
+        },
+        {
+            "step": "move",
+            "accepted": true,
+            "moved": {
+                "user": 1,
+                "userauthorize": 1
+            }
+        },
+        {
+            "step": "read-after-move",
+            "test_rows": {
+                "user": [
+                    {
+                        "UID": 296,
+                        "CardNo": 0,
+                        "Pin": 99999992,
+                        "Password": "",
+                        "Group": 0,
+                        "StartTime": 0,
+                        "EndTime": 0,
+                        "Name": "zk-test",
+                        "Privilege": 0,
+                        "SuperAuthorize": 0
+                    }
+                ],
+                "userauthorize": [
+                    {
+                        "Pin": 99999992,
+                        "AuthorizeTimezoneId": 1,
+                        "AuthorizeDoorId": 1
+                    }
+                ]
+            },
+            "on_new_pin": {
+                "user": 1,
+                "userauthorize": 1
+            },
+            "on_old_pin": {
+                "user": 0,
+                "userauthorize": 0
+            },
+            "others_unchanged": true
+        },
+        {
+            "step": "cleanup",
+            "test_rows": {
+                "user": [],
+                "userauthorize": []
+            },
+            "others_unchanged": true,
+            "tables_restored": true
+        }
+    ],
+    "snapshot": "storage/app/private/c3-snapshots/device-14-user-userauthorize-20260924-135944.json.enc",
+    "finished_at": "2026-09-24T13:59:48+00:00"
+}

@@ -1,0 +1,148 @@
+{
+    "label": "c3-user-move",
+    "host": "192.168.7.61",
+    "started_at": "2026-09-24T14:07:41+00:00",
+    "device": {
+        "id": 13,
+        "name": "Glass Door",
+        "model": "inBIO460"
+    },
+    "pins": [
+        99999991,
+        99999992
+    ],
+    "steps": [
+        {
+            "step": "read-before",
+            "others": {
+                "user": {
+                    "count": 320,
+                    "sha1": "1af0fd88d038ebffc8c51eaa9054328d0f6459c8"
+                },
+                "userauthorize": {
+                    "count": 320,
+                    "sha1": "988d1131df8f839d105cf4b5b981446989a1feb4"
+                },
+                "templatev10": {
+                    "count": 238,
+                    "sha1": "9260c8a633bc6f6e1b9e814a74306d6be9670742"
+                }
+            },
+            "test_rows": {
+                "user": [],
+                "userauthorize": [],
+                "templatev10": []
+            }
+        },
+        {
+            "step": "setup",
+            "test_rows": {
+                "user": [
+                    {
+                        "UID": 287,
+                        "CardNo": 0,
+                        "Pin": 99999991,
+                        "Password": "",
+                        "Group": 0,
+                        "StartTime": 0,
+                        "EndTime": 0,
+                        "Name": "zk-test",
+                        "SuperAuthorize": 0
+                    }
+                ],
+                "userauthorize": [
+                    {
+                        "Pin": 99999991,
+                        "AuthorizeTimezoneId": 1,
+                        "AuthorizeDoorId": 1
+                    }
+                ],
+                "templatev10": [
+                    {
+                        "Template": "312c00f42dfebc92d5620c55bd75601fcf4f76a7",
+                        "Size": 706,
+                        "UID": 287,
+                        "Pin": 99999991,
+                        "FingerID": 5,
+                        "Valid": 1,
+                        "Resverd": 0,
+                        "EndTag": 13
+                    }
+                ]
+            },
+            "others_unchanged": true
+        },
+        {
+            "step": "move",
+            "accepted": true,
+            "moved": {
+                "user": 1,
+                "userauthorize": 1,
+                "templatev10": 1
+            }
+        },
+        {
+            "step": "read-after-move",
+            "test_rows": {
+                "user": [
+                    {
+                        "UID": 296,
+                        "CardNo": 0,
+                        "Pin": 99999992,
+                        "Password": "",
+                        "Group": 0,
+                        "StartTime": 0,
+                        "EndTime": 0,
+                        "Name": "zk-test",
+                        "SuperAuthorize": 0
+                    }
+                ],
+                "userauthorize": [
+                    {
+                        "Pin": 99999992,
+                        "AuthorizeTimezoneId": 1,
+                        "AuthorizeDoorId": 1
+                    }
+                ],
+                "templatev10": [
+                    {
+                        "Template": "312c00f42dfebc92d5620c55bd75601fcf4f76a7",
+                        "Size": 706,
+                        "UID": 296,
+                        "Pin": 99999992,
+                        "FingerID": 5,
+                        "Valid": 1,
+                        "Resverd": 0,
+                        "EndTag": 13
+                    }
+                ]
+            },
+            "on_new_pin": {
+                "user": 1,
+                "userauthorize": 1,
+                "templatev10": 1
+            },
+            "on_old_pin": {
+                "user": 0,
+                "userauthorize": 0,
+                "templatev10": 0
+            },
+            "template_identical": true,
+            "template_uid_is_new_user_uid": true,
+            "others_unchanged": true
+        },
+        {
+            "step": "cleanup",
+            "test_rows": {
+                "user": [],
+                "userauthorize": [],
+                "templatev10": []
+            },
+            "others_unchanged": true,
+            "tables_restored": true
+        }
+    ],
+    "snapshot": "storage/app/private/c3-snapshots/device-13-user-userauthorize-20260924-140743.json.enc",
+    "placeholder_sha1": "312c00f42dfebc92d5620c55bd75601fcf4f76a7",
+    "finished_at": "2026-09-24T14:07:53+00:00"
+}

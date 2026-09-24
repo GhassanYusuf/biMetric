@@ -83,8 +83,15 @@ class AttendanceReattribute extends Command
                     $total++;
 
                     $resolved = $this->employeeAt($windows, (string) $log->device_user_id, $log->punched_at);
+                    /*
+                     * Normalised to ?int before comparing. SQL Server returns ids as
+                     * strings ("1413") where SQLite returned ints, so a strict compare
+                     * called every already-correct punch a change — 9,292 of IT Room's
+                     * 10,733 on 2026-09-23, when about 3 really were.
+                     */
+                    $current = $log->employee_id === null ? null : (int) $log->employee_id;
 
-                    if ($resolved === $log->employee_id) {
+                    if ($resolved === $current) {
                         if ($resolved === null) {
                             $stillUnmatched++;
                         }
@@ -138,7 +145,7 @@ class AttendanceReattribute extends Command
                 ->get(['employee_id', 'device_user_id', 'valid_from', 'valid_to']) as $row
         ) {
             $grouped[(string) $row->device_user_id][] = [
-                'employee_id' => $row->employee_id,
+                'employee_id' => (int) $row->employee_id,
                 'from' => $row->valid_from?->getTimestamp(),
                 'to' => $row->valid_to?->getTimestamp(),
             ];

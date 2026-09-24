@@ -62,10 +62,18 @@ class EmployeeDevicePropagator
      * cannot write users has not failed, and telling an operator it did sends them
      * to check a network that is fine.
      *
+     * $toEmployeeCode (added 2026-09-23, the operator's explicit choice in the push
+     * prompt): also make the terminal's user ID equal the employee code. On a terminal
+     * they are already on, the record is renumbered in place first — card and fingers
+     * kept, old punches still theirs (DeviceUserSyncService::renumberEmployee). On one
+     * they are new to, the code is claimed as their PIN when it is free there. If the
+     * renumber fails, NOTHING is written to that terminal and it is reported as failed:
+     * a half-done push (new name, old ID) is harder to reason about than none.
+     *
      * @param  Collection<int, Device>|iterable<Device>  $devices
      * @return array{written:list<array{device_id:int,device_name:string,pin:string,message:string}>, skipped:list<array{device_id:int,device_name:string,reason:string}>, failed:list<array{device_id:int,device_name:string,error:string}>}
      */
-    public function push(Employee $employee, iterable $devices): array
+    public function push(Employee $employee, iterable $devices, bool $toEmployeeCode = false): array
     {
         $written = [];
         $skipped = [];
@@ -78,6 +86,16 @@ class EmployeeDevicePropagator
              * it — so the model answers in a sentence and this stays app code.
              */
             $reason = $device->userWriteRefusal();
+
+            /*
+             * A panel that cannot take names but CAN move a user to a new ID (a C3 with
+             * `user.renumber`, 2026-09-24) goes through when an ID change was asked
+             * for; below, it gets the ID move and nothing else. Still refused when it is
+             * disabled or unadopted.
+             */
+            if ($reason !== null && $toEmployeeCode && $device->is_active && $device->isWritable() && $device->canRenumberUsers()) {
+                $reason = null;
+            }
 
             if ($reason !== null) {
                 $skipped[] = [
@@ -98,15 +116,61 @@ class EmployeeDevicePropagator
                  * before anything is written, so a number free in our table but taken
                  * on the device still aborts the write.
                  */
+                $code = (string) $employee->employee_code;
+                $wantCode = $toEmployeeCode && preg_match('/^\d{1,9}$/', $code) === 1;
+                $notes = [];
+
+                if ($this->identity->activeMap($device, $employee) === null && $wantCode) {
+                    try {
+                        $this->identity->assertPinFreeFor($device, $employee, $code);
+                        $this->identity->claim($device, $employee, $code);
+                    } catch (\RuntimeException $e) {
+                        $notes[] = "user ID {$code} is taken there, so the next free one was used";
+                    }
+                }
+
                 $map = $this->identity->claim($device, $employee);
 
-                $result = $this->users->pushEmployee($device, $employee);
+                if ($wantCode && $map->device_user_id !== $code) {
+                    /*
+                     * A terminal that cannot renumber (the F18 refuses it, 2026-09-23)
+                     * still gets the name, under the ID it already has — the operator
+                     * asked for both, and refusing the half that works helps nobody.
+                     * Stale browser tabs still send this flag, which is how it came up.
+                     */
+                    if ($device->canRenumberUsers()) {
+                        $notes[] = $this->users->renumberEmployee($device, $employee, $code)['message'];
+                        $map = $this->identity->activeMap($device, $employee);
+                    } else {
+                        $notes[] = "User ID kept at {$map->device_user_id}: {$device->name} cannot change a user ID.";
+                    }
+                }
+
+                /*
+                 * A panel whose names cannot be written from here (a C3: user.write is
+                 * not_implemented) can still have had the ID moved above. Report that,
+                 * rather than failing the terminal on the name write it cannot take.
+                 */
+                if ($device->canWriteUsers()) {
+                    $notes[] = $this->users->pushEmployee($device, $employee)['message'];
+                } elseif ($notes === []) {
+                    // Nothing to move and names cannot be written here: a skip, not a failure.
+                    $skipped[] = [
+                        'device_id' => $device->id,
+                        'device_name' => $device->name,
+                        'reason' => "the user ID there already matches, and this panel's names are managed in ZKAccess",
+                    ];
+
+                    continue;
+                } else {
+                    $notes[] = 'Name not written: this panel\'s names are managed in ZKAccess.';
+                }
 
                 $written[] = [
                     'device_id' => $device->id,
                     'device_name' => $device->name,
                     'pin' => $map->device_user_id,
-                    'message' => $result['message'],
+                    'message' => implode(' ', $notes),
                 ];
             } catch (\Throwable $e) {
                 /*

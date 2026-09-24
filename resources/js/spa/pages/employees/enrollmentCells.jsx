@@ -27,8 +27,15 @@ import { Badge } from '../../shared/ui';
  * null and [] are different: null means the relation was not loaded and the flat
  * columns are all we have, [] means this employee is on no terminal at all.
  */
+/*
+| LIVE mappings only. A closed mapping is a user ID the person USED to hold on that
+| terminal — kept so their old punches still resolve to them — and is history, not
+| enrollment. Listing it drew the terminal twice after an ID change (Ghassan on
+| IT Room, 656 closed and 830108246 live, 2026-09-24), and its older read could
+| even be taken as "the" roster reading.
+*/
 export function enrollmentsOf(employee) {
-    return Array.isArray(employee.enrollments) ? employee.enrollments : null;
+    return Array.isArray(employee.enrollments) ? employee.enrollments.filter((e) => e.is_live !== false) : null;
 }
 
 /**

@@ -498,4 +498,164 @@ class EmployeePropagationTest extends TestCase
 
         Queue::assertNothingPushed();
     }
+
+    // ---------------------------------------------------------------- user ID follows the code
+
+    private function onDevice(FakeBiometricDriver $driver, string $pin): void
+    {
+        $driver->roster[] = new DeviceUser(uid: 7, userId: $pin, name: $this->employee->name, cardNumber: 2862247, fingerSlots: [5]);
+    }
+
+    /**
+     * Added 2026-09-23. With to_employee_code the terminal record moves to the code
+     * (same uid, card and fingers kept), the OLD mapping is closed rather than edited so
+     * punches under the old PIN stay theirs, and the old PIN stays reserved.
+     */
+    /**
+     * The F18 refuses renumbering (ACK_ERROR, 2026-09-23), so on the default capability
+     * set the ID is left alone — never attempted — and the name is still pushed under it.
+     */
+    public function test_on_the_f18_defaults_the_user_id_is_kept_and_the_name_still_pushed(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $old = $this->mapTo($this->adopted, '960802797');
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(1, 'data.written')->assertJsonCount(0, 'data.failed')
+            ->assertJsonPath('data.written.0.pin', '960802797');
+
+        $this->assertSame([], $driver->renumbers);
+        $this->assertSame([['960802797', $this->employee->name]], $driver->writes);
+        $this->assertNull($old->fresh()->valid_to);
+    }
+
+    public function test_to_employee_code_moves_the_terminal_user_id_and_keeps_history(): void
+    {
+        $driver = new FakeBiometricDriver;
+        // Firmware that accepts a renumber — NOT the F18, which refuses it.
+        $driver->capabilityOverrides = [\Promoseven\Biometric\Capability\Capability::USER_RENUMBER => 'implemented'];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $old = $this->mapTo($this->adopted, '960802797');
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(1, 'data.written')->assertJsonPath('data.written.0.pin', '501');
+
+        $this->assertSame([['960802797', '501']], $driver->renumbers);
+        $this->assertNotNull($old->fresh()->valid_to);
+        $this->assertDatabaseHas('employee_device_maps', [
+            'employee_id' => $this->employee->id, 'device_id' => $this->adopted->id,
+            'device_user_id' => '501', 'valid_to' => null,
+        ]);
+        // The name push afterwards addressed the NEW user ID.
+        $this->assertSame('501', end($driver->writes)[0]);
+    }
+
+    /**
+     * A C3 panel (2026-09-24): no name or card can be written, but with `user.renumber`
+     * the ID move goes through — and ONLY that; the name write is skipped with a note,
+     * never attempted and never counted as a failure.
+     */
+    public function test_a_panel_that_cannot_take_names_still_gets_the_id_move_and_nothing_else(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [
+            \Promoseven\Biometric\Capability\Capability::USER_RENUMBER => 'implemented',
+            \Promoseven\Biometric\Capability\Capability::USER_WRITE => 'not_implemented',
+        ];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '656');
+        $this->mapTo($this->adopted, '656');
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()
+            ->assertJsonCount(1, 'data.written')->assertJsonCount(0, 'data.failed')
+            ->assertJsonPath('data.written.0.pin', '501');
+
+        $this->assertSame([['656', '501']], $driver->renumbers);
+        $this->assertSame([], $driver->writes, 'no name write on a panel that cannot take one');
+
+        // Pushed again with nothing to move: a skip with a reason, not a failure.
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(1, 'data.skipped')->assertJsonCount(0, 'data.failed');
+    }
+
+    public function test_without_the_option_a_push_never_changes_the_user_id(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $this->mapTo($this->adopted, '960802797');
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+        ])->assertOk()->assertJsonPath('data.written.0.pin', '960802797');
+
+        $this->assertSame([], $driver->renumbers);
+    }
+
+    /**
+     * A code somebody else ever held on this terminal is refused before the device is
+     * touched: handing it over would re-attribute that person's punches. Nothing is
+     * written to that terminal — not even the name — so it is never half-done.
+     */
+    public function test_a_user_id_someone_else_held_is_refused_and_nothing_is_written(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [\Promoseven\Biometric\Capability\Capability::USER_RENUMBER => 'implemented'];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $this->mapTo($this->adopted, '960802797');
+
+        $other = Employee::withoutGlobalScopes()->create([
+            'tenant_id' => $this->tenant->id, 'name' => 'Former', 'employee_code' => '900', 'is_active' => true,
+        ]);
+        EmployeeDeviceMap::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'employee_id' => $other->id,
+            'device_user_id' => '501', 'valid_from' => now()->subYears(2), 'valid_to' => now()->subYear(),
+        ]);
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(0, 'data.written')->assertJsonCount(1, 'data.failed');
+
+        $this->assertSame([], $driver->renumbers);
+        $this->assertSame([], $driver->writes);
+    }
+
+    /** The device refusing the move (or losing a finger) leaves our records untouched. */
+    public function test_a_failed_move_on_the_device_changes_nothing_here(): void
+    {
+        $driver = new class extends FakeBiometricDriver
+        {
+            public function renumberUser(Device $device, string $fromUserId, string $toUserId): DeviceUser
+            {
+                throw new \Promoseven\Biometric\Exception\VerificationException('fingerprint slot(s) 5 are no longer on the device');
+            }
+        };
+        $driver->capabilityOverrides = [\Promoseven\Biometric\Capability\Capability::USER_RENUMBER => 'implemented'];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $old = $this->mapTo($this->adopted, '960802797');
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(1, 'data.failed')
+            ->assertJsonPath('data.failed.0.error', 'fingerprint slot(s) 5 are no longer on the device');
+
+        $this->assertNull($old->fresh()->valid_to);
+        $this->assertSame([], $driver->writes);
+    }
 }

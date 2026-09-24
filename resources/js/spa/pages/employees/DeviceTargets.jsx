@@ -27,22 +27,33 @@ export default function DeviceTargets({ targets, selected, onChange, compareName
                  * said at the point of deciding rather than left to be discovered.
                  */
                 const drifted = t.held && compareName && t.held !== compareName;
+                // A terminal this app cannot write to is SHOWN, never ticked (rule 9):
+                // listing it as a push target would promise a write that cannot happen.
+                const blocked = Boolean(t.disabledReason);
 
                 return (
-                    <label key={t.id} className="flex items-start gap-2.5">
+                    <label key={t.id} className={`flex items-start gap-2.5 ${blocked ? 'opacity-70' : ''}`}>
                         <input
                             type="checkbox"
-                            checked={selected.includes(t.id)}
+                            checked={!blocked && selected.includes(t.id)}
+                            disabled={blocked}
                             onChange={(e) => toggle(t.id, e.target.checked)}
-                            className={`mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 ${FOCUS}`}
+                            className={`mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 disabled:cursor-not-allowed ${FOCUS}`}
                         />
                         <span className="min-w-0 text-sm text-slate-700">
                             {t.name}
                             {t.pin && <span className="text-slate-500"> · PIN {t.pin}</span>}
-                            {drifted && (
-                                <span className="block text-xs text-amber-700">
-                                    holds “{t.held}” — this will overwrite it
-                                </span>
+                            {blocked ? (
+                                <span className="block text-xs text-slate-500">{t.disabledReason}</span>
+                            ) : (
+                                <>
+                                    {drifted && (
+                                        <span className="block text-xs text-amber-700">
+                                            holds “{t.held}” — this will overwrite it
+                                        </span>
+                                    )}
+                                    {t.note && <span className={`block text-xs ${t.noteTone === 'warn' ? 'text-amber-700' : 'text-slate-600'}`}>{t.note}</span>}
+                                </>
                             )}
                         </span>
                     </label>

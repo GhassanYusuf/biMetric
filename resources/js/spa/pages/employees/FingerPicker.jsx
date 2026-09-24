@@ -15,9 +15,14 @@ import { GEOMETRY_BY_SIDE, HAND_H, HAND_W, SLOTS, palmRect, slotName } from './h
 | the component says so rather than drawing every finger as empty.
 */
 
-export default function FingerPicker({ value, onChange, enrolled, disabled = false, readOnly = false }) {
-    // null = the device's template table could not be read, so enrollment state
-    // is unknown and must not be drawn as "empty".
+export default function FingerPicker({ value, onChange, enrolled, disabled = false, readOnly = false, neverRead = false }) {
+    /*
+     * null has TWO causes, and they are different facts (rule 3):
+     *   neverRead  we have not read this terminal for this person, so there is
+     *              nothing to decode yet
+     *   otherwise  a read happened and the template table would not decode
+     * Either way the fingers are unknown and must not be drawn as "empty".
+     */
     const unknown = enrolled === null || enrolled === undefined;
     const enrolledSet = new Set(unknown ? [] : enrolled);
 
@@ -43,7 +48,13 @@ export default function FingerPicker({ value, onChange, enrolled, disabled = fal
                 <LegendKey className="bg-slate-200" label={readOnly ? 'Not enrolled' : 'Empty'} />
             </div>
 
-            {unknown && (
+            {unknown && neverRead && (
+                <p className="mt-2 text-center text-xs text-slate-500">
+                    Not read from this terminal yet, so enrolled fingers aren't known.
+                </p>
+            )}
+
+            {unknown && !neverRead && (
                 <p className="mt-2 text-center text-xs text-amber-700">
                     {readOnly
                         ? "This firmware's fingerprint table couldn't be decoded, so enrolled fingers can't be shown."
@@ -83,7 +94,8 @@ function Hand({ side, value, onChange, enrolledSet, unknown, disabled, readOnly 
 
                 {geometry.map((finger) => {
                     const slot = SLOTS[side][finger.key];
-                    const isSelected = Number(value) === slot;
+                    // value is null when read-only; Number(null) is 0, which lit slot 0 up as selected.
+                    const isSelected = value != null && Number(value) === slot;
                     const isEnrolled = enrolledSet.has(slot);
                     const cx = finger.x + finger.w / 2;
                     const cy = finger.y + finger.h / 2;

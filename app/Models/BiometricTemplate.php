@@ -7,16 +7,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Which finger slots are filled for an employee on a device.
+ * Which finger slots are filled for an employee on a device — and, since 2026-09-24,
+ * the system's COPY of that template (owner's decision; FingerprintVault).
  *
- * METADATA ONLY. The template column is null for every row today: this library
- * cannot download template blobs, because the blob format and the matching upload
- * command are both unverified, and a template that cannot be written back reliably
- * is worse than no template at all. Enrollment is therefore DEVICE-SIDE, meaning a
- * finger has to be presented at a terminal.
- *
- * The column exists so that adding real template storage later is a fill-in rather
- * than a migration of everything that references it.
+ * BIOMETRIC DATA:
+ * - `template` is base64 of the device's blob, encrypted at rest (APP_KEY) and
+ *   HIDDEN — no toArray(), resource, log line or audit row may carry it. Only
+ *   FingerprintVault reads it, to write it back to a device.
+ * - `template_format` is "<protocol>:<model>" of the source terminal. A template is
+ *   only known to work on the family it came from; an upload must check this.
+ * - `template_sha1` is the plaintext digest, for change detection without decrypting.
+ * - Rows mirror what the terminal holds: removing the person from the terminal, or
+ *   deleting the terminal from the app, deletes its copies (device_id cascades).
+ * - Not observed by AuditObserver (it records attributes); FingerprintVault writes a
+ *   summary audit row with counts.
  */
 class BiometricTemplate extends Model
 {
@@ -24,12 +28,17 @@ class BiometricTemplate extends Model
 
     protected $fillable = [
         'tenant_id', 'employee_id', 'device_id', 'finger_slot',
-        'template_size', 'template', 'template_format', 'enrolled_at', 'verified_at',
+        'template_size', 'template', 'template_format', 'template_sha1', 'enrolled_at', 'verified_at',
     ];
+
+    protected $hidden = ['template'];
 
     protected function casts(): array
     {
         return [
+            'template' => 'encrypted',
+            'employee_id' => 'integer',
+            'device_id' => 'integer',
             'finger_slot' => 'integer',
             'template_size' => 'integer',
             'enrolled_at' => 'datetime',

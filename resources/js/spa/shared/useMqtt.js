@@ -1,11 +1,14 @@
 import mqtt from 'mqtt';
 import { useEffect, useRef } from 'react';
+import { moduleOfTopic, subscribeLive } from './liveFeed';
 
 // Subscribes the browser to tenant/user-scoped MQTT topics over WebSockets and
-// invokes onMessage(topic, payload) for each message. Entirely optional and
-// fail-safe: with no configured ws URL (or on any connection error) it simply
-// does nothing and the UI keeps working via on-demand fetches (per the
-// standards, MQTT only enhances the live experience).
+// invokes onMessage(topic, payload) for each message.
+//
+// LIVE IS A RULE, NOT AN ENHANCEMENT (CLAUDE.md rule 18, 2026-09-24). With no
+// configured ws URL — or while the broker cannot be reached — the same handler is
+// driven by the /api/live poller (liveFeed.js) instead, with payload NULL meaning
+// "this module changed; re-fetch". Handlers must treat a null payload as exactly that.
 
 const config = window.__APP_CONFIG__ || {};
 
@@ -17,21 +20,33 @@ export function useMqtt(topics, onMessage, { enabled = true } = {}) {
     const topicKey = (topics || []).join('|');
 
     useEffect(() => {
-        if (!enabled || !config.mqttUrl || !topicKey) return undefined;
+        if (!enabled || !topicKey) return undefined;
+
+        const list = topicKey.split('|');
+
+        // Fallback carrier: one subscription per distinct module the topics name.
+        const fallback = () => {
+            const modules = [...new Set(list.map(moduleOfTopic).filter(Boolean))];
+            const offs = modules.map((m) => subscribeLive(m, () => handlerRef.current?.(`live/${m}`, null)));
+            return () => offs.forEach((off) => off());
+        };
+
+        if (!config.mqttUrl) return fallback();
 
         let client;
+        let stopFallback = null;
         try {
             client = mqtt.connect(config.mqttUrl, {
                 reconnectPeriod: 5000,
                 connectTimeout: 8000,
             });
         } catch {
-            return undefined; // never let a broker problem break the app
+            return fallback(); // never let a broker problem break the app — or its liveness
         }
 
-        const list = topicKey.split('|');
-
         client.on('connect', () => {
+            stopFallback?.();
+            stopFallback = null;
             list.forEach((t) => client.subscribe(t, { qos: 0 }));
         });
 
@@ -45,11 +60,13 @@ export function useMqtt(topics, onMessage, { enabled = true } = {}) {
             handlerRef.current?.(topic, payload);
         });
 
-        client.on('error', () => {
-            // swallow; reconnect logic handles transient failures
-        });
+        // Broker unreachable: stay live through the poller until it comes back.
+        const toFallback = () => { if (!stopFallback) stopFallback = fallback(); };
+        client.on('error', toFallback);
+        client.on('offline', toFallback);
 
         return () => {
+            stopFallback?.();
             try {
                 client.end(true);
             } catch {

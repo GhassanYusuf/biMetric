@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useMqtt } from '../../shared/useMqtt';
 import { api, ApiError } from '../../shared/api';
 import { useAuth } from '../../shared/auth';
 import { useConfirm } from '../../shared/confirm';
@@ -18,7 +19,7 @@ import DeviceGroupFormModal from './DeviceGroupFormModal';
 */
 export default function DeviceGroups() {
     const deviceClass = useDeviceClass();
-    const { can } = useAuth();
+    const { can, user } = useAuth();
     const confirm = useConfirm();
     const toast = useToast();
 
@@ -40,6 +41,9 @@ export default function DeviceGroups() {
             setLoading(false);
         }
     }, [toast]);
+
+    // LIVE (CLAUDE.md rule 18): refresh in place when devices change anywhere.
+    useMqtt(user?.tenant ? [`tenant/${user.tenant.id}/module/devices/+`] : [], () => load());
 
     useEffect(() => {
         load();

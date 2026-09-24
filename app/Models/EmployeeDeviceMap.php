@@ -37,6 +37,10 @@ class EmployeeDeviceMap extends Model
     protected function casts(): array
     {
         return [
+            // SQL Server returns integer columns as strings; see DeviceRosterEntry.
+            'tenant_id' => 'integer',
+            'employee_id' => 'integer',
+            'device_id' => 'integer',
             'fingerprint_slots' => 'array',
             'template_digests' => 'array',
             'templates_read_at' => 'datetime',

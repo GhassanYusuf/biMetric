@@ -67,6 +67,52 @@ class EmployeeResource extends JsonResource
             ),
             'national_id_masked' => $this->whenLoaded('person', fn () => $this->person?->maskedNationalId()),
             'exportable' => $this->whenLoaded('person', fn () => (bool) $this->person?->isExportable(), false),
+            /*
+             * Fingers the SYSTEM holds a copy of (2026-09-24, FingerprintVault), from
+             * any terminal. Slot numbers only — the bytes never leave the server. Absent
+             * (not []) when not loaded, so a screen cannot read "not loaded" as "none".
+             */
+            'stored_fingerprint_slots' => $this->whenLoaded('biometricTemplates', fn () => $this->biometricTemplates
+                ->whereNotNull('template_sha1')
+                ->pluck('finger_slot')
+                ->map(fn ($s) => (int) $s)
+                ->unique()
+                ->sort()
+                ->values()
+                ->all()),
+            /*
+             * PERSONNEL-DIALOG FIELDS (2026-09-23). Stored in this app only; none of
+             * them has been sent to a terminal, so none of them says anything about
+             * what a terminal holds.
+             *
+             * The device password is never returned — only whether one is set. It is
+             * a door credential, and the form does not need it to offer "change it".
+             * `privilege` null means "not set in this app", NOT "user": nobody's
+             * privilege has been read off a terminal.
+             */
+            'last_name' => $this->last_name,
+            'gender' => $this->gender,
+            'mobile_phone' => $this->mobile_phone,
+            'hired_date' => $this->hired_date?->toDateString(),
+            'birthday' => $this->birthday?->toDateString(),
+            'has_device_password' => $this->device_password !== null && $this->device_password !== '',
+            'privilege' => $this->privilege,
+            'job_title' => $this->job_title,
+            'office' => $this->office,
+            'education' => $this->education,
+            'country' => $this->country,
+            'city' => $this->city,
+            'postal_code' => $this->postal_code,
+            'home_phone' => $this->home_phone,
+            'political_status' => $this->political_status,
+            'race' => $this->race,
+            'home_address' => $this->home_address,
+            'work_address' => $this->work_address,
+            'access_level_ids' => $this->whenLoaded('accessLevels', fn () => $this->accessLevels->pluck('id')->all()),
+            'multi_card_group_id' => $this->multi_card_group_id,
+            'valid_period_enabled' => (bool) $this->valid_period_enabled,
+            'access_valid_from' => $this->access_valid_from?->toDateString(),
+            'access_valid_to' => $this->access_valid_to?->toDateString(),
             'attendance_logs_count' => $this->whenCounted('attendanceLogs'),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

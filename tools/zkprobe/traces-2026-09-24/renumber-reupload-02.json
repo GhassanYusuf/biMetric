@@ -1,0 +1,71 @@
+{
+    "label": "renumber-reupload",
+    "host": "192.168.7.62",
+    "started_at": "2026-09-24T12:16:00+00:00",
+    "device": {
+        "id": 2,
+        "name": "IT Room",
+        "model": "F18/ID"
+    },
+    "question": "Does delete + SAVE_USERTEMPS move a user to a new id with every fingerprint intact?",
+    "test_user": "ali-it",
+    "runs": [
+        {
+            "from": "5",
+            "to": "960802797",
+            "uid": 6,
+            "record_before": {
+                "name": "ali-it",
+                "privilege": 0,
+                "card": 2862247
+            },
+            "templates_before": [
+                {
+                    "uid": 6,
+                    "fid": 5,
+                    "valid": 1,
+                    "size": 978,
+                    "sha1": "ea11f86e7c3b55668a5bd53db5d9fdacaa6f16d3"
+                }
+            ],
+            "result": "moved",
+            "returned": {
+                "uid": 6,
+                "user_id": "960802797",
+                "card": 2862247,
+                "slots": [
+                    5
+                ]
+            },
+            "seconds": 5.96,
+            "record_after": {
+                "uid": 6,
+                "user_id": "960802797",
+                "name": "ali-it",
+                "privilege": 0,
+                "card": 2862247
+            },
+            "templates_after": [
+                {
+                    "uid": 6,
+                    "fid": 5,
+                    "valid": 1,
+                    "size": 978,
+                    "sha1": "ea11f86e7c3b55668a5bd53db5d9fdacaa6f16d3"
+                }
+            ],
+            "findings": {
+                "templates_byte_identical": true,
+                "valid_bytes_before": {
+                    "5": 1
+                },
+                "valid_bytes_after": {
+                    "5": 1
+                },
+                "others_unchanged": true,
+                "finger_verified_at_terminal": null
+            }
+        }
+    ],
+    "finished_at": "2026-09-24T12:16:09+00:00"
+}

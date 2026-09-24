@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-09-23**
+**Last updated: 2026-09-24**
 
 ---
 
@@ -23,8 +23,8 @@ cannot see:
 | **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It is still **not a git repository**: no history, no tags, no remote. **The windowed-read protocol fix lives only there**, on this box's filesystem, outside every repository. This is still the worst of the three. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Since 2026-09-23 the whole working tree is **committed** on `camelot` and `main` is fast-forwarded to it — **locally only**. Neither branch has been pushed; `origin/main` is still the first commit. Pushing is the remaining step, and it is the owner's call. |
-| ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. |
+| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Everything through 2026-09-24 is **committed** on branch **`employees`** (branched from `camelot`) — **locally only**. No branch has been pushed; `origin/main` is still the first commit. `employees` is not merged into `main`. Pushing and merging are the owner's call. |
+| ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. On 2026-09-24 the working tree (2.7.0–2.9.0) was committed as `2180866` on `main`; **not tagged**. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
 Sequence to fix: **back up `vendor/promoseven/biometric-protocol/` first** → put it
@@ -393,6 +393,300 @@ wrap all exist already.
 ---
 
 ## Session log
+
+### 2026-09-24 — Employee edit form reshaped to the ZKAccess Personnel dialog
+
+At the owner's request, built to `public/build`; **committed on branch `employees` on 2026-09-24** (not pushed):
+
+- **Layout** of the three tabs now follows ZKAccess (screenshots in `draft/userdata/`,
+  gitignored): two field columns + photo on the right; Details in two columns plus
+  full-width addresses; Access levels as two tables with `>> > < <<`.
+- **Card number is editable.** Never stored as typed: written to each terminal the
+  push reached and read back (`docs/enrollment-flow.md`, "From the employee edit form").
+- **Access levels tab now lists TERMINALS**, not the database-only access levels:
+  right = on it (push, then read fingerprints/card back), moved left = removed (red
+  confirmation; deletes enrollment on the device). The old "Update them on" checklist
+  is gone. The `access_levels` tables, endpoints and `ManageAccessLevelsModal.jsx` are
+  still there, unused by the form — **open, owner:** keep them for a later door-level
+  feature, or delete them.
+- Not yet exercised against a real terminal from the form. The endpoints it calls
+  (push, card, enrollment read, remove) are the existing ones.
+- **National ID** is now an ordinary, always-visible box on the Details tab (add and
+  edit), saved in the same request as the employee; a clash is a field error and rolls
+  the save back (`EmployeeController::assignNationalId`).
+- **Personnel ID change → terminal: built, NOT yet enabled.** The F18 refuses in-place
+  renumbering, so library **2.8.0** (`/var/biometric-protocol`, uncommitted, untagged)
+  adds `UserService::renumberByReupload()`: snapshot → delete → re-upload record +
+  fingerprint templates (`SAVE_USERTEMPS` 110, transcribed from pyzk f29709c1) → verify
+  → restore on failure. `ZktecoDriver::renumberUser()` uses it and keeps an encrypted
+  snapshot in `storage/app/private/renumber-snapshots/` until verified. `user.renumber`
+  stays `not_implemented`, so the UI still says terminals keep the old ID.
+  **Tested 2026-09-24 on IT Room with the owner's go-ahead:** two runs on `ali-it`
+  (uid 6; the terminal names it `ali-it`, not `ali-it2`), both verified, template
+  byte-identical. `user.renumber` is now `implemented` for **IT Room only**
+  (`capabilities_cache`). **Open, owner:** a real finger scan after a move has not
+  been checked. **First real use, 2026-09-24 ~12:20 UTC:** Ghassan (employee 1404)
+  moved 656 → 830108246 on IT Room via `renumberEmployee()` (run by the assistant at the
+  owner's request, 5.7 s); read back: same uid 8, card 7566580, right-index template
+  sha1 identical to the system copy. Awaiting Ghassan's finger scan at IT Room to
+  promote `user.renumber` to `confirmed` for the F18. Still 1 on Camelot (refuses
+  writes) and 656 on Glass Door / Entrance (C3 — change in ZKAccess).
+  **First move from the edit form, 2026-09-24 ~12:40 UTC:** `ali-it` 960802797 →
+  96000000 by the owner via Save → Push now; terminal, card 2862247, slot-5 template
+  (sha1 `ea11f86e…`) and app mapping all verified. The ID change now rides the single
+  "Push now" prompt, with the terminal list re-fetched at edit/save (a stale page had
+  silently skipped the old second prompt).
+  Camelot refuses every user write (reply 4994, twice on 2026-09-24); Glass Door and
+  Entrance are C3 panels where the app cannot write users — change the ID there in ZKAccess.
+- **DECISION (owner, 2026-09-24): the system keeps a copy of every fingerprint.**
+  Why: so a Personnel ID change or a new terminal does not depend on the one terminal
+  holding the enrollment, and nobody has to re-enroll at a terminal for either. This
+  REVERSES the earlier rule "template bytes are never stored" (which existed because
+  bytes were only needed for duplicate detection, where a digest suffices). Built as
+  `FingerprintVault` filling `biometric_templates.template` (encrypted, APP_KEY) —
+  see `docs/enrollment-flow.md`. Migration
+  `2026_09_24_100000_store_fingerprint_copies_in_biometric_templates` **run on the
+  production SQL Server by the owner, 2026-09-24**. Copies are taken per person with
+  "Read to system" (roster row menu / edit form), after each enrollment read, and for
+  everyone with `sudo -u www-data php artisan device:read-templates` (read-only on the
+  terminals) — which had NOT yet been run when this was written.
+  **Open, owner:** (1) biometric data is sensitive personal data under Bahrain's PDPL —
+  consent and a retention period are the owner's to decide; (2) APP_KEY now protects
+  biometric data: back it up, and never rotate it without re-encrypting
+  `biometric_templates.template`, or every copy becomes unreadable.
+- **RULE 18 (owner, 2026-09-24): every page is live, no refresh ever.** Found that
+  the real-time layer was never running in production: **mosquitto is inactive and
+  `MQTT_WS_URL` is unset**, so every page "subscribed" through `useMqtt` was silently
+  static. Fix: `useMqtt` now falls back to polling `GET /api/live` (per-module stamps,
+  `LiveController`, ~60-70 ms on production data) every 4 s while the tab is visible,
+  and fires the same handlers with `payload = null`. All pages are subscribed,
+  including Employees, Devices, Device groups, Reconciliation, Holidays and Reports.
+  `useDeployedVersion` stops tabs running old builds unnoticed. **Open, owner:**
+  starting the broker (mosquitto + WebSocket listener + `MQTT_WS_URL`) would make
+  updates push-instant and cut the polling; it is an infrastructure change for the
+  owner. Until then the fallback is the live carrier.
+- **DECISION (owner, 2026-09-24): "push on save" is a company SETTING, off by default.**
+  The owner asked that every save push to all of a person's terminals automatically.
+  Removing the "Push now" prompt outright was refused by the assistant's safety check
+  (an edit to one field would then write to every listed terminal with no stop), so it
+  became `employees.auto_push_on_save` (`TenantSettings`, `settings` table), switched
+  on knowingly by an administrator via the switch on the Employees page, with a
+  confirmation. Removals always ask. Automatic copying of FINGERPRINTS to other
+  terminals was not built: fingers reach other terminals by enrolling there or via
+  ZKAccess.
+- **C3 panels CAN be written (2026-09-24).** Owner insisted ZKAccess changes every
+  device; research found the write protocol (plcommpro.dll + xub/zkaccess-c3-py fork)
+  and that the fork's hard-coded field ids would corrupt OUR panels. Library 2.9.0
+  builds writes from each panel's catalogue. Owner-approved test on Entrance (TF1700):
+  add + delete of test user `zk-test` (Pin 99999991) succeeded, nobody else touched.
+  Then moved `zk-test` 99999991 → 99999992 with its door permission
+  (`Panel::moveUser`), verified, cleaned up — the panel gave it a new UID (287 → 296).
+  Then the fingerprint part: the full move (user + doors + fingerprints under the NEW
+  UID) passed on BOTH panels with a test user and a placeholder template. **The
+  Personnel-ID change is now ON for Glass Door and Entrance** (`user.renumber` per
+  panel); names/cards there remain ZKAccess's. Push / Save → the C3 panels get the ID
+  move only. **First real move, 2026-09-24 ~14:11 UTC:** Ghassan (1404) 656 →
+  830108246 on Glass Door and Entrance via the Push dialog; read back on both with
+  finger slot 6. **Owner confirmed it works at Glass Door** → `user.renumber` =
+  `confirmed` on Glass Door (inBIO460). **Open, owner:** try Ghassan's finger/card at
+  Entrance, then promote the TF1700 the same way.
+- **GOAL (owner, 2026-09-24): this app replaces ZKAccess entirely.** Remaining gaps
+  after 2026-09-24, in the owner's words "I don't want to need ZKAccess":
+  (1) ADDING a person to a C3 panel (Glass Door, Entrance) — only moving an existing
+  person's ID is built; (2) ENROLLING a fingerprint for a C3 panel — the panels do not
+  capture enrollments themselves (ZKAccess uses a USB reader or a standalone terminal,
+  then writes the fingerprint to the panels); (3) names and cards on C3 panels.
+  Work on (1) and (2) was stopped by the assistant's safety check in the 2026-09-24
+  session and was NOT built; nothing was sent to a panel for them. **Open, owner:**
+  how to take these forward.
+- **Automatic attendance sync (2026-09-24).** Found: NO cron runs `schedule:run` on
+  this server, so nothing scheduled has ever run — attendance only arrived when someone
+  pressed sync (Glass Door last read 2026-09-15, Entrance 2026-09-20). Also the hourly
+  job was ZKTeco-only, and a second schedule queued a full read on every terminal every
+  5 minutes. Now `routes/console.php`: one hourly sync for binary AND c3 terminals,
+  skipping any terminal with a sync still queued/running; the 5-minute job unscheduled.
+  **Operational fact:** the scheduler needs this crontab line for www-data —
+  `* * * * * cd /var/www/zkt && php artisan schedule:run >> /dev/null 2>&1` — which the
+  owner must add (server change). Once it runs, the device health check (every 5 min)
+  starts too.
+- **Observed, not investigated:** 2026-09-24 09:49 UTC a user write to Camelot
+  (device 12, uid 1, user id "1") was refused with reply **4994**, a code the library
+  does not name. Nothing was changed on the terminal.
+- **Open, owner:** the permission-cache 500 (`cache_key_primary` on SQL Server, 9 hits
+  2026-09-23/24) — fix proposed (`config/permission.php` store → `file`), not applied;
+  the change was blocked as a production deploy pending the owner's go-ahead.
+
+
+### 2026-09-23 — Terminal user ID following the employee code: built, REFUSED by the F18, hidden
+
+Owner asked for a changed employee code to reach the terminal. First decided "no", then,
+after seeing IT Room still show `960802797`, **decided yes, as an explicit option**: the
+post-save push prompt offers "Change user ID X → code?" per terminal. Flow and guards in
+`docs/enrollment-flow.md`; capability `user.renumber` in `docs/device-capabilities.md`.
+
+Why rewrite-in-place and not delete-and-recreate: template upload is `not_implemented`, so
+recreating would destroy fingerprints. Rewriting the same `uid` should keep them (the
+template table is keyed by uid) but **has never been run on any terminal**, so the library
+verifies fingers after the move and throws if any are lost.
+
+- **Library** `/var/biometric-protocol`: `UserService::renumber()`, `Capability::USER_RENUMBER`,
+  CHANGELOG `2.7.0`, `tests/Unit/UserRenumberTest.php`. Committed 2026-09-24 as library `2180866` (not tagged) — and
+  that working tree also holds someone's earlier uncommitted C3 changes (`Panel.php`,
+  `Command.php`, `C3CommandNumbersTest.php`, the 2.6.0 CHANGELOG entry), left untouched.
+- **App**: contract `renumberUser()` on all four drivers; `renumberEmployee()`;
+  `assertPinFreeFor()`; propagate takes `to_employee_code`; second confirm in
+  `Employees.jsx`. 4 new feature tests; full suite 372 passing. **Not committed.**
+- **Next, owed by the owner:** first real run on a test user with one enrolled finger on
+  IT Room (F18, `192.168.7.62`) — e.g. `ali-it2`, PIN `960802797`, slot 5. If the finger
+  survives, promote `user.renumber` to `confirmed` for the F18 only (rule 15); the F22 and
+  Camelot stay `implemented` until each is run.
+- The Push row action (outside the edit form) does not offer the user-ID choice yet.
+- **Result, 2026-09-23:** IT Room answered ACK_ERROR moving `ali-it2` (uid 6) off
+  `960802797` to `000000005`, `5` (run by me with the owner's go-ahead) and `10055` (run by
+  the owner); the record was verified untouched each time. The F18 does not renumber an
+  existing uid. `user.renumber` is now `not_implemented` in `defaults()`, the prompt is
+  gated on it and never shows. The "Next" bullet above is moot. Terminal user IDs stay as
+  they are unless template upload is ever built (delete + re-create + re-upload).
+
+### 2026-09-23 — Edit-form push refused the slot's own owner (SQL Server string ids)
+
+Owner renamed `ali-test` to `ali-test2` (employee 1414) and pushed to IT Room. The push was
+refused with "slot 960802797 already holds ali-test, who is not claimed by this
+employee", even though the mapping and the roster entry both said 1414 owns it. Cause:
+`DeviceIdentityResolver::slotBelongsTo()` compares `claimed_employee_id === $employee->id`,
+and SQL Server returns the column as `"1414"`. That's the same class of bug as the
+`attendance:reattribute` one below. Fixed by casting the key columns to integer on
+`DeviceRosterEntry` and `EmployeeDeviceMap`, which also covers
+`DeviceAdoptionController`'s `device_id ===` checks, which had the same latent 404.
+Regression test: `test_ownership_keys_are_integers_whatever_the_driver_returns`.
+**Any model whose integer columns are compared strictly needs the same casts.** SQLite
+tests cannot catch this.
+
+Same session (committed on `employees` 2026-09-24, not pushed):
+
+- The employee edit form **asks** "Push now / Not now" after a successful save
+  instead of pushing automatically. Create still pushes directly.
+- The enrollment and detail dialogs open on a terminal the employee is enrolled on,
+  not on whichever terminal is first in the list.
+- **Typed card numbers**: `PUT employees/{e}/devices/{d}/card`, via a new contract
+  method `BiometricDeviceDriver::setUserCard()`. It is DOCUMENTED, not yet CONFIRMED
+  on any hardware. See docs/enrollment-flow.md, "Writing a card by number".
+- `0xFFFFFFFF` is shown as "Probably no card" instead of as a card number.
+- **Typed card entry CONFIRMED** on IT Room at 11:30 UTC (card 2862247 read back).
+  ali-test2's `access_cards` history was corrected by hand to match.
+- **Fixed:** an undecodable re-read no longer erases known fingerprint slots, and
+  "Read from device" now updates the terminal's row. ali-test2's IT Room slots are
+  still null in the database because the wipe happened before the fix. One
+  successful Read from device restores them.
+- **Card scanning back, behind a safety net** (it was withdrawn and restored the same
+  day, at the owner's request). Over 15 attempts before the net it recorded 2862247 once,
+  `942683705` twice (`0x38303639`, ASCII "9608", the start of the PIN) and
+  `0xFFFFFFFF` the rest. Tapping card 2862247 on IT Room wrote `0xFFFFFFFF`
+  onto ali-test2. The library's `captureCard()` takes the first realtime event of
+  any type as the card and never reads back. The net now undoes non-card results on
+  the device. That also most likely explains the 2857525 → `0xFFFFFFFF` change seen
+  at 11:09.
+- **Open, owner:** run `php tools/zkprobe/f18-card-event.php 192.168.7.62 60` at
+  IT Room and tap card 2862247 twice. The probe is read-only. The library fix and
+  version bump are approved and wait on its result. See docs/device-capabilities.md, "`card.enroll` — WITHDRAWN".
+
+### 2026-09-23 — Attendance sync had been failing on SQL Server since 2026-09-21
+
+Reported by the owner as a failed `sync_attendance` on IT Room (command 67). Two
+separate faults in one message:
+
+1. **Every sync failed**: `insertOrIgnore` does not exist on SQL Server. Replaced with
+   a no-op `upsert()` on the same unique index, plus per-batch de-duplication and
+   chunks sized under SQL Server's 2,100-parameter limit — see
+   `docs/attendance-sync-flow.md`, "SQL Server broke that path". IT Room's newest
+   stored punch was 2026-09-16; the devices still hold everything, so a sync recovers
+   it. **Uncommitted** on branch `employees`.
+2. **The failure could not even be logged**: `storage/logs/device-2026-09-23.log`
+   (and the 15th and 21st) were owned by `root`, because `php artisan` / `tinker` had
+   been run as root and created them; the worker runs as `www-data`.
+   `chown -R www-data:www-data storage bootstrap/cache` fixed it.
+   **Operational fact: run artisan here as `sudo -u www-data php artisan …`**, or
+   chown afterwards — a root run on a new day re-creates the trap.
+
+Worth checking by whoever picks this up: anything else written for SQLite that
+SQL Server rejects. A grep for `insertOrIgnore` now finds none in `app/`.
+
+Follow-up the same day: after the sync, IT Room showed punches from PIN `960802797`.
+A roster re-read (read-only) found it is **`ali-test`**, added on the terminal between
+2026-09-15 and 2026-09-22, carrying **Mohamed Zaraei's card `2857525`** (employee 1320,
+PIN 690 on Glass Door and Entrance). Decided back and forth with the owner on
+2026-09-23; the FINAL state is:
+- **ali-test is a different, current person** (not Zaraei) who now carries card
+  `2857525`. On the owner's instruction a new employee **"ali-test" (id 1414, code
+  960802797)** was created and roster entry 712 claimed for it (map 2112); its 4
+  punches (2026-09-22 x2, 2026-09-23 x2) are attributed to it. IT Room has 0
+  undecided entries again.
+  A mistaken claim for Zaraei (map 2111) was DELETED, not closed — closing would have
+  left those punches on him — and `attendance:reattribute` cleared them.
+- **Mohamed Zaraei (1320) has left**: `is_active = false`, 221 punches kept. He is
+  still PIN 690 on Glass Door and Entrance; the owner will remove him there in
+  ZKAccess (the app cannot delete users on C3 panels), after which both rosters need
+  a re-read.
+- Nothing was written to any terminal from here. A delete of ali-test from IT Room
+  was prepared and **cancelled by the owner before it was sent**.
+
+`attendance:reattribute` had its own SQL Server bug: a strict `===` between an int
+and SQL Server's string ids reported 9,292 "changes" on IT Room where 3 were real
+(it would have rewritten same values). Fixed by normalising both sides to ?int.
+IT Room is `adopted` (since 2026-09-15 17:44), with 0 undecided entries.
+`sudo -u www-data php artisan tinker` fails (psysh cannot write `/var/www/.config`);
+use root and `chown -R www-data:www-data storage bootstrap/cache` afterwards.
+
+### 2026-09-23 — Employee form: Profile / Details / Access levels tabs (database only)
+
+Branch `employees`, **uncommitted** at the time of writing. The Add/Edit dialog gained
+three tabs modelled on the ZKAccess Personnel dialog. Owner's rule for the change: add
+only, change nothing that works. Every new field is **stored in this database only**;
+the terminal push still writes PIN and name and nothing else.
+
+- **Migrations were run on PRODUCTION** (SQL Server `192.168.7.8`, `NewAttendance`) on
+  2026-09-23 with the owner's go-ahead: `2026_09_23_100000_create_access_levels_tables`
+  and `2026_09_23_100100_add_profile_fields_to_employees`. Additive only. Needed
+  immediately because this app serves straight from the working tree — the new code
+  was live the moment it was saved, and the roster 500'd until the tables existed.
+  **Operational fact worth remembering: there is no deploy step here. Saving a PHP
+  file IS deploying it, and `vite build` IS deploying the frontend.**
+- **Trap found:** the valid-period columns were first named `valid_from`/`valid_to`,
+  which `employee_device_maps` already has; `DuplicateEmployeeFinder` filters on an
+  unqualified `valid_to` across that join and went ambiguous. `EmployeeMergeTest`
+  caught it. The columns are `access_valid_from`/`access_valid_to` instead; the one
+  migration was rolled back (columns empty) and re-run on production.
+- The reference file `_reference/EmployeeFormModal.reference.jsx` the owner mentioned
+  was **never on this machine**; the tabs were built from the written spec.
+- Second pass the same day, from the owner's full spec: photo upload/remove, a
+  read-only card number, a Fingerprints row that opens the existing Enroll dialog,
+  a count badge on Access levels, a fixed-height dialog with the terminal section
+  pinned on every tab, client-side validation mirroring the server, a "Manage
+  levels" dialog (access-level CRUD), and **per-terminal result rows with Retry**
+  after a save that pushed. The roster's five row buttons became one `ActionMenu`
+  (desktop and mobile, `employees/rowActions.js`).
+- **Deliberately NOT done from that spec, and why:**
+  - *Splitting `name` into first/last* — owner's later "add only" rule. `name` stays.
+  - *Sending password, privilege or card to terminals* — needs the owner's separate
+    approval; the push still sends PIN + name only.
+  - *Editable card number* — `card_number` is what a terminal reported and the
+    identity layer uses it as merge evidence; a typed value would pass for a reading
+    (rule 10). Shown read-only.
+  - *"USB reader" enrollment button* — the app has no USB enrollment; rule 9 says hide
+    what is not implemented rather than offer a "not available" button.
+  - *Department as a dropdown* — no departments exist and no employee uses one; the
+    existing free-text field is kept.
+  - *Datetime valid period* — kept as dates, per the owner's "start/end dates".
+  - *Privilege as 0/2/6/14 integers* — stored as names; the numbers are unconfirmed.
+- Multi-card groups have an API (`/api/multi-card-groups`) but no screen yet.
+
+**Open — owner (Ghassan) to decide:**
+1. Whether, and when, `device_password` and `privilege` may be written to terminals.
+   Writing `admin`/`superadmin` can lock people out of a terminal's menu. The numeric
+   mapping (user 0, enroller 2, admin 6, superadmin 14) was in the owner's draft but
+   is **not confirmed on any model here** and must be read off an F18 before use.
+2. Whether access levels should ever be written to the C3 panels (`userauthorize`),
+   which needs a confirmed write on Glass Door / the inBIO first (rule 16).
 
 ### 2026-09-23 — Working tree committed; `main` fast-forwarded to `camelot`
 
