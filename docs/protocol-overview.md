@@ -178,11 +178,15 @@ After `CMD_USER_WRQ`, `CMD_DELETE_USER` or a template delete, the device
 acknowledges the write and then discards it unless `CMD_REFRESH_DATA` (1013)
 follows. The ack is not a commit. Every write path in the library sends it.
 
-### Uploading a user with templates: SAVE_USERTEMPS (EXPERIMENTAL, 2026-09-24)
+### Uploading a user with templates: SAVE_USERTEMPS (2026-09-24; accepted by the F18)
 
 Transcribed from fananimi/pyzk (commit `f29709c1`: `zk/base.py`
-`HR_save_usertemplates` / `_send_with_buffer`, `zk/const.py`), never yet run
-against hardware here:
+`HR_save_usertemplates` / `_send_with_buffer`, `zk/const.py`). Accepted by the F18
+(IT Room) on 2026-09-24 (renumber) and 2026-10-11 (adding slot 6 to a user with none,
+using a template read off an inBIO460 — stored byte-identical). Whether the device
+REPLACES a user's template set or merges into it is still not known, so
+`TemplateService::addTemplates()` always sends the full set (existing + new). Never
+run on the F22 or Camelot:
 
 ```
 FREE_DATA (1502)
@@ -429,12 +433,66 @@ A chunk that fails to decode is kept as `['raw' => <hex>]` rather than dropped, 
 the caller can count and archive it. That is the mechanism behind the
 `undecodable` count on every sync run.
 
+**A chunk with an empty user id fails to decode (2.14.0, 2026-10-18).** A punch always
+names its user. On Camelot (F18, internet link) misaligned transfers produced chunks
+whose user id field was empty and whose stamp decoded to anything from 1999 to 2030 —
+2,876 were stored as punches before this check. A sample undecodable chunk from the same
+read (`attendance_raw_logs` 1288272) shows the next record (uid 0x1335, user "228")
+starting at offset 32 of the 40: whole fragments are missing or repeated in the stream.
+
+### Record counts — `CMD_GET_FREE_SIZES` (50) (CONFIRMED F18 + F22, 2026-10-18)
+
+The reply is little-endian int32s. Transcribed from fananimi/pyzk `read_sizes()`:
+
+| int32 index | field |
+|---|---|
+| 4 | users |
+| 6 | fingerprint templates |
+| 8 | **attendance records** |
+| 12 | cards |
+| 14 / 15 / 16 | finger / user / record capacity |
+
+`records` equalled a full attendance read on IT ROOM, Camelot, Good Wheels and On The
+Road (see `docs/device-capabilities.md`). `FreeSizesCodec`; fixture
+`tests/Fixtures/f18-free-sizes-itroom.bin` (92 bytes, IT ROOM).
+
+### Clearing the log — `CMD_CLEAR_ATTLOG` (15) (DOCUMENTED, never run)
+
+Erases every attendance record; the user, card and template tables are untouched.
+`AttendanceService::clearAll($expectedRecords)` (2.14.0) sends, in ONE session:
+`GET_FREE_SIZES` (refuse, sending nothing, if `records` ≠ what the caller stored),
+`CLEAR_ATTLOG`, `REFRESH_DATA`, `GET_FREE_SIZES` again (must be 0, or
+`VerificationException` — this firmware ACKs writes it drops).
+
 The 16- and 8-byte layouts are DOCUMENTED only; this hardware always sends 40.
 
-**Verify method values 3 and 4 are undecoded.** The schema comment documents
-0/1/2/15 (password / fingerprint / card / other) from published references, but
-this device emits 3 and 4 as well and we have no evidence for what they mean.
-They are stored verbatim rather than being mapped to a guess.
+**Verify method values — DOCUMENTED from the vendor (2026-10-11).** Stored verbatim;
+decoded only for display (`resources/js/spa/pages/attendance/parts.jsx`). Source: the
+`VerifyType` dictionary in ZKAccess 3.5.5's `Languages/language_en-US.xml` (owner's
+licensed install, `draft/extracted/`, gitignored): 0 Any, 1 Only Fingerprint,
+2 Personnel ID, 3 Only Password, 4 Only Card, 5 FP or PW, 6 Card or FP, 7 Card or PW,
+8–14 combinations, 15 Only Face, 16–20 face combinations, 21–24 finger vein,
+25–29 palm, 200 Others.
+
+This supersedes the earlier schema-comment set (0 password / 1 fingerprint / 2 card /
+15 face), which disagreed with the vendor on 0 and 2. Neither occurs on an F18 in
+this database.
+
+Cross-checked on the production data the same day: of 76 people with code-4 punches,
+74 hold a card; of 41 with code-1 punches, 11 do. Observed per terminal:
+
+| Terminal | Model | Codes seen |
+|---|---|---|
+| IT ROOM | F18 | 1, 3, 4 |
+| Camelot | F18 | 1, and 48–51 once each (**not in the dictionary — undecoded**) |
+| Good Wheels | — | 1, 3, 4 |
+| On The Road | F22/ID | 1, 3, 4 |
+| Entrance | TF1700 | 0, 6, 200 |
+| Glass Door | inBIO460 | 4, 6, 200 |
+
+Not confirmed by a controlled punch (an operator presenting a known credential and
+reading back the code). Until then this is the vendor's word plus a consistent card
+correlation, which is why the codes stay stored raw.
 
 ### Packed timestamp (`Codec\Timestamp`)
 
@@ -520,7 +578,7 @@ how that uncertainty reaches the UI instead of being hidden in a comment.
   offset rather than discarding the transfer; see `DeviceConfig::$bulkWindowRetries`
   and `docs/attendance-sync-flow.md`.
 - Fingerprint template decoding is unverified on any second device.
-- `verify_method` 3 and 4 have no known meaning.
+- `verify_method` 48–51 (Camelot, once each) are not in the vendor's `VerifyType` dictionary.
 - A successful fingerprint *capture* has never been observed end to end — it
   needs a person at the terminal, and every attempt so far ended in `timeout`.
 - Card `4294967295` (`0xFFFFFFFF`) appears on one real employee record. It is
@@ -546,6 +604,19 @@ loop, the per-model session difference, and where the knowledge came from are in
 
 It now has a driver (`app/Services/Devices/C3/C3Driver.php`) that reads attendance,
 users and templates. The probe is `tools/zkprobe/inbio460.php`.
+
+### The C3 clock — read and set (CONFIRMED inBIO460 and TF1700, 2026-10-11)
+
+```
+GET_PARAM (0x04)  payload "DateTime"                     → reply "DateTime=<packed>"
+DATETIME  (0x03)  payload "DateTime=<packed>"            → REPLY_OK, then read back
+packed = ((Y-2000)*12*31 + (M-1)*31 + (D-1))*86400 + h*3600 + m*60 + s   (LOCAL time)
+```
+
+Transcribed from vwout/zkaccess-c3-py (`consts.py` DATETIME = 0x03, `core.py`
+set_device_datetime, `utils.py` C3DateTime) — the same packed format as a transaction
+stamp. Both panels read ~650 s slow, were set, and read back exact (casebook DC-019).
+The panel stores no zone: the caller passes the device's zone both ways.
 
 ### Writing to a C3 panel — the command is known, the payload is not (2026-09-15)
 
@@ -596,3 +667,20 @@ overwrites people whose fingerprint templates cannot be restored from any backup
 Until one of those happens `user.write` stays `not_implemented` on C3, the UI keeps
 hiding it (rule 9), and a push to Entrance or Glass Door is skipped with *"this
 protocol cannot write users"* — which is the truth, not a failure.
+
+## The keypad password (2026-10-12, library 2.13.0)
+
+Standalone: `password(8)@3` of the 72-byte user record, NUL-padded ASCII. Read with the
+user table, written in the same `USER_WRQ` record as the name. Read CONFIRMED on the F18
+(IT ROOM, Camelot) and F22 (On The Road): every password the host app held equalled the
+terminal's. Write IMPLEMENTED, not yet read back on hardware. Before 2.13.0 every write
+sent zeros here and erased it.
+
+C3: the `user` table's `Password` field (string, field 4 on these panels). Read CONFIRMED
+on the inBIO460 (Glass Door) and TF1700 (Entrance), same comparison; written by
+`SET_DATA` in `Personnel::add/update`, IMPLEMENTED. `update()` carries the row's own
+Password over, so a name edit never erased it there.
+
+Trace: `tools/zkprobe/traces-2026-10-12/user-passwords-02.json` (counts and verdicts
+only — no value is ever written to a trace).
+

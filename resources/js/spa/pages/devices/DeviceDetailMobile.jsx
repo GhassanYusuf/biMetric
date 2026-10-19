@@ -25,9 +25,9 @@ const TABS = [
 ];
 
 export default function DeviceDetailMobile({
-    device, runs, commands, history, dispatching,
+    device, runs, commands, history, dispatching, watching = {}, resultOf = () => null,
     syncRunning, syncProgress, syncStalled,
-    canSync, onRefresh, onDispatch, onFullResync, onRangeSync, onRetryCommand, onCancelCommand, onBack,
+    canSync, canUpdate, onRefresh, onDispatch, onFullResync, onRangeSync, onRebuild, onClearPunches, onRetryCommand, onCancelCommand, onBack,
 }) {
     const [tab, setTab] = useState('runs');
     const caps = device.capabilities ?? {};
@@ -70,16 +70,16 @@ export default function DeviceDetailMobile({
             {canSync && (
                 <SectionCard title="Operations" subtitle="Queued — safe to close this screen." bodyClass="p-4">
                     <div className="grid grid-cols-2 gap-2">
-                        <Button variant="soft" loading={dispatching === 'sync_attendance'} disabled={busy} onClick={() => onDispatch('sync_attendance')}>
+                        <Button variant="soft" loading={dispatching === 'sync_attendance' || !!watching.sync_attendance} result={resultOf('sync_attendance')} disabled={busy} onClick={() => onDispatch('sync_attendance')}>
                             Sync punches
                         </Button>
-                        <Button variant="secondary" loading={dispatching === 'health_check'} disabled={busy} onClick={() => onDispatch('health_check')}>
+                        <Button variant="secondary" loading={dispatching === 'health_check' || !!watching.health_check} result={resultOf('health_check')} disabled={busy} onClick={() => onDispatch('health_check')}>
                             Health check
                         </Button>
-                        <Button variant="secondary" loading={dispatching === 'read_info'} disabled={busy} onClick={() => onDispatch('read_info')}>
+                        <Button variant="secondary" loading={dispatching === 'read_info' || !!watching.read_info} result={resultOf('read_info')} disabled={busy} onClick={() => onDispatch('read_info')}>
                             Read info
                         </Button>
-                        <Button variant="secondary" loading={dispatching === 'reconcile_users'} disabled={busy} onClick={() => onDispatch('reconcile_users')}>
+                        <Button variant="secondary" loading={dispatching === 'reconcile_users' || !!watching.reconcile_users} result={resultOf('reconcile_users')} disabled={busy} onClick={() => onDispatch('reconcile_users')}>
                             Reconcile
                         </Button>
                         <Button variant="secondary" className="col-span-2" disabled={busy} onClick={onFullResync}>
@@ -89,6 +89,19 @@ export default function DeviceDetailMobile({
                         <Button variant="secondary" className="col-span-2" disabled={busy} onClick={onRangeSync}>
                             Read a date range…
                         </Button>
+                        {/* Destructive, so devices.update, and only where the model can (rule 9).
+                            Same words as the devices list — parts.jsx clearPunchesConfirm. */}
+                        {canUpdate && device.capabilities?.['attendance.clear']?.usable && (
+                            <Button variant="secondary" className="col-span-2 text-rose-600" loading={dispatching === 'clear_attendance' || !!watching.clear_attendance} result={resultOf('clear_attendance')} disabled={busy} onClick={onClearPunches}>
+                                Clear punches from terminal…
+                            </Button>
+                        )}
+                        {/* Preview first; nothing is written until it is confirmed there. */}
+                        {canUpdate && (
+                            <Button variant="secondary" className="col-span-2" disabled={busy} onClick={onRebuild}>
+                                Rebuild from system…
+                            </Button>
+                        )}
                     </div>
                 </SectionCard>
             )}

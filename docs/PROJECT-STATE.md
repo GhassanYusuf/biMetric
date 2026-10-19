@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-09-24**
+**Last updated: 2026-10-19**
 
 ---
 
@@ -23,7 +23,7 @@ cannot see:
 | **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It is still **not a git repository**: no history, no tags, no remote. **The windowed-read protocol fix lives only there**, on this box's filesystem, outside every repository. This is still the worst of the three. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Everything through 2026-09-24 is **committed** on branch **`employees`** (branched from `camelot`) — **locally only**. No branch has been pushed; `origin/main` is still the first commit. `employees` is not merged into `main`. Pushing and merging are the owner's call. |
+| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Everything through 2026-10-19 is **committed** on branch **`employees`** (branched from `camelot`) — **locally only**. The 2026-09-25 → 2026-10-19 working tree was committed in one go on 2026-10-19 by Yousif; the library at `/var/biometric-protocol` (2.10.0–2.14.0) was **not** part of that and is still uncommitted there. No branch has been pushed; `origin/main` is still the first commit. `employees` is not merged into `main`. Pushing and merging are the owner's call. |
 | ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. On 2026-09-24 the working tree (2.7.0–2.9.0) was committed as `2180866` on `main`; **not tagged**. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
@@ -82,11 +82,227 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 
 ## Where we stopped
 
+### The scheduler was NEVER running until 2026-10-18 — cron now installed
+
+Found 2026-10-18 when the owner asked whether punches are read daily: they were not.
+No crontab existed for root or www-data, so `schedule:run` never fired — not the 05:00
+morning routine (clock set + range read of the previous and current day, DC-019), not the 02:30 fingerprint
+copies, not the 5-minute health check. Every sync since 2026-10-11 had been pressed by
+hand; the last one was 2026-10-15, Camelot's last attempt (2026-10-13) failed.
+
+Installed for www-data on 2026-10-18:
+`* * * * * cd /var/www/zkt && php artisan schedule:run >> /dev/null 2>&1`
+and queued a catch-up `sync_attendance` on all six terminals (commands 158–163).
+All six succeeded the same day: imported Good Wheels 112, On The Road 20, Camelot 122,
+Glass Door 51, Entrance 53, IT ROOM 32. Camelot again returned 17,203 of 42,352 records
+undecodable (archived raw — the known over-the-internet desync, see the 2026-09-14
+Camelot section); Entrance had 84 punches not matched to an employee.
+**Not changed:** `attendance.sync_enabled` stays `false` — the 05:00 morning routine
+(`devices.daily_read_enabled`, on) is the daily read the owner asked for; the separate
+`attendance.sync_schedule` full-table read would duplicate it.
+
+### Monthly Statement PDF (ZKTeco layout) — BUILT 2026-10-19, committed 2026-10-19
+
+Owner supplied `draft/OTR-SEP.xlsx` (gitignored, real staff) — the ZKTeco "Monthly
+Statement Report" the company files — and asked that our PDF carry the same data.
+Reports screen → **Monthly statement**; `GET /api/exports/monthly-statement`
+(`from`, `to`, `department_id`), `MonthlyStatement`, `pdf/monthly-statement.blade.php`.
+Same 17 columns, every calendar day, totals, Checked/Approved By. Built on
+`AttendanceSummaryService` (which now also returns `off_days`: punches on non-work days).
+
+Checked against the xlsx for OTR, 2026-08-20 → 09-21: **161 of 165 day rows identical**
+(In, Out, Work to the minute). The four differences: three 09/21 rows (the xlsx was made
+at 09:41 that day, before the Out punch) and Mohammad Hussain 08/31, where ZKTeco ignored
+a 06:42 punch we hold. Karthik 09/17 also differs: ZKTeco caps Work at 12:00 and moves the
+rest to OT2; we do not cap.
+
+**Totals deliberately differ** where ZKTeco's rules were wrong or absent: it counted
+15:00 Absent on every day without punches (Fridays included) and never computed
+Late/Early. Ours follow the company's **attendance rules, set on the Holidays screen**
+(2026-10-19): weekend, shift start/end, and the Late / Left early / Left late allowances,
+stored as `attendance.*` settings and read only through `App\Support\AttendanceRules`.
+Until somebody saves them they are the old defaults — 09:00–18:00, Fri+Sat off, 15 min —
+so OTR's ≈17:00 departures still print as ~1h Early. Open question 6.
+
+Max 60 people per statement PDF (dompdf ≈ 0.46 s/page; 40 people took 18.6 s). Above that
+it asks for a department. For everyone, the Reports screen's **All employees ▾ → Excel**
+(2026-10-19) writes the same statement as a workbook — `GET
+/api/exports/monthly-statement/excel`, `MonthlyStatementWorkbook`, block per person plus a
+Summary sheet, real dates/times/`[h]:mm` durations. 235 people: 3.4 s, 63 MB peak. Uses
+**`openspout/openspout` ^4.28 — a new composer dependency** (streams rows; PhpSpreadsheet
+would not fit 235 people in the 256 MB limit). `composer.json`/`.lock` changed, committed 2026-10-19.
+
+
+Owner asked for "an amazing PDF report for attendance", for management / HR, and chose
+both reports. Committed 2026-10-19; frontend rebuilt, so it is live.
+
+- **Company attendance report** — Reports screen → **Attendance report** (beside the
+  renamed **Payroll PDF**). `GET /api/exports/attendance-report`, `AttendanceReport`,
+  `pdf/report/attendance.blade.php`. Cover with KPIs vs the previous period, day-by-day
+  outcome columns, departments, arrival histogram, weekdays, "Needs attention" lists,
+  perfect attendance, no-punch list, everyone as appendix, definitions.
+- **Employee report, any period** — Employee Report screen → **Export PDF** opens a
+  range picker (presets for the previous and current calendar month, 30 days, or any dates).
+  `GET /api/exports/employees/{id}/report?from&to`, `PersonalReport`,
+  `pdf/report/employee.blade.php`: charts plus every punch of every day (terminal, method).
+- **Every employee's report as ONE PDF** — Reports screen → **Employee reports** (owner
+  chose one combined file over a ZIP). Built in the background by `BuildEmployeeReports`
+  in chunks of 6 so device commands interleave on the single worker; contents page, then
+  each person; joined with `pdfunite`. Live progress list on the Reports page,
+  notification when done, files kept 7 days. First real run: 132 people, September 2026,
+  68 s, 417 pages, 12.8 MB (run 3, left in place for the owner to download).
+  **Operational:** migration `2026_10_18_100000_create_report_exports_table` is APPLIED
+  to production; `poppler-utils` (pdfunite) is now a RUNTIME dependency — a new server
+  needs it; the queue worker was restarted (`queue:restart`) to load the job. Files are
+  written by www-data under `storage/app/private/report-exports/` — create it as root
+  and the worker cannot write (that failed the first run, 2026-10-18).
+- Shared: `App\Support\PdfCharts` (SVG charts; palette validated), `ReportFormat`,
+  `pdf/report/layout.blade.php`. Font subsetting on for every export (~800 KB → ~130 KB).
+- **Fixed for all five exports:** the footer said "Page 1 of 0" (dompdf ignores
+  `counter(pages)`); now drawn on the canvas.
+- Tests: `AttendanceReportTest`, `PersonalReportTest`, more in `ExportTest`; full suite 663 green.
+
+**Why rates exclude people with no punch at all:** on 2026-09 data 73 of 132 people had
+none (AVANA 18 of 20, Camelot 9 of 9, PROMOSEVEN parent 13 of 13…). Pooled, attendance
+read 35.1% instead of 78.6%, i.e. a terminal not syncing reported as mass absence. They
+are listed by name and the all-in rate is printed beside the headline, so nothing is
+hidden.
+
+**Open — owner (Ghassan), found while building it:**
+- **103 active employees have no hire date and have never punched**, so no report
+  counts them at all (the report says so). Add hire dates, or deactivate them?
+- **"Left early" is 51.5% of September's person-days.** The configured shift ends 18:00
+  (`ATTENDANCE_SHIFT_END`). If the real day ends earlier, that config is wrong, not
+  half the staff. Owner to confirm the shift.
+- **"Average minutes late" is inflated** (184 min company-wide in September): the shared
+  `stats()` counts a lone afternoon punch on a no-punch-out day as a late arrival. The
+  company PDF leaves that figure out; the Employee Report screen still shows it. Change
+  the definition for both, or keep it?
+- **Today counts while it is still happening:** a range ending today marks people not
+  yet in as absent and people not yet out as "no punch-out". Long-standing in the
+  summary service; the reports inherit it. Should the default range end on the previous day?
+
+### Clear punches, admin/normal user, action outcomes — BUILT 2026-10-18, app committed 2026-10-19
+
+Owner's requests the same day, all in the working tree (app) and `/var/biometric-protocol`
+(library **2.14.0**). The app was committed 2026-10-19; **the library is still not committed**. The frontend was rebuilt, so it is live.
+
+- **Clear punches from a terminal** (`AttendanceClearService`, `clear_attendance`,
+  `POST /api/devices/{id}/clear-attendance`, devices.update). Saves every punch first and
+  refuses unless the read matched the terminal's own count (`GET_FREE_SIZES`, decoded for
+  the first time and CONFIRMED on F18 + F22) and every record decoded; verifies the count
+  is 0 afterwards. Staff, cards and fingers untouched. ZKTeco only: `attendance.clear` I on
+  the F18, U on the F22. **Never run on hardware.** Why built: Camelot's 42k-record log is
+  slow and reads misaligned (DC-020).
+- **Admin / normal user per terminal** (`UserService::setPrivilege`, contract
+  `setUserPrivilege`, `PUT /api/employees/{e}/devices/{d}/privilege`, the employee dialog).
+  Owner chose this meaning of "change the access on the device". `user.privilege` I on the
+  F18, U on the F22, N on C3. **Never run on hardware.**
+- **Animated outcome on the control that was pressed** (owner chose "button + toast"):
+  `Button`/`ActionMenu` `result`, `useActionResult`, `waitForCommand`. Device pages now
+  follow a queued command to its END and report its own message; "Queued…" is an info
+  toast, not a success.
+- **Junk punches stopped at the door:** empty user id → undecodable (library); a punch
+  dated >1 day ahead → archived, not imported, never the watermark (app). DC-020.
+
+**Open — owner (Ghassan):**
+- **Camelot must not be cleared yet.** Its newest correctly read punch is 2025-11-13;
+  17,203 of its 42,352 records arrive misaligned, so ~a year of its punches exist here
+  only as raw bytes. The clear refuses on exactly that. Next: a read-only windowed read of
+  Camelot (the F22 method) to try for a clean read. Assistant can run it; it is read-only.
+- **First clear and first privilege change** are write probes (rule 16): which terminal,
+  when. IT ROOM would pass the clear's guard today (11,332 read = its count, 0 bad).
+- **The 2,876 junk Camelot rows** already in `attendance_logs` (blank user, dated
+  1999–2030, incl. the "2030 punch"): remove them? They are not real punches; deleting is
+  a production data change, so it waits for a yes. Back them up first.
+
+**Next session:** confirm the 2026-10-19 02:00 UTC morning run produced `sync_time` +
+range-read commands on every terminal (DC-023).
+
+### HR's five employee changes are LIVE, migration APPLIED (2026-10-12)
+
+From an email HR sent the owner: Company vs Department, job title as a short field,
+resigned, part-time, job title in the list. Also new: the Companies & departments page.
+Details in the session log below.
+
+Migration `2026_10_12_100000_add_employment_fields_to_employees` was **applied to the
+SQL Server database on 2026-10-12 at 07:58 UTC, with the owner's go-ahead**. All 235
+employees are `full_time`, and none is resigned. `Employee::hasEmploymentColumns()` stays
+in the code as a guard for any database that has not run it. Committed 2026-10-19.
+
+### Integration API `/api/v1` is BUILT, tested, and NOT DEPLOYED (2026-10-08)
+
+Owner asked for an API so other software can integrate: employee CRUD, remove from
+devices, trigger fingerprint enrollment, read attendance, "and anything I missed".
+Contract and rationale: **`docs/integration-api.md`**. 24 new feature tests; full suite
+515 passed.
+
+**Two migrations exist and have been run NOWHERE except in-memory test databases** —
+production (SQL Server) does not have them, and the new endpoints will 500 on it until it
+does: `2026_10_08_100000_add_external_id_to_employees` (filtered unique index on sqlsrv)
+and `2026_10_08_100100_create_webhook_tables`. `php artisan migrate` on this box asks for
+confirmation (production env) and was cancelled on purpose. **Owner's go-ahead needed.**
+Nothing is committed (standing arrangement for the `employees` branch).
+
+Decisions and the reasoning:
+
+- **Reuse over rebuild (rule 13).** Devices, commands, enrollment, departments, reports
+  point at the SPA's own controllers with ability checks added. Cost: those response
+  shapes are now an integrator-facing contract — see the maintainer note in the doc.
+- **Tokens are Sanctum tokens with abilities**, not an API-key table. A token only
+  narrows its user. Unattended software should get a dedicated least-privileged service
+  user (`php artisan integration:token`), so a leaver does not break the integration.
+- **Delete-and-remove deletes the row LAST** (`EmployeeOffboarding`): the removal commands
+  look the employee up by id, and deleting a person still enrolled on a terminal would
+  orphan a working door credential. A failed removal keeps the row, inactive.
+- **Punch webhooks read `attendance_logs` past a per-endpoint cursor** instead of hooking
+  the sync insert — bulk inserts raise no events and that path is calibrated (rule 15).
+  Batched (≤100/delivery) so a backfill cannot flood a receiver.
+- **Private-LAN webhook URLs are allowed**, loopback/link-local/metadata are refused (at
+  save and at delivery). The product lives on the employer's LAN; refusing RFC1918 would
+  defeat it.
+
+**Operational dependency worth knowing:** webhooks and every queued device call need a
+running queue worker, and backfilled-punch webhooks need the scheduler. This file already
+records that the scheduler units are not installed (live sync stopped 2026-09-27) — that
+is now also what would keep webhooks from firing.
+
+Not done, on purpose (listed in the doc §9): OpenAPI file, UI for tokens/webhooks,
+per-token IP/device allow-lists, a queued form of "assign card number" (the one
+synchronous device call in v1).
+
+Open for the owner: pick the deploy window for the two migrations; decide whether a
+tokens/webhooks screen is wanted.
+
+### ZKAccess legacy DB import is DONE (2026-10-06)
+
+The `10-06-2026.mdb` backup from the Windows host was imported into production and
+verified. Two-step pipeline: `scripts/export-zkaccess.ps1` (Windows, Access ODBC,
+no mdbtools/java) dumps one canonical `zkaccess-export.json`; `php artisan
+zkaccess:import file.json --apply` merges it under Tenancy. Full design and
+results: `docs/change-log-or-roadmap.md` → "The legacy ZKAccess database is
+importable".
+
+Applied: 7 departments created, 20 employees created, profiles filled (cards
+6→154, gender 42→98 — the measured fill rates), 673 attendance rows inserted
+(attendance_logs = 145,616 through 2026-10-06 11:18 UTC). Re-running converges to
+0/0.
+
+Importer is in `app/Services/Import/ZkaccessImportService.php` +
+`app/Console/Commands/ZkaccessImportCommand.php`, covered by 18 feature tests.
+Unique behaviour vs live sync: it cannot use `insertOrIgnore` (SQL Server rejects
+it) and must stay under SQL Server's 2100-bound-parameter ceiling — chunk = 200,
+dedupe in memory.
+
+Next, unchanged: install the scheduler units (live sync stopped 2026-09-27; the
+~10-day hole is now bridged by this import), then modal scroll fixes, settings
+nested payloads, `DeviceTimezoneController` scoping.
 ### Reporting: PDF exports and a Reports screen shipped (2026-09-14)
 
 Done, tested, committed 2026-09-23: three PDF exports, the attendance row → employee
 dialog, a `/reports` screen, and a timezone fix to the attendance date filters.
-See the session log for what each one covers.
+See the session log for what each one covers. Two visual reports were added on
+2026-10-18 (committed 2026-10-19) — see "Attendance report PDFs" above.
 
 Open, in order of how much it matters:
 
@@ -270,6 +486,66 @@ Files changed there this session, for whoever reconstructs it:
 Version was **not** bumped: the package has no `version` field and no tags to bump
 from in this location. It needs doing once the repository question is settled.
 
+### ⚠ The production database was EMPTIED again, login only (2026-09-27)
+
+On the owner's instruction (session of 2026-09-27: *"delete every thing in the tables
+just keep the user and password for login"*), `NewAttendance` on `192.168.7.8` was
+emptied. **Not committed as data — there is nothing to commit; the migration below is
+uncommitted in the working tree.**
+
+- **Kept:** user 11 (`g.yusuf@promoseven.com`, role `tenant-admin`), tenant 1
+  "Default Company", and `roles` / `permissions` / `role_has_permissions` /
+  `model_has_roles` (the user's one assignment). `migrations` untouched.
+- **Emptied:** everything else — including tenant 2 "Acme Industries", all 6 devices,
+  356 employees, 151,673 attendance logs, 77,790 raw logs, **578 fingerprint
+  templates**, 725 device maps, 29 cards, 2,712 audit rows, settings, sessions, tokens.
+  No table was dropped; every table still backs working code.
+- **Terminals were not touched.** Their users and templates are still on the devices.
+  To bring data back, re-add the terminals and re-read them; whatever has rolled off a
+  terminal's log buffer exists only in the backups.
+- **Backups, both taken and checked before the wipe:**
+  - SQL Server, COPY_ONLY, `RESTORE VERIFYONLY` passed:
+    `C:\Program Files\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQL\Backup\NewAttendance-pre-wipe-2026-09-27.bak`
+    (90 MB) on the DB server.
+  - Per-table JSONL on this box, row counts verified against the live tables:
+    `storage/app/backups/pre-wipe-2026-09-27/` (64 MB, git-ignored — **this box only**).
+- **`job_batches` dropped** by `2026_09_27_100000_drop_job_batches_table.php`
+  (never held a row; nothing uses `Bus::batch()`). Committed 2026-10-19.
+- **National IDs removed entirely** (owner, same session: *"remove national id column
+  from the table and from the database too"*). Gone: the Employees column and its
+  "missing" banner, the filter, the form field, the Attendance "look up by national
+  ID" box, `PUT employees/{id}/national-id`, `POST employees/lookup`,
+  `PersonNationalId`, `docs/sql/national-id-lookup.sql`, and in the database
+  `person_national_ids` + `people.national_id` / `national_id_hash`
+  (`2026_09_27_110000_drop_national_ids`, run on `NewAttendance`; both tables were
+  empty). `people` and `employees.person_id` stay; `staff:import` ignores a
+  `national_id` column. **Consequence:** nothing links sister-company employments to
+  one Person any more — if that is needed again, `hrms_person_id` is the remaining
+  key. Committed 2026-10-19.
+
+### After the 2026-09-27 wipe: all six terminals read back, 366 employees (2026-09-27)
+
+- **Owner re-added IT Room from the UI** at 12:23 as device **15 "IT ROOM"** (192.168.7.62)
+  and imported its 19 users. The other five were **restored as configuration** from
+  `storage/app/backups/pre-wipe-2026-09-27/devices.jsonl` (owner chose "re-read the
+  terminals"): Good Wheels (5), On The Road (11), Camelot (12), Glass Door (13), Entrance
+  (14), plus group 4 "Promoseven Holdings" (shared PIN namespace, now 11 13 14 15). The
+  restore briefly duplicated IT Room as device 2; it held nothing and was **deleted on
+  the owner's instruction**.
+- **Rosters read, read-only**, then per terminal: `device:suggest-claims --apply` against
+  existing employees, `device:import-roster` for the rest. Entrance was imported (307) and
+  **Glass Door and On The Road were claimed BY PIN to the group's employees** (85 + 7),
+  on the group's recorded evidence that one PIN is one person across .60–.63 — importing
+  them would have duplicated 320 people. Good Wheels (18) and Camelot (22) are not in the
+  group and were imported. **366 employees, 0 unclaimed roster entries.**
+- **Attendance synced** (commands #81–#86): 144,940 punches, **88,092 attributed**. Every
+  unattributed punch is from a PIN on NO current roster (Glass Door 72 PINs, IT ROOM 62,
+  Entrance 12, On The Road 10) — people removed from the terminals, most likely leavers.
+  Camelot again desynchronised: 24,986 records undecodable, archived raw.
+- Employees came from device name fields, not HR: names are as typed on the terminals
+  ("akram", "ali-it"), no departments, no hire dates. The HR staff import is still the
+  real source (see below). All terminals remain `read_only`.
+
 ### ⚠ Device identity rebuilt, and the production database was WIPED (2026-09-15)
 
 **Committed 2026-09-23** on `camelot` (and fast-forwarded into local `main`), together
@@ -389,10 +665,511 @@ wrap all exist already.
    conservative default, not legal advice.
 5. **Hosting.** Where the library repo lives, and which private Composer registry
    (Private Packagist, self-hosted Satis, or plain git access per licensee).
+6. **Do the rules differ by department, and do they need history?** Since 2026-10-19
+   the weekend, shift and indicator allowances are settable on the Holidays screen, but
+   as ONE set for the whole company, applied to every past period too (reports
+   recompute; there are no dated versions). Nobody has entered OTR's real hours yet
+   (≈07:30–17:00, Sat–Thu by the ZKTeco file). Overnight shifts are refused.
+   **Owner (Ghassan) to answer and enter the values.**
 
 ---
 
 ## Session log
+### 2026-10-19 — Working tree committed on `employees`
+
+Owner asked for everything on `employees` to be committed, recorded as committed by
+Yousif. Every change since `33c5262` (2026-09-24) went into one commit ("Committed by Yousif on 2026-10-19"): 545 files (most of the new ones are `public/flags/` SVGs). The
+library in `/var/biometric-protocol` was not touched and is still uncommitted there.
+Nothing pushed. Session-log entries below that say "uncommitted" describe their own date.
+
+### 2026-10-19 — "All employees" dropdown: PDF or Excel; report files clean up daily
+
+Owner: "make the report a drop down button with option of exporting all employees PDF or
+all employees Excel". The Reports screen's "Employee reports" button is now **All
+employees ▾** — PDF (the existing background build) or Excel (Monthly Statement workbook,
+synchronous). Added `openspout/openspout`. Then (same day) "the export option must be in
+/app/attendance": the Attendance screen's export is now **Export ▾** — These punches · PDF,
+and (with reports.view) All employees · PDF / Excel — via the shared
+`shared/useAllEmployeesExport.jsx`, which the Reports screen uses too. Also: employee report files are now pruned
+daily at 03:15 UTC (`report-exports-prune`) — before, only when a new export started —
+and each file has a Delete button (`DELETE /api/exports/employee-reports/{id}`).
+
+### 2026-10-19 — Attendance rules (weekend, hours, indicators) on the Holidays screen
+
+Owner: "in this section /app/holidays I need to set the weekend days so attendance can be
+accounted accurately", then "all kinds of indicators like late, left late". Added an
+Attendance rules card: weekend toggles (save on press) and a form for shift start/end,
+Late allowance, Left-early allowance and Left-late threshold (was one shared 15-min
+grace). `GET/PUT /api/holidays/rules` (holidays.view / holidays.manage), settings
+`attendance.work_days|shift_start|shift_end|late_grace_minutes|early_leave_grace_minutes|
+leave_late_after_minutes`. `AttendanceRules::current()` replaced every read of
+`config('attendance.shift_*|grace_minutes|work_days')`; SummaryBatch carries one snapshot
+so a report is judged by one set of rules throughout. Defaults equal the old config, so
+nothing moved until someone saves. Live via the `holidays` stamp (`attendance.%` settings).
+
+### 2026-10-19 — Monthly Statement PDF in the ZKTeco layout
+
+Owner shared `draft/OTR-SEP.xlsx` ("the attendance format they are using in our company")
+and asked that the export PDF have the same data. Decoded the sheet (no Python xlsx
+library on this box; parsed the XML directly), confirmed our stored punches for the five
+OTR staff match it minute for minute, and built the statement on the summary service
+rather than a second computation. See "Where we stopped" for the comparison and the
+shift question it raised.
+
+### 2026-10-18 — Every employee's report for a period, as one PDF
+
+Owner: "sometimes we are asked to export the report for all the employees for one month
+or for a specific period … the report of a single person fancy and colourful with charts
+and the punch data in a table". Chose one combined PDF and a per-day table listing every
+punch. Single-person export now takes any range; bulk runs in the background (see "Where
+we stopped"). `EmployeeReportPdf` was replaced by `PersonalReport`, which builds one person
+or a chunk with the same code. First worker run failed on a root-owned storage folder and
+showed the per-person catch also swallowed disk errors — both fixed, rerun succeeded.
+
+### 2026-10-18 — Attendance report PDFs (company + employee)
+
+Owner: "now I need to make an amazing pdf report for attendance" — for management / HR,
+both a company report and the employee report as PDF. Built on the existing summary
+arithmetic, no second source of truth; see "Where we stopped". dompdf findings: SVG arcs
+and CSS gradients do not render, `counter(pages)` is always 0 (fixed for all exports),
+no GD on the box. `poppler-utils` installed on this machine to look at rendered pages
+(`pdftoppm`). Real-data findings went to the owner as open questions.
+
+### 2026-10-18 — Daily punch read was never running; cron installed; clear punches, privilege, outcome indicator
+
+Owner: "I thought you read punches every day. This is a big problem for us." Cause:
+no crontab line for `schedule:run`, flagged as owner action since 2026-09-24 and
+never done. Installed it for www-data and queued catch-up reads (commands 158–163).
+See "Where we stopped". Same day, owner's follow-ups built (uncommitted): clear punches
+from a terminal (guarded by the terminal's own count), admin / normal user per terminal,
+and the button + toast outcome indicator; junk-punch guards for DC-020. Found that the
+"2030 punch" is one of 2,876 misaligned Camelot records, not a clock fault.
+
+### 2026-10-12 — HR's email: Company › Department, job title, resigned, part-time, phones
+
+Five changes from an email HR sent the owner, plus three the owner added after:
+
+1. **Company and Department are two columns** in the list (desktop and mobile), from
+   the tree that went in on 2026-10-11 (`EmployeeResource.company` = the top of the
+   branch). In the form, the free-text Department box is gone. It has two searchable
+   dropdowns now, Company and then the Department under that company. Whoever has
+   `departments.manage` can add a company or department straight from either dropdown
+   (owner: "the people who manage the system here" supply the names). Saving
+   `department_id` rewrites the free-text `department` column to the node's name, unless
+   the same save sets the text itself (the ZKAccess import does), so the reports and
+   exports that print the text stay in step.
+2. **Job title** was a multi-line box; now a one-line field. The data was always short
+   (27 people, longest 37 chars). It is also in the list and searchable.
+3. **Resigned** is `resigned_at` (a date, today or earlier). Owner's answer: *yes, take
+   them off the system.* Setting it makes them inactive (model hook), moves every
+   writable terminal off the form's list so the save removes them through the usual
+   confirmed, credential-saving `removeEmployee()` (rule 19), and locks the terminal
+   picker. Via `/api/v1` it queues `REMOVE_USER` per live mapping
+   (`EmployeeOffboarding::takeOffTerminals()`, extracted from delete-and-remove). Both
+   push endpoints refuse a resigned person (409). The list hides them unless the
+   Status filter says Resigned or Everyone. **Why a date and no future dates:** reports
+   need their attendance up to the last day. Nothing runs on a schedule to remove
+   someone later (the scheduler is not installed), so a date in the future would remove
+   them during their notice period.
+4. **Part-time** is `employment_type` (`full_time`/`part_time`). Owner: it changes no
+   attendance calculation, so it is a label and a badge. It is a code rather than a
+   boolean so that contract or intern can be added later without a migration.
+5. **Phones and country** (owner's addition): Country is a searchable dropdown with flags.
+   Each phone field is a calling-code picker with a flag next to the number box, and is
+   stored as `"+973 33445566"`. Country is stored as the English name, the same free
+   text it always was. Flags are flag-icons 7.5.0 (MIT), copied to `public/flags/4x3`
+   (271 SVGs, 2.7 MB, loaded lazily; emoji flags do not render on Windows). The country
+   and calling-code list was generated once from libphonenumber-js 1.12.10 into
+   `shared/countries.js`, so there is no runtime dependency. An empty phone field
+   starts on Bahrain (`DEFAULT_COUNTRY`), or on the employee's own country if one is
+   set.
+
+New shared component `shared/Combobox.jsx` (Headless UI, already a dependency): a
+dropdown you can type into. Escape closes the list without closing the dialog. Tests:
+`EmployeeEmploymentTest` (7). Full suite 601 passed. Migration not run, see "Where we
+stopped". No device code touched; the removal path is the existing one.
+
+**Fixed the same day after the owner reported "the inputs broke and it got slower".**
+Two causes. (1) The Profile tab's field grid flows down and then across, and was fixed
+at `grid-rows-[repeat(6,auto)]`, which held exactly the 12 fields it had. Four new
+fields spilled into a squashed third column. It is now 8 rows when editing and 7 when
+adding. (2) SQL Server returns `department_id` as a string (`"4"`), so strict
+comparisons with numeric ids failed: the Department column repeated the company and
+the Department box opened empty. The resource now casts it, and the screens compare
+with `Number()`. The phone code and number are now one box, and the dialog is
+64rem wide. Checked in Chrome: page loads in about 0.4 s with every API call under
+0.2 s; the form shows two columns; dropdowns open over the dialog; Escape closes only
+the dropdown; the country search shows flags. The single slow load the owner saw
+(3.6 s for the list) coincided with a SQL Server handshake error in the log at 07:44
+and did not happen again. The list query itself takes about 90 ms, before and after
+this change.
+
+**Companies & departments page** (`/app/organisation`, sidebar → Company → Companies;
+owner's request the same day). Every company is a card listing its departments with
+head counts. Whoever has `departments.manage` can add, rename and delete companies,
+and add, rename, move and delete departments. It uses the existing `/departments` API.
+Two server rules were added for it: a company or department that still has people or
+departments in it cannot be deleted (409), because soft-deleting it would leave people
+pointing at a node no screen lists; and a rename rewrites the employees' free-text
+`department` where it still held the old name. A company is never turned into a
+department here. Checked in Chrome against the real data; nothing was created.
+
+**Faster saves and a per-terminal queue** (owner, the same day; casebook DC-021). Saves
+took 20–40 s because every save pushed to and read back from every terminal the person
+was on. The form now writes only to terminals that are out of date, so a save that
+changes no name, ID, card or fingerprint is instant. Every device call in the app now
+waits in line per terminal (`DeviceDriverManager::exclusive()`, 60 s, then "busy").
+**Keypad passwords** (owner: push them and read them; casebook DC-022). Built through
+library **2.13.0** (in `/var/biometric-protocol`, **not committed or tagged there**).
+Reads are live: every roster read now captures a password only the terminal had
+(proven on all four models; 11 of 11 equal). The bug found on the way is fixed: every
+standalone write used to erase the password, and now keeps it. **Writing the system's
+password is held back** until `tools/zkprobe/user-password-write.php` has run on each
+model with a temporary test user. **The owner owes that go-ahead.** Known gap: clearing a
+password in the system does not clear it on a terminal.
+
+**Full copy run, 2026-10-12 ~08:55 UTC** (owner: "always keep a copy in the system").
+`SYNC_ENROLLMENT` queued on all six terminals (commands 136–141, all succeeded,
+read-only on the terminals). Passwords held 5 → 7; cards and fingerprint copies were
+already complete for linked employees (131 cards, 444 templates for 173 people).
+**Found:** `schedule:run` has never been in cron, so the nightly copy job
+(`fingerprint-copies-nightly`, 02:30) has never run on its own — **owner's go-ahead
+needed to install it**, which also starts the hourly attendance sync, the 5-minute health
+check and the 05:00 clock sync (a write). **Gap:** 122 terminal records linked to no
+employee (120 on Glass Door and Entrance, 2 on On The Road): their card is kept on
+`device_roster_entries`, but not their templates or password. Covering them needs columns
+on `biometric_templates` and `device_roster_entries` — owner's call.
+
+### 2026-10-11 — Rule 21: a method per model; save moves the ID on every model that safely can
+
+Owner: every model has its own method for the same action; don't fix one model by
+breaking another; build a methodology per model (ID, name, card, fingerprints).
+Done: **CLAUDE.md rule 21**, **`docs/device-models.md`** (estate + per-model method
+tables), library **2.11.0** per-model standalone sets (`src/Model/`), selection in
+`ZktecoDriver`, `tests/Unit/DeviceModelMethodologyTest.php` pinning every model's
+levels. Good Wheels identified read-only as **F18/ID, firmware Ver 6.60 Oct 12 2021**
+(stored). The F22 no longer inherits the F18's fingerprint write (casebook DC-015).
+The F18 now moves a user ID by re-adding (card, fingers AND admin privilege restored);
+a model that can't do it safely refuses before deleting (DC-014).
+
+**Later the same day (owner chose "option 2: buttons I press"):** a red push row now
+offers its fix — **"Free <number>"** (a number held by a record no employee was ever
+linked to: record + fingerprints saved encrypted to `storage/app/private/removed-records/`,
+then removed) and **"Test fingerprints"** (first fingerprint write on a model that never
+did one: adds ONE held finger to someone missing it; unlocks that terminal only). The
+move's pre-check and its claim are now one check (a move could have deleted someone and
+then failed to re-add them). Claude Code permission rules were added for this project in
+`.claude/settings.local.json` (not committed; local to this machine). Casebook DC-014.
+
+**Done 2026-10-11 ~13:50 UTC (owner: "ali-it and Ali are the same person"):** "Same
+person" merge built (duplicate's fingers into the employee's account, punches credited,
+then deleted, then the system's data pushed). ALI MOHAMED is now ONE record —
+960802797, card 7511517, fingers 6 and 7 — on IT ROOM, On The Road, Good Wheels, Glass
+Door and Entrance; every "ali-it" and 654 is gone; 42 old IT ROOM punches are his. The
+F22 passed its first fingerprint write (temporary test user) → `template.upload`
+implemented in `Model\F22`. Good Wheels took its first writes. Casebook DC-014 (FIXED).
+IT ROOM's "ali-it" had been deleted outside the app before the merge, so its finger 5
+was lost.
+
+**Also 2026-10-11:** Yusuf's finger matched a duplicate "yusif" (695) on both door
+panels — same template on two records; merged, 881 old punches credited to him (DC-016).
+"Abdul" (21) proved to be Abdul Haq (both fingers byte-identical; ID hand-over within a
+minute on 2026-09-24) — merged, 3,458 old punches credited to him (DC-018). That exposed
+a TF1700 behaviour: an edit can re-insert a user under a NEW UID, leaving the fingers on
+the old one — library 2.11.1 re-links them; Abdul Haq and Ali Husain repaired on Entrance;
+both door panels now have every fingerprint on its owner's UID. **"Rebuild from system…"** built on the device page
+(preview → punches → full encrypted backup → one queued update per person → optional
+removal of unlinked records → read-back; DC-017). Previewed on all six terminals; not
+yet run on any. **Clocks (DC-019):** IT ROOM, On The Road, Glass Door and Entrance were
+~10¾ min slow — reset that way by something outside the app since 2026-10-05 (likely a
+ZKAccess PC); all six set and read back within seconds; door-panel clock read/write
+added (library 2.12.0). Owner then asked for a saved method and a daily sync at 5 am: `DeviceMorningRoutine` (server NTP time → terminal zone → model's own command → read back), daily at 05:00 COMPANY time by default, then a read of the past day's attendance on every terminal, editable in Settings → Daily clock sync and attendance read (`docs/device-models.md`, "Method: keeping terminal clocks right"). **Operational fact:
+after changing device-layer code run `php artisan queue:restart`** — a stale worker
+failed today's Set clock with "Undefined constant".
+
+**Open — owner (Ghassan):** Ali to re-enrol finger 5 if wanted; any scan of a finger
+written by this app on On The Road or Good Wheels confirms it (levels stay
+`implemented` until then); likewise Abdul Haq's and Ali Husain's fingers at Entrance
+after the re-link. Many system names are first names
+only ("Maryam Salem" would become "MARYAM" on a rebuild) — fix names before rebuilding
+if wanted; first rebuild suggested on IT ROOM. Check the clock of the PC running
+ZKAccess (and whether it syncs terminal time) — it is the likely source of the slow
+clocks. Cron for `schedule:run` is still not
+installed.
+
+### 2026-10-11 — Rule 20: the device casebook
+
+Owner: log every device problem — what was done, what the problem was, how it was fixed
+— "a memo for yourself, so next time … you have a history to read". Added **CLAUDE.md
+rule 20** and **`docs/device-casebook.md`** (template, index, entries DC-001 to DC-013:
+the F22 windowed reads, Camelot AUTH, the inBIO/C3 discovery, the SQL Server sync and
+string-id bugs, the F18 renumber refusal, and today's seven cases). Enforced by
+`tests/Unit/DeviceCasebookTest.php` (fields, dates, status, order, index; checked by
+deleting a field — it fails). Read the casebook before any device investigation.
+
+### 2026-10-11 — "Saving Ali Mohamed Jaafar gave an error": the permission-cache 500, fixed
+
+**Owner's report:** saving employee 1419 (code 960802797) updated the ID on some
+terminals, then showed an error.
+
+**The save was fine.** Entrance and Glass Door were renumbered 654 → 960802797 (card
+7511517, fingers 6 and 7 kept); IT Room (F18) and On The Road (F22) kept 654 because
+neither can change a user ID in place. **Open, owner:** move him to 960802797 there by
+remove + re-add — rule 19 brings the card and fingers back — or leave it.
+
+**The error** was a 500 on the Employees page's own live refresh during the save:
+`cache_key_primary` on `spatie.permission.cache` (28 that day, 130 since 2026-09-22).
+Root cause: `Tenancy::set()` — run on EVERY request by `ResolveTenant` and in every
+job — called `forgetCachedPermissions()`, deleting the shared cache entry each time.
+Overlapping requests then rebuilt it together, and SQL Server's MERGE in the database
+cache store collided on the key. Fixes: `Tenancy::set()` clears only the process's
+in-memory list (`clearPermissionsCollection()`) — the cached list carries no team, so
+deleting it never protected anything; and the permission cache moved to the `file`
+store (`PERMISSION_CACHE_STORE`, default `file`), which cannot collide. Tests use
+`array` (phpunit.xml). Applied live; queue worker restarted (`queue:restart`).
+
+**Incident during the fix, ~12:05–12:08 UTC:** one test run, before phpunit.xml
+pinned the test store, wrote an EMPTY permission list into the live file cache, so
+permission checks on the live app could have been refused for those minutes. Cleared
+and re-verified (34 permissions, owner account authorised). **Operational fact:** an
+`artisan`/tinker run as root writes root-owned files into
+`storage/framework/cache/data`; `chown -R www-data:www-data` it afterwards.
+
+### 2026-10-11 — Fingerprints kept by the system and written back to terminals
+
+**Owner's report:** Akram (employee 1434, code 440105943) was removed from IT Room,
+then added back from the system — and showed "IT Room 0" (yellow). Owner: "you were
+supposed to read the fingerprint, store it in the webapp, and whenever needed write it
+to a device using each device's own method."
+
+**What was wrong (four bugs, all fixed, tests added — 551 pass):**
+1. `removeEmployee` deleted the terminal's record with no copy taken first, AND
+   deleted any stored copies for that terminal. Now it captures the person's fingers
+   into `FingerprintVault` first (refuses with a 409 if it cannot), and keeps copies.
+2. The vault, `recordTemplates` and the single-finger delete all dropped a stored
+   copy once the finger left a terminal. Copies now OUTLIVE the terminal (only bare
+   slot markers follow it). That rule had destroyed the copy at the moment it was needed.
+3. Re-adding wrote neither card nor fingers. `pushEmployee` (every add path: push
+   dialog, single push, queued PUSH_USER) now writes the stored card
+   (`assignCard`, read back) and stored fingers (`FingerprintPusher::restoreOnto`,
+   add-only, read back); the result row lists what was put back.
+4. `readEnrollment` copied a terminal's EMPTY card onto `employees.card_number`, so
+   the re-add also wiped Akram's card from his record. A terminal with no card no
+   longer clears it.
+5. (found while testing) Removing then re-adding someone gave them a NEW PIN — their
+   own old one was "reserved". `DeviceIdentityResolver::claim()` now gives a person
+   back a PIN that was only ever theirs.
+
+**New: fingerprint write to the F18** (library 2.10.0, `TemplateService::addTemplates`,
+`SAVE_USERTEMPS`): the F18 had no template upload at all — only the C3 panels did.
+`template.upload` = `implemented` in `CapabilitySet::defaults()`. Run on IT Room
+(F18, 192.168.7.62) on Akram, whose finger existed only on the door panels: slot 6
+written from the inBIO460's copy, read back byte-identical, all other users/templates
+unchanged (before/after diff). Then the full remove → add-back flow was run twice on
+him through the real services: card and finger 6 came back each time. **Akram is now
+on IT Room as 440105943, card 7553651, finger 6.** His employee card was restored.
+
+**Backed up everyone:** a roster read (`SYNC_ENROLLMENT`) now also stores everyone's
+fingers. Queued it on all six terminals 2026-10-11 ~11:37 UTC: stored copies went from
+12 (5 people) to 505 (203 people) — every person with a finger on any terminal. A
+nightly 02:30 UTC roster read is scheduled (`fingerprint-copies-nightly`).
+
+**Then, owner: "not just fingerprint but also card number, you have to make a
+procedure and a rule".** Done: **CLAUDE.md rule 19** (the system keeps every card and
+fingerprint, saves before destroying or refuses, the copy outlives the terminal,
+restores on every add, says what happened) and the procedure
+**`docs/credential-preservation.md`**; enforced by `tests/Unit/CredentialPreservationTest.php`
+(mutation-checked: removing the save step or unscoping a template delete fails it).
+Cards now: removal reads the terminal's own record first (history + employee record
+if empty); a roster read copies a terminal-only card onto an empty employee record
+(6 people had one); `cardToRestore()` puts back the card THIS terminal had (Ghassan's
+Camelot card 7632913 ≠ record 7566580), else the record card, never a cleared or lost
+one. Constants `AccessCard::REASON_REMOVED_WITH_USER` / `REASON_CLEARED`.
+
+**Open — owner (Ghassan):**
+- **Ask Akram to scan finger 6 at IT Room.** Write + read-back is proven; a real
+  MATCH is not. When it matches, `template.upload` goes to `confirmed` for the F18.
+- ~~Cron not wired~~ — installed 2026-10-18 (see "Where we stopped").
+- Camelot: Ghassan can now be moved off PIN 1 (remove + re-add as 830108246 brings
+  fingers 3 and 6 back from the system copy) — waiting for the go-ahead.
+- F22 (On The Road) inherits `template.upload` from the F18 default; never run there.
+
+### 2026-10-11 — Employees page: Company › Department tree
+
+Owner asked for grouping by company and department; chose a tree panel on the page
+over a dropdown, with departments supplied by the staff import. Found that the seven
+existing "departments" (PROMOSEVEN, P7H, AVANA, CCT, UM, OTR, Real Estate) are really
+the sister companies, with no department level beneath them, and 41 employees in none.
+
+**Decision:** departments got a `parent_id` (migration `2026_10_11_100000`, APPLIED to
+the SQL Server database) rather than a separate `companies` table. The existing rows
+already were the companies and stay top-level; ZKAccess Personnel stores its tree the
+same way. A separate table would be warranted only if "company" gains meaning of its
+own (licensing, reporting per company) — owner has not said so. No FK on `parent_id`:
+SQL Server refuses SET NULL on a self-reference. Name uniqueness is now per parent.
+
+`staff:import` takes an optional `company` column; `department` goes beneath it. A row
+naming neither leaves `department_id` alone. `GET /api/employees?department_id=` now
+matches the subtree, and `none` = unassigned. `Department` added to the `employees`
+live stamp. Desktop: tree on the left; mobile: collapsible card (rule 5). Department
+dropdown removed from the filter bar. **Not done:** the employee edit form still edits
+only the free-text `department`, not `department_id`; real department names arrive
+only when the owner re-runs the import with `company` + `department` columns. Not
+committed. No device code touched.
+
+Same day: owner reported the list "only shows the first name". The list already
+joined `name` + `last_name`; the data is what is short — **265 of 324 employees have
+no `last_name`** (only the 59 from the ZKAccess import do), and most of those have a
+one-word `name` as typed on the terminal. Nothing in the system holds their full
+names, so nothing was invented. `staff:import` now takes a `last_name` column (empty
+cell = keep), and search matches every word against first OR last name, so the name
+as displayed finds the person. **Owner owes:** a staff list with full names.
+
+Same day, Attendance page: the Method column decodes from the vendor's `VerifyType`
+dictionary (see `docs/protocol-overview.md`; `App\Support\VerifyMethod` + `parts.jsx`,
+kept in step by `VerifyMethodLabelsTest`); the department tree (counts hidden — they
+are employees, not punches) and a search box were added, both applied through
+`PunchLogQuery` so the PDF export matches the screen; punches, the dashboard feed and
+the PDF show first + last name (`Employee::fullName()`).
+
+Same day: owner's "Tariq could not be removed from On The Road" (07:07 UTC, twice).
+**Not a device fault** — the terminal was never contacted. On The Road (device 11,
+F22, `192.168.7.63`) is `adoption_status = read_only`: its roster (12 entries, read
+2026-09-27) is now fully claimed, but nobody took the "Allow writes" step, so every
+write is refused by `Device::assertWritable()`. On the owner's explicit instruction the
+same day, writes were allowed (`finishAdoption`, recorded as user 11) on On The Road
+at 08:38 UTC and then on IT ROOM, Good Wheels, Camelot, Glass Door and Entrance —
+**all six terminals are now `adopted`**. IT ROOM's roster was read first (19 users,
+all already claimed). The gate now adopts a terminal by itself
+when nobody on it is unmatched (below). Tariq (employee 1739, PIN 940) had
+finger 6 copied into the FingerprintVault from both terminals before any removal. Fixed: `DeviceNotAdoptedException` used to fall through to a generic 500
+"Server error." and was logged as an error; it is now a 409 carrying its message, not
+logged, and the Employees page puts the reason in the toast.
+
+Same day: the top bar's **Sync now** reported "0 punches imported" instantly — it
+read an `imported` count from the queue reply, which only says the command was
+QUEUED. It now queues one `sync_attendance` per active device, follows each through
+`GET /device-commands/{id}` until finished, and toasts the real totals from
+`raw_response.counts.imported`, naming any device that failed and why.
+
+**Operational fact:** `zkt-queue.service` (`queue:work database`, no `--memory`)
+exits with code 12 — Laravel's memory-limit exit, default 128 MB — after large
+syncs, and systemd restarts it (restart counter 490 on 2026-10-11). Jobs are not
+lost, but the worker is single and serial, so a sync can wait minutes behind others.
+Raising `--memory` in the unit file is the owner's call; not changed.
+
+Same day: saving Tariq (1739) reported "FAILED on Entrance / Glass Door — 041112750 was
+written but is not on the panel when read back". The move had SUCCEEDED: C3 Pins are
+integers, so the panels hold him at 41112750. Read-back compared strings. Fixed in
+`C3Driver::samePin()`; his two mappings corrected to 41112750 (DB only, after reading
+both panels). See `docs/device-capabilities.md`.
+
+The owner, frustrated by repeated manual "Allow writes" steps, asked that the system
+do the adoption itself, and approved it explicitly. **Applied:**
+`Device::assertWritable()` calls `DeviceAdoptionService::adoptIfClear()` — refuse only
+when unmatched people are known (naming them), otherwise read the roster and adopt.
+See `docs/device-identity-and-adoption.md`. This supersedes the owner's earlier
+"remove the gate altogether" ask, which was never applied.
+
+**Ghassan, resolved (owner: "all devices must have the employee code 830108246"):**
+employees 1729 "Gassan" (830108246-14) and 1786 "Gassan Yusuf" (656) merged into 1429
+Ghassan Mohamed Yusuf. On Entrance and Glass Door he was really PIN 656; relinked, his
+170 unlinked door punches attributed (177 door punches now his), then moved on both
+panels to **830108246** (read back: UID 247, finger 6 kept). The move's bookkeeping
+crashed on a leftover roster row for 830108246 AFTER the panels had moved — fixed in
+`renumberEmployee()` (with test) and the records corrected by hand. Fingers 3 and 6
+are in the FingerprintVault. IT ROOM was already 830108246. **Camelot (F18) still holds
+him as PIN 1**: the F18 refuses a user-ID change, and the delete-and-re-upload path is
+EXPERIMENTAL and not enabled. Not on Good Wheels or On The Road.
+
+**Open — owner owes answers:**
+- Camelot: move Ghassan from PIN 1 by remove + re-add + push his stored fingers, or leave?
+- Should Ghassan be added to Good Wheels and On The Road?
+- Troy lawrance (685) and YUSUF ABDULHUSAIN EBRAHIM DAHNEEM (960403094) are recorded on
+  Entrance and Glass Door under PINs the panels do not hold. Not touched.
+- New on both door panels since the last read, unmatched: **Abdul (PIN 21)** and
+  **yusif (PIN 695)**. Five Entrance punches at PIN 695 are attributed to employee 1432
+  (Yousif) with no mapping behind them — a full `attendance:reattribute 14` would clear
+  them, so it was NOT run on Entrance; only PIN 656 was attributed there.
+
+**FIXED later the same day (see the next entry):** the `cache_key_primary` 500s on
+`spatie.permission.cache`.
+
+### 2026-10-08 — Integration API (`/api/v1`) built
+
+New: `routes/api_v1.php`, `App\Http\Controllers\Api\V1\*`, `EnforceIdempotency`,
+webhooks (`WebhookEndpoint`/`WebhookDelivery`, `WebhookDispatcher`, `DeliverWebhook`,
+`PunchWebhookRelay`, `IntegrationEventObserver`), `EmployeeOffboarding`,
+`EmployeeCodeAllocator` (extracted from `EmployeeController::nextCode`), `employees.external_id`,
+`integration:token`. Touched shared code: `EmployeeController::nextCode` (now delegates),
+`Store/UpdateEmployeeRequest` + `EmployeeResource` (added `external_id`), `bootstrap/app.php`
+(middleware aliases), `AppServiceProvider` (observers, rate limiter), `routes/console.php`
+(per-minute punch relay). No device or protocol code was touched, so no F18 re-read was
+needed (rule 15). One test failure on the way: `RouteNameCollisionTest` demands the `api.`
+prefix on every API route name, so v1 routes are `api.v1.*`. Migrations NOT applied
+anywhere real — see "Where we stopped". Not committed.
+
+### 2026-10-06 — ZKAccess legacy-database import shipped and applied
+
+Built the two-step legacy migration path and ran it against production. The
+`10-06-2026.mdb` (Jet 4) on the Windows box is unwrapped up front into a canonical
+`zkaccess-export.json` by a no-dependency PowerShell exporter (Access ODBC), then
+the new `php artisan zkaccess:import` command merges it under Tenancy.
+
+People: match by `Badgenumber` == `employee_code` (304), else by normalised full
+name (14). The rest became new employees (20) because matches must be unambiguous —
+an ambiguous name is warned, never guessed. Profile fields fill only when empty
+(cards and hire dates dedupe first-wins; phones/gender etc. pad to exactly the fill
+rates measured earlier on the vendor SDK). 5 cards skipped as already held.
+
+Attendance: 90,054 punches from the export. 89,381 were already in the live table
+(so the earlier timezone proof held: local `CHECKTIME` −3h == stored UTC), 17,836
+were orphaned by unknown `USERID`s (the 52 former employees), 0 undecodable. The
+remaining **673** were inserted. `device_user_id` is written as the PIN string so
+live sync's unique index `(device_id, device_user_id, punched_at, verify_method)`
+keeps deduping against them.
+
+Two SQL Server facts earned the hard way: `insertOrIgnore` throws ("this database
+engine does not support inserting while ignoring errors") and a single batch may
+bind at most 2100 parameters. So attendance inserts are plain rows, chunked at 200
+(1800 params), deduped in memory first.
+
+Applied to production (owner-approved): 7 departments created, 20 employees,
+profiles filled, +673 attendance rows → attendance_logs = 145,616 through
+2026-10-06 11:18 UTC. Everything idempotent; re-running converges to 0 created /
+0 inserted. 18 import feature tests green, full suite 484 passed, pint clean.
+
+Exporter lives at `scripts/export-zkaccess.ps1`. Probe scripts cleaned out. The
+import bridged the ~10-day gap left by the stopped sync; the scheduler that caused
+the stop is still not installed (owner approval pending).
+
+**Not committed** — matching the standing arrangement for `employees` working-tree
+changes.
+
+### 2026-09-27 — Employee Report screen ("Orbit")
+
+Owner asked for an HR dashboard per employee "with all graphical details". Designed on
+a claude.ai canvas first (the owner could not open the link — "page not found" while
+signed in — so it was built into the app instead). New: `GET /api/employees/{id}/report`
+(`EmployeeReportService`, on `AttendanceSummaryService`), the screen at
+`/app/employees/{id}/report` behind a **Report** row action, and a labelled sample at
+`/app/employees/sample/report` because the database is empty. Two findings recorded in
+`docs/api-endpoints.md`: the summary's `leave_on_time` is not "left early", and it has no
+start date, so the report marks pre-hire days `untracked`. `AttendanceSummaryService`
+gained `first_minutes` / `last_minutes` (additive). Export PDF for this screen is **not
+built**. Uncommitted.
+Then restyled to the dashboard's light theme at the owner's request ("dont use dark mode"), and shown on real data — see the 2026-09-27 terminals entry under Where we stopped.
+
+### 2026-09-27 — Table audit; `job_batches` dropped; database emptied to login only
+
+Owner asked why there are so many tables. Audit: 41 tables — 16 are Laravel and
+spatie/permission plumbing, 3 platform (tenants, settings, audit), 22 domain, each a
+distinct entity. Only `job_batches` was genuinely unused, so only it was dropped.
+`cache`/`cache_locks`/`sessions` would go only by adding Redis; the empty C3
+access-control tables back live screens and stay unless the owner drops the feature.
+Then, on the owner's instruction, the database was backed up twice and emptied — see
+"The production database was EMPTIED again" under Where we stopped.
+Then national IDs were removed end to end, UI through schema (same section).
 
 ### 2026-09-24 — Employee edit form reshaped to the ZKAccess Personnel dialog
 
@@ -512,9 +1289,8 @@ At the owner's request, built to `public/build`; **committed on branch `employee
 - **Observed, not investigated:** 2026-09-24 09:49 UTC a user write to Camelot
   (device 12, uid 1, user id "1") was refused with reply **4994**, a code the library
   does not name. Nothing was changed on the terminal.
-- **Open, owner:** the permission-cache 500 (`cache_key_primary` on SQL Server, 9 hits
-  2026-09-23/24) — fix proposed (`config/permission.php` store → `file`), not applied;
-  the change was blocked as a production deploy pending the owner's go-ahead.
+- The permission-cache 500 (`cache_key_primary`) — FIXED 2026-10-11, see that day's
+  session log.
 
 
 ### 2026-09-23 — Terminal user ID following the employee code: built, REFUSED by the F18, hidden

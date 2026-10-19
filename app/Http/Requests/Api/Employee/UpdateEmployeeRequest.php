@@ -30,6 +30,11 @@ class UpdateEmployeeRequest extends FormRequest
                     ->where('tenant_id', Tenancy::id())
                     ->ignore($employeeId),
             ],
+            // The caller's own id for this person (integration API). Unique per tenant.
+            'external_id' => [
+                'nullable', 'string', 'max:128',
+                Rule::unique('employees', 'external_id')->where('tenant_id', Tenancy::id())->ignore($employeeId),
+            ],
             'email' => ['nullable', 'email', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
             'department_id' => [

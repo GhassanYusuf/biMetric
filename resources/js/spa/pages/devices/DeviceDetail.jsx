@@ -8,8 +8,11 @@ import { useMqtt } from '../../shared/useMqtt';
 import { useToast } from '../../shared/toast';
 import { Skeleton, SkeletonCards } from '../../shared/ui';
 import { useSyncProgress } from '../../shared/useSyncProgress';
+import { useActionResult } from '../../shared/useActionResult';
+import { waitForCommand } from '../../shared/deviceCommand';
 import SyncRangeModal from './SyncRangeModal';
-import { FULL_RESYNC_CONFIRM } from './parts';
+import RebuildModal from './RebuildModal';
+import { FULL_RESYNC_CONFIRM, clearPunchesConfirm } from './parts';
 import DeviceDetailDesktop from './DeviceDetailDesktop';
 import DeviceDetailMobile from './DeviceDetailMobile';
 
@@ -22,6 +25,11 @@ import DeviceDetailMobile from './DeviceDetailMobile';
 | holding a request open for that is what the queue exists to avoid. So the pattern
 | is always: fire, toast the queued message, then let MQTT or a refresh bring the
 | outcome back.
+|
+| Since 2026-10-18 the page also FOLLOWS each command it queued to the end
+| (waitForCommand): the button keeps spinning while the command is queued or running,
+| then flashes the outcome, and a toast carries the command's own message. Closing
+| the screen is still safe — the command runs on the worker either way.
 */
 export default function DeviceDetail() {
     const { id } = useParams();
@@ -38,7 +46,10 @@ export default function DeviceDetail() {
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
     const [dispatching, setDispatching] = useState(null);
+    const [watching, setWatching] = useState({}); // { [command]: true } until it finishes
+    const { flash, resultOf } = useActionResult();
     const [rangeOpen, setRangeOpen] = useState(false);
+    const [rebuildOpen, setRebuildOpen] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -83,15 +94,60 @@ export default function DeviceDetail() {
         if (payload === null || String(payload?.device_id ?? payload?.id ?? '') === String(id)) load();
     });
 
+    /**
+     * Follows a queued command to its end and reports THAT, not the queueing: the
+     * command's own message in a toast, and the outcome on its button.
+     */
+    async function follow(queued) {
+        const name = queued.command;
+        setWatching((w) => ({ ...w, [name]: true }));
+        try {
+            const done = await waitForCommand(queued.id);
+            if (done === null) {
+                toast.info('Still running — the result will appear in the command list.');
+            } else if (done.status === 'succeeded') {
+                toast.success(done.message);
+                flash(name, 'success');
+            } else {
+                toast.error(done.message ?? 'The command did not complete.');
+                flash(name, 'error');
+            }
+        } finally {
+            setWatching((w) => ({ ...w, [name]: false }));
+            load();
+        }
+    }
+
     /** Queues one command. 422 here is a capability refusal, which is information. */
     async function dispatch(command, { full = false, from = null, to = null } = {}) {
         setDispatching(command);
         try {
             const res = await api.post(`/devices/${id}/commands`, { command, full, from, to });
-            toast.success(res.message);
+            // Queued is not an outcome — info, not success. follow() reports the result.
+            toast.info(res.message);
             setCommands((prev) => [res.data, ...prev]);
+            follow(res.data);
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : `Could not queue ${command}.`);
+            flash(command, 'error');
+        } finally {
+            setDispatching(null);
+        }
+    }
+
+    /** Save every punch, then erase them from the terminal — see Devices.jsx clearPunches(). */
+    async function clearPunches() {
+        if (!(await confirm(clearPunchesConfirm(device)))) return;
+
+        setDispatching('clear_attendance');
+        try {
+            const res = await api.post(`/devices/${id}/clear-attendance`);
+            toast.info(res.message);
+            setCommands((prev) => [res.data, ...prev.filter((c) => c.id !== res.data.id)]);
+            follow(res.data);
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : `Could not reach ${device.name}.`);
+            flash('clear_attendance', 'error');
         } finally {
             setDispatching(null);
         }
@@ -177,6 +233,8 @@ export default function DeviceDetail() {
             commands={commands}
             history={history}
             dispatching={dispatching}
+            watching={watching}
+            resultOf={resultOf}
             syncRunning={syncRunning}
             syncProgress={syncProgress}
             syncStalled={syncStalled}
@@ -186,6 +244,8 @@ export default function DeviceDetail() {
             onDispatch={dispatch}
             onFullResync={fullResync}
             onRangeSync={() => setRangeOpen(true)}
+            onRebuild={() => setRebuildOpen(true)}
+            onClearPunches={clearPunches}
             onRetryCommand={retryCommand}
             onCancelCommand={cancelCommand}
             onBack={() => navigate('/devices')}
@@ -195,6 +255,13 @@ export default function DeviceDetail() {
                 device={device}
                 onSubmit={rangeSync}
                 onClose={() => setRangeOpen(false)}
+            />
+        )}
+        {rebuildOpen && (
+            <RebuildModal
+                device={device}
+                onStarted={(message) => { setRebuildOpen(false); toast.success(message); load(); }}
+                onClose={() => setRebuildOpen(false)}
             />
         )}
         </>

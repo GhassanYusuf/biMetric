@@ -164,6 +164,10 @@ class ProtocolLibraryBoundaryTest extends TestCase
              */
             'app/Services/Devices/C3/C3Driver.php',
             'app/Services/Devices/DeviceDriverManager.php',
+            // Extends DeviceException so every existing catch reports "terminal busy"
+            // like any other device failure, and overrides isRetryable() so a queued
+            // command retries instead of failing for good (2026-10-12).
+            'app/Exceptions/DeviceBusyException.php',
             // These name library TYPES in signatures/guards through the contract,
             // which is the intended coupling: they never construct a transport or
             // speak a command.
@@ -173,6 +177,15 @@ class ProtocolLibraryBoundaryTest extends TestCase
             'app/Services/Devices/AttendanceSyncService.php',
             'app/Services/Devices/DeviceUserSyncService.php',
             'app/Services/Devices/EnrollmentOrchestratorService.php',
+            // "Rebuild from system" (2026-10-11): plans from capability levels which
+            // writes a terminal can take; names Capability only, speaks no protocol.
+            'app/Services/Devices/DeviceRebuildService.php',
+            // Daily clock sync + past-day read (2026-10-11): asks a terminal's capability set whether
+            // it can take a clock / read attendance; names Capability only.
+            'app/Services/Devices/DeviceMorningRoutine.php',
+            // Clear a terminal's punches (2026-10-18): asks for attendance.clear and
+            // refuses with ProtocolException; reaches hardware only through the contract.
+            'app/Services/Devices/AttendanceClearService.php',
             /*
              * Adoption: reads an existing terminal's roster before it is writable.
              * Names Capability to gate the read and DeviceUser to receive what
@@ -200,6 +213,13 @@ class ProtocolLibraryBoundaryTest extends TestCase
              */
             'app/Services/Employees/FingerprintVault.php',
             /*
+             * Pushes vault copies to terminals (2026-09-24). Names Capability to guard
+             * with require(TEMPLATE_UPLOAD) and catches UnsupportedCommandException to
+             * report a terminal that cannot take templates as skipped, not failed. The
+             * write itself goes through the contract's uploadTemplates().
+             */
+            'app/Services/Employees/FingerprintPusher.php',
+            /*
              * The PIN-to-employee resolver. Names DeviceUser only — the occupant of a
              * slot, handed to it by the driver so it can decide whether a write may
              * proceed. It holds no session and issues no command: the read and the
@@ -211,6 +231,16 @@ class ProtocolLibraryBoundaryTest extends TestCase
             'app/Models/Device.php',
             'app/Models/AccessCard.php',
             'app/Http/Controllers/Api/DeviceSyncController.php',
+            /*
+             * The company time zone screen (2026-10-05). Names Capability for exactly
+             * the reason DeviceSyncController above is allowed: to decide whether a
+             * terminal can have its clock set (SET_TIME) and to turn "no" into the
+             * operator-facing reason via Capability::describe(). Same category, same
+             * shape of use. It issues no command itself — the write is queued as the
+             * existing sync_time DeviceCommand, and the clock read goes through
+             * BiometricDeviceDriver::run().
+             */
+            'app/Http/Controllers/Api/DeviceTimezoneController.php',
             'app/Http/Controllers/Api/DeviceEnrollmentController.php',
             // These two name DeviceException ONLY to map a device failure onto a 502.
             // They call services, never the protocol — which the companion test

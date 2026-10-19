@@ -244,46 +244,16 @@ class EmployeePersonnelFieldsTest extends TestCase
         \Illuminate\Support\Facades\Storage::disk('public')->assertMissing($path);
     }
 
-    public function test_the_form_saves_a_national_id_with_the_employee(): void
+    public function test_a_national_id_sent_with_the_form_is_ignored(): void
     {
+        // Removed from the system on 2026-09-27. An old client that still sends one
+        // must neither fail validation nor have it stored or echoed back.
         $res = $this->send('post', '/api/employees', [
             'name' => 'Ali', 'employee_code' => '601', 'national_id' => '880101234',
         ])->assertCreated();
 
-        $this->assertTrue($res->json('data.has_national_id'));
+        $this->assertArrayNotHasKey('has_national_id', $res->json('data'));
         $this->assertStringNotContainsString('880101234', $res->getContent());
-    }
-
-    public function test_a_blank_national_id_leaves_the_stored_one_alone(): void
-    {
-        $id = $this->send('post', '/api/employees', [
-            'name' => 'Ali', 'employee_code' => '602', 'national_id' => '880101235',
-        ])->json('data.id');
-
-        $this->send('put', "/api/employees/{$id}", ['name' => 'Ali J', 'employee_code' => '602', 'national_id' => ''])
-            ->assertOk()
-            ->assertJsonPath('data.has_national_id', true);
-    }
-
-    public function test_a_national_id_clash_is_a_field_error_and_rolls_the_save_back(): void
-    {
-        $this->send('post', '/api/employees', [
-            'name' => 'First', 'employee_code' => '603', 'national_id' => '880101236',
-        ])->assertCreated();
-        $id = $this->send('post', '/api/employees', ['name' => 'Second', 'employee_code' => '604'])->json('data.id');
-
-        $this->send('put', "/api/employees/{$id}", [
-            'name' => 'Second Renamed', 'employee_code' => '604', 'national_id' => '880101236',
-        ])->assertStatus(422)->assertJsonValidationErrors('national_id');
-
-        // Nothing from the refused save stuck.
-        $this->assertSame('Second', Employee::withoutGlobalScopes()->find($id)->name);
-
-        // And a create with a clashing ID creates nobody.
-        $this->send('post', '/api/employees', [
-            'name' => 'Third', 'employee_code' => '605', 'national_id' => '880101236',
-        ])->assertStatus(422)->assertJsonValidationErrors('national_id');
-        $this->assertFalse(Employee::withoutGlobalScopes()->where('employee_code', '605')->exists());
     }
 
     private function accessLevel(string $name, ?string $zone = null): AccessLevel

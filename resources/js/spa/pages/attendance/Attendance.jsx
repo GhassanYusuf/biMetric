@@ -4,6 +4,7 @@ import { useAuth } from '../../shared/auth';
 import { useToast } from '../../shared/toast';
 import { useDeviceClass } from '../../shared/useDeviceClass';
 import { useMqtt } from '../../shared/useMqtt';
+import { useAllEmployeesExport } from '../../shared/useAllEmployeesExport';
 import { Spinner } from '../../shared/ui';
 import AttendanceDesktop from './AttendanceDesktop';
 import AttendanceMobile from './AttendanceMobile';
@@ -23,14 +24,14 @@ export default function Attendance() {
     const [pagination, setPagination] = useState(null);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
-    const [filters, setFilters] = useState({ employee_id: '', device_id: '', from: '', to: '' });
-    /*
-     * The employee a national-ID lookup resolved to, held so the page can SAY whose
-     * punches these are. The national id itself is never held: it goes into the
-     * request body and is dropped, and this name is what remains on screen.
-     */
-    const [matched, setMatched] = useState(null);
-    const [lookingUp, setLookingUp] = useState(false);
+    const [filters, setFilters] = useState({ employee_id: '', device_id: '', department_id: '', search: '', from: '', to: '' });
+    // What is typed in the search box. Debounced into `filters.search`, so the list
+    // does not refetch on every keystroke.
+    const [searchText, setSearchText] = useState('');
+    // The Company › Department tree (2026-10-11), the same one the Employees page has.
+    const [departments, setDepartments] = useState([]);
+    const [unassignedCount, setUnassignedCount] = useState(0);
+    const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
     // The punch whose employee is open. Held as the whole row, not an id: the
     // dialog leads with the punch that was clicked, and a live refresh can
     // renumber the page under it.
@@ -64,11 +65,31 @@ export default function Attendance() {
             .catch(() => setDevices([]));
     }, []);
 
+    // Without permission there is simply no tree, as on the Employees page.
+    const loadDepartments = useCallback(() => {
+        api.get('/departments')
+            .then((res) => {
+                setDepartments(res.data ?? []);
+                setUnassignedCount(res.meta?.unassigned_count ?? 0);
+            })
+            .catch(() => setDepartments([]))
+            .finally(() => setDepartmentsLoaded(true));
+    }, []);
+
+    useEffect(() => { loadDepartments(); }, [loadDepartments]);
+
     // Live: a punch on this tenant lands at the top without a reload, but only
     // while viewing page 1 unfiltered — otherwise it would violate the filter.
-    const topics = user?.tenant ? [`tenant/${user.tenant.id}/module/attendance/+`] : [];
-    useMqtt(topics, () => {
-        const unfiltered = !filters.employee_id && !filters.device_id && !filters.from && !filters.to;
+    // Departments live under the employees module, so the tree follows that one.
+    const topics = user?.tenant
+        ? [`tenant/${user.tenant.id}/module/attendance/+`, `tenant/${user.tenant.id}/module/employees/+`]
+        : [];
+    useMqtt(topics, (topic) => {
+        if (topic.includes('/employees')) {
+            loadDepartments();
+            return;
+        }
+        const unfiltered = !filters.employee_id && !filters.device_id && !filters.department_id && !filters.search && !filters.from && !filters.to;
         if (page === 1 && unfiltered) load(1, filters);
     });
 
@@ -94,72 +115,53 @@ export default function Attendance() {
         }
     }
 
-    /*
-     * National ID -> employee -> the punch filter the page already has.
-     *
-     * POST, so the number travels in the body: a query string would be written to
-     * the access log, kept in browser history, and leaked in the Referer of
-     * whatever the page loads next.
-     *
-     * Returns whether it matched, which is the field's cue to clear itself. A miss
-     * is a toast and nothing else — the typed number stays so a mistyped digit can
-     * be fixed rather than retyped.
-     */
-    async function lookupByNationalId(nationalId) {
-        const trimmed = (nationalId || '').trim();
-        if (!trimmed) return false;
+    // "All employees" PDF / Excel (owner, 2026-10-19: "the export option must be in
+    // /app/attendance"). The same hook as the Reports screen, with this page's range and
+    // department as the dialog's starting point. Needs reports.view, as on the server.
+    const allEmployees = useAllEmployeesExport({
+        departments,
+        initialRange: filters.from && filters.to ? { from: filters.from, to: filters.to } : null,
+        initialDepartment: filters.department_id,
+    });
 
-        setLookingUp(true);
-        try {
-            const res = await api.post('/employees/lookup', { national_id: trimmed });
-            const employee = res.data;
-            setMatched(employee);
-            setPage(1);
-            setFilters((f) => ({ ...f, employee_id: String(employee.id) }));
-            toast.success(`${employee.name} — showing their punches.`);
-            return true;
-        } catch (err) {
-            // The 404 carries the server's own wording ("has to match the whole
-            // number"), which is the useful half of the answer — do not replace it.
-            toast.error(err instanceof ApiError ? err.message : 'Could not look that national ID up.');
-            return false;
-        } finally {
-            setLookingUp(false);
-        }
-    }
+    const exportItems = [
+        { key: 'punches', label: 'These punches · PDF', description: 'Every punch matching the filters, not only this page', onSelect: exportPdf, loading: exporting },
+        ...(can('reports.view') ? [{ separator: true, key: 'sep' }, ...allEmployees.items] : []),
+    ];
 
     function applyFilters(next) {
         setPage(1);
         setFilters(next);
-        // Clearing the filters clears the person with them. The banner naming an
-        // employee must never outlive the filter that made it true.
-        if (!next.employee_id) setMatched(null);
+        // "Clear filters" empties the box too, not only the query behind it.
+        setSearchText(next.search ?? '');
     }
+
+    useEffect(() => {
+        if (searchText === (filters.search ?? '')) return undefined;
+        const t = setTimeout(() => {
+            setPage(1);
+            setFilters((f) => ({ ...f, search: searchText }));
+        }, 300);
+        return () => clearTimeout(t);
+    }, [searchText, filters.search]);
 
     const presentationProps = {
         rows,
         devices,
+        departments,
+        unassignedCount,
+        departmentsLoaded,
         filters,
         onFilter: applyFilters,
+        search: searchText,
+        onSearch: setSearchText,
         loading,
         pagination,
         onPage: setPage,
         // Unmatched punches have no employee record to open, so the row stays
         // inert rather than opening a dialog with nothing in it.
         onSelect: (log) => log.employee_id && setSelected(log),
-        onExport: exportPdf,
-        exporting,
-        matched,
-        onLookup: lookupByNationalId,
-        lookingUp,
-        onClearMatch: () => applyFilters({ ...filters, employee_id: '' }),
-        /*
-         * Both halves are required. employees.view is what the endpoint authorises;
-         * attendance.view is what makes the result mean anything — a self-only user's
-         * employee_id filter is ignored by PunchLogQuery, so offering them the box
-         * would be offering a control that cannot do what it says.
-         */
-        canLookup: can('employees.view') && can('attendance.view'),
+        exportItems,
     };
 
     const Presentation = deviceClass === 'desktop' ? AttendanceDesktop : AttendanceMobile;
@@ -172,6 +174,7 @@ export default function Attendance() {
         <>
             <Presentation {...presentationProps} />
             {selected && <PunchEmployeeModal log={selected} onClose={() => setSelected(null)} />}
+            {allEmployees.dialog}
         </>
     );
 }

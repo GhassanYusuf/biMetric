@@ -199,25 +199,15 @@ land above the copied maxima, and a second run inserted nothing.
 
 ---
 
-## Querying by national ID (CPR)
+## Querying by national ID (removed)
 
-`docs/sql/national-id-lookup.sql` — the person, every employment they hold, their
-daily first-in/last-out, and their raw punches, all from one national ID. Verified
-against this database on 2026-09-21.
+**National IDs were removed on 2026-09-27** at the owner's request: the column on the
+Employees screen, the form field, the roster filter, the Attendance lookup, the
+`PUT /api/employees/{employee}/national-id` and `POST /api/employees/lookup` endpoints,
+and in the database `person_national_ids` plus `people.national_id` /
+`people.national_id_hash` (migration `2026_09_27_110000_drop_national_ids`).
 
-It takes a **hash**, not a number. `people.national_id` is encrypted, so it cannot
-be compared in SQL; `people.national_id_hash` is an HMAC-SHA256 blind index and SQL
-Server has no HMAC function. Compute it once:
-
-```
-php artisan tinker --execute="echo App\Models\Person::hashNationalId('830108246');"
-```
-
-Two things the file explains at length and are worth repeating here: it also
-searches `person_national_ids`, so a **superseded** number (renewed iqama) still
-finds the person; and `punched_at` is UTC, so every query shifts by the office's
-fixed +03:00 before grouping by day. Grouping the UTC column directly splits every
-evening shift across two dates.
+`docs/sql/national-id-lookup.sql` was deleted with it.
 
 ## Housekeeping
 

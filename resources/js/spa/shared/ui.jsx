@@ -42,7 +42,15 @@ export function SectionCard({ title, subtitle, action, children, className = '',
     );
 }
 
-export function Button({ children, variant = 'primary', className = '', loading = false, disabled, ...props }) {
+/*
+| `result` (2026-10-18, owner: "when we change something I need an animated indicator
+| that my request was successfully done or failed"): 'success' | 'error' | null. For a
+| moment after the outcome is KNOWN — the server answered, or a queued device command
+| finished — the button turns green with a drawn tick or red with a cross, then goes
+| back. useActionResult() sets and clears it. The toast still says what happened
+| (rule 2); this says WHICH button it was about.
+*/
+export function Button({ children, variant = 'primary', className = '', loading = false, result = null, disabled, ...props }) {
     const variants = {
         primary: 'bg-violet-600 text-white shadow-sm shadow-violet-600/20 hover:bg-violet-500 active:bg-violet-700',
         secondary: 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100',
@@ -54,12 +62,40 @@ export function Button({ children, variant = 'primary', className = '', loading 
         <button
             disabled={disabled || loading}
             aria-busy={loading || undefined}
-            className={`inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors duration-150 disabled:pointer-events-none disabled:opacity-45 ${variants[variant]} ${FOCUS} ${className}`}
+            className={`inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors duration-300 disabled:pointer-events-none disabled:opacity-45 ${variants[variant]} ${result ? RESULT_TINT[result] : ''} ${FOCUS} ${className}`}
             {...props}
         >
-            {loading && <Spinner className="h-4 w-4" />}
+            {loading ? <Spinner className="h-4 w-4" /> : result && <ResultIcon result={result} className="h-4 w-4" />}
             {children}
         </button>
+    );
+}
+
+// `!` because the tint has to beat every variant's own background, hover included.
+const RESULT_TINT = {
+    success: '!border-emerald-600 !bg-emerald-600 !text-white',
+    error: '!border-rose-600 !bg-rose-600 !text-white',
+};
+
+/** A tick drawn in, or a cross, popping in — the outcome of the action a control started. */
+export function ResultIcon({ result, className = 'h-4 w-4' }) {
+    return (
+        <svg
+            className={`shrink-0 ${className}`}
+            style={{ animation: 'result-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+            strokeLinecap="round" strokeLinejoin="round"
+            role="img" aria-label={result === 'success' ? 'Done' : 'Failed'}
+        >
+            {result === 'success' ? (
+                <path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1" style={{ strokeDasharray: 1, animation: 'result-draw 380ms 120ms ease-out both' }} />
+            ) : (
+                <>
+                    <path d="M6.5 6.5l11 11" pathLength="1" style={{ strokeDasharray: 1, animation: 'result-draw 220ms 100ms ease-out both' }} />
+                    <path d="M17.5 6.5l-11 11" pathLength="1" style={{ strokeDasharray: 1, animation: 'result-draw 220ms 260ms ease-out both' }} />
+                </>
+            )}
+        </svg>
     );
 }
 
@@ -101,30 +137,84 @@ export function CircleButton({ children, tone = 'slate', className = '', label, 
 */
 const MENU_WIDTH = 268;
 
-export function ActionMenu({ label = 'Actions', items = [], align = 'right', className = '' }) {
+/*
+| `anchorRef` + `hideTrigger` make the CALLER the trigger (2026-10-05, owner's
+| request: tapping anywhere on an employee row drops the menu down).
+|
+| Without them a table row cannot be the trigger, because a <button> cannot be
+| nested inside a <tr> as its own action cell without a second tap target. The
+| panel is portalled to <body> anyway, so the row owns open state and this
+| renders only the panel, anchored to whatever element the row's ref points at.
+| Uncontrolled (the default) keeps the self-contained button for callers that
+| have nothing to anchor to.
+*/
+export function ActionMenu({
+    label = 'Actions',
+    items = [],
+    align = 'right',
+    className = '',
+    anchorRef,
+    hideTrigger = false,
+    anchorPoint = null,
+    open: controlledOpen,
+    onOpenChange,
+    initialFocus = 'none',
+    // { label, result: 'success'|'error' } while an action from this menu has just
+    // finished — the trigger shows it the way Button does (see Button's `result`).
+    outcome = null,
+}) {
     const entries = items.filter(Boolean).filter((i) => !i.hidden);
     const navCount = entries.filter((i) => !i.separator).length;
     const busy = entries.find((i) => i.loading);
 
-    const [open, setOpen] = useState(false);
+    // Controlled when the caller says `open`, so two rows cannot both believe
+    // they own the menu — whichever one is open is the one the pointer is on.
+    const isControlled = controlledOpen !== undefined;
+    const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+    const open = isControlled ? controlledOpen : uncontrolledOpen;
+    const setOpen = useCallback((next) => {
+        if (isControlled) onOpenChange?.(next);
+        else setUncontrolledOpen(next);
+    }, [isControlled, onOpenChange]);
+
     const [box, setBox] = useState(null);
-    const [active, setActive] = useState(-1);
+    /*
+     | `initialFocus` is read once, at mount: 'first'/'last' put the keyboard on
+     | an item, which is what ArrowDown/ArrowUp did when the trigger was the
+     | button inside this component. A trigger the caller owns cannot call
+     | onTriggerKey, so the caller states the intent instead. 'none' leaves focus
+     | on the trigger, which is what Enter and Space should do (rule 7).
+     */
+    const [active, setActive] = useState(
+        initialFocus === 'first' ? 0 : initialFocus === 'last' ? Math.max(0, navCount - 1) : -1,
+    );
     const triggerRef = useRef(null);
     const panelRef = useRef(null);
     const itemRefs = useRef([]);
 
+    // The element the menu is measured against and returns focus to. An anchor
+    // the caller supplied wins, because the caller's element IS the trigger.
+    const anchor = useCallback(() => anchorRef?.current ?? triggerRef.current, [anchorRef]);
+
     const close = useCallback((focusTrigger = true) => {
         setOpen(false);
         setActive(-1);
-        if (focusTrigger) triggerRef.current?.focus();
-    }, []);
+        if (focusTrigger) anchor()?.focus?.();
+    }, [anchor, setOpen]);
 
     useEscapeKey(close, open);
 
     // Measured rather than guessed, and re-measured on scroll/resize so the
     // panel cannot drift away from the row it belongs to.
+    //
+    // `anchorPoint` wins over the element: the owner asked for the menu to open
+    // WHERE THEY CLICKED, not where the row happens to sit (2026-10-05). It is
+    // synthesised as a zero-size rect at the pointer, so every flip and clamp
+    // below still applies and the panel can never open off-screen.
     const place = useCallback(() => {
-        const rect = triggerRef.current?.getBoundingClientRect();
+        const rect = anchorPoint
+            ? { left: anchorPoint.x, right: anchorPoint.x, top: anchorPoint.y, bottom: anchorPoint.y }
+            : anchor()?.getBoundingClientRect();
         if (!rect) return;
 
         const below = window.innerHeight - rect.bottom - 16;
@@ -138,7 +228,7 @@ export function ActionMenu({ label = 'Actions', items = [], align = 'right', cla
             bottom: dropUp ? window.innerHeight - rect.top + 8 : undefined,
             maxHeight: Math.max(180, dropUp ? above : below),
         });
-    }, [align]);
+    }, [align, anchor, anchorPoint]);
 
     useLayoutEffect(() => {
         if (!open) return undefined;
@@ -154,13 +244,15 @@ export function ActionMenu({ label = 'Actions', items = [], align = 'right', cla
     useEffect(() => {
         if (!open) return undefined;
         function onDown(e) {
-            if (triggerRef.current?.contains(e.target)) return;
+            // A click on the trigger is the toggle's business, not a dismissal —
+            // checked against whichever element is currently the trigger.
+            if (anchor()?.contains(e.target)) return;
             if (panelRef.current?.contains(e.target)) return;
             close(false);
         }
         document.addEventListener('mousedown', onDown);
         return () => document.removeEventListener('mousedown', onDown);
-    }, [open, close]);
+    }, [open, close, anchor]);
 
     useEffect(() => {
         if (open && active >= 0) itemRefs.current[active]?.focus();
@@ -210,6 +302,7 @@ export function ActionMenu({ label = 'Actions', items = [], align = 'right', cla
 
     return (
         <>
+            {!hideTrigger && (
             <button
                 ref={triggerRef}
                 type="button"
@@ -218,16 +311,23 @@ export function ActionMenu({ label = 'Actions', items = [], align = 'right', cla
                 aria-label={busy ? `${busy.label} in progress` : undefined}
                 onClick={() => (open ? close() : setOpen(true))}
                 onKeyDown={onTriggerKey}
-                className={`inline-flex min-h-[34px] items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors duration-150 ${
+                className={`inline-flex min-h-[34px] items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors duration-300 ${
                     busy
                         ? 'border-violet-200 bg-violet-50 text-violet-700'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100'
+                        : outcome
+                            ? RESULT_TINT[outcome.result]
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100'
                 } ${FOCUS} ${className}`}
             >
                 {busy ? (
                     <>
                         <Spinner className="h-3.5 w-3.5" />
                         {busy.label}
+                    </>
+                ) : outcome ? (
+                    <>
+                        <ResultIcon result={outcome.result} className="h-3.5 w-3.5" />
+                        {outcome.label}
                     </>
                 ) : (
                     <>
@@ -242,6 +342,7 @@ export function ActionMenu({ label = 'Actions', items = [], align = 'right', cla
                     </>
                 )}
             </button>
+            )}
 
             {open && box && createPortal(
                 <div
@@ -258,7 +359,7 @@ export function ActionMenu({ label = 'Actions', items = [], align = 'right', cla
                         maxHeight: box.maxHeight,
                         animation: 'menu-in 160ms cubic-bezier(0.16, 1, 0.3, 1)',
                     }}
-                    className={`z-50 overflow-y-auto rounded-2xl bg-white p-1.5 ${ELEVATION.overlay}`}
+                    className={`z-50 overflow-y-auto rounded-2xl bg-white p-1.5 ${ELEVATION.menu}`}
                 >
                     {entries.map((item) => {
                         if (item.separator) {
@@ -302,6 +403,38 @@ export function ActionMenu({ label = 'Actions', items = [], align = 'right', cla
                 document.body,
             )}
         </>
+    );
+}
+
+/*
+| Prev/Next pager driven by the API's meta.pagination block.
+|
+| Moved here from attendance/parts.jsx (2026-10-05): the employee roster needed
+| one too, and a second pager is exactly the desktop/mobile drift rule 5 exists
+| to prevent. `noun` names what is being paged, so the same control reads
+| "362 employees" on one screen and "1,204 punches" on another.
+|
+| Returns null for a single page, so a caller can render it unconditionally.
+*/
+export function Pager({ pagination, onPage, loading, noun = 'results' }) {
+    if (!pagination || (pagination.last_page ?? 1) <= 1) return null;
+
+    const { current_page: current, last_page: last, total } = pagination;
+
+    return (
+        <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-slate-500">
+                Page {current} of {last} · {(total ?? 0).toLocaleString()} {noun}
+            </span>
+            <div className="flex gap-2">
+                <Button variant="secondary" className="min-h-[36px] px-3 text-xs" disabled={loading || current <= 1} onClick={() => onPage(current - 1)}>
+                    Previous
+                </Button>
+                <Button variant="secondary" className="min-h-[36px] px-3 text-xs" disabled={loading || current >= last} onClick={() => onPage(current + 1)}>
+                    Next
+                </Button>
+            </div>
+        </div>
     );
 }
 

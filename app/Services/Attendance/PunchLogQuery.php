@@ -3,6 +3,8 @@
 namespace App\Services\Attendance;
 
 use App\Models\AttendanceLog;
+use App\Models\Department;
+use App\Models\Employee;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,7 +38,12 @@ final class PunchLogQuery
     }
 
     /**
-     * @param  array{employee_id?:int|string|null,device_id?:int|string|null,from?:string|null,to?:string|null}  $filters
+     * `department_id` is a node of the Company › Department tree (2026-10-11): the
+     * punches of everyone in that department or beneath it, or `none` for people in
+     * no department. A punch matched to no employee belongs to no department, so any
+     * department filter leaves it out.
+     *
+     * @param  array{employee_id?:int|string|null,device_id?:int|string|null,department_id?:int|string|null,search?:string|null,from?:string|null,to?:string|null}  $filters
      */
     public static function build(User $user, bool $selfOnly, array $filters): Builder
     {
@@ -46,6 +53,32 @@ final class PunchLogQuery
             ->when($selfOnly, fn ($q) => $q->where('employee_id', $user->employee_id))
             ->when(! $selfOnly && $value('employee_id') !== null, fn ($q) => $q->where('employee_id', (int) $filters['employee_id']))
             ->when($value('device_id') !== null, fn ($q) => $q->where('device_id', (int) $filters['device_id']))
+            ->when($value('department_id') === 'none', fn ($q) => $q->whereHas('employee', fn ($e) => $e->whereNull('department_id')))
+            ->when(
+                $value('department_id') !== null && $value('department_id') !== 'none',
+                fn ($q) => $q->whereHas('employee', fn ($e) => $e->whereIn('department_id', Department::subtreeIds((int) $filters['department_id']))),
+            )
+            // Every word must match the employee's first name, last name or code, or
+            // the PIN the terminal stamped — the same rule as the Employees search, so
+            // the full name as displayed finds the person. A punch nobody is linked to
+            // can still be found by its PIN.
+            ->when($value('search') !== null, function ($q) use ($filters) {
+                foreach (preg_split('/\s+/', trim((string) $filters['search']), -1, PREG_SPLIT_NO_EMPTY) as $word) {
+                    $term = '%'.$word.'%';
+                    // The matching people first, then their punches by id: a few
+                    // hundred employees are cheap to scan, and a correlated EXISTS per
+                    // punch took ~1s over 150k punches on SQL Server (2026-10-11).
+                    $ids = Employee::query()
+                        ->where(fn ($e) => $e
+                            ->where('name', 'like', $term)
+                            ->orWhere('last_name', 'like', $term)
+                            ->orWhere('employee_code', 'like', $term))
+                        ->pluck('id');
+                    $q->where(fn ($w) => $w
+                        ->where('device_user_id', 'like', $term)
+                        ->orWhereIn('employee_id', $ids));
+                }
+            })
             ->when($value('from') !== null, fn ($q) => $q->where('punched_at', '>=', self::dayStart($filters['from'])))
             ->when($value('to') !== null, fn ($q) => $q->where('punched_at', '<=', self::dayEnd($filters['to'])))
             ->latest('punched_at');

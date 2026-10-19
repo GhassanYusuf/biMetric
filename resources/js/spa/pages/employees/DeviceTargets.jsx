@@ -1,3 +1,4 @@
+import { can } from '../devices/parts';
 import { FOCUS } from '../../shared/theme';
 
 /*
@@ -77,12 +78,19 @@ export function enrolledTargets(employee) {
             name: m.device_name ?? `Device ${m.device_id}`,
             held: m.device_held_name,
             pin: m.device_user_id,
+            // What that terminal held at its last read — for "is it up to date?".
+            card: m.card_number ?? null,
+            fingers: Array.isArray(m.fingerprint_slots) ? m.fingerprint_slots.map(Number) : null,
         }));
 }
 
-/** Every terminal this app can write a user to. */
+/**
+ * Every terminal this app can write a user to — by CAPABILITY, not protocol (rule 9).
+ * Since 2026-09-24 that includes the C3 door panels, which were filtered out by a
+ * `protocol === 'binary'` check even after they could take users.
+ */
 export function writableTargets(devices) {
     return devices
-        .filter((d) => d.protocol === 'binary' && d.is_active)
+        .filter((d) => d.is_active && can(d, 'user.write'))
         .map((d) => ({ id: d.id, name: d.name, held: null, pin: null }));
 }

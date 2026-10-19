@@ -2,6 +2,10 @@
 
 namespace Tests\Feature\Devices;
 
+use App\Services\Devices\DeviceUserSyncService;
+
+use Promoseven\Biometric\Capability\Capability;
+
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\AttendanceLog;
 use App\Models\Device;
@@ -198,13 +202,13 @@ class EmployeePropagationTest extends TestCase
         {
             public ?int $failOn = null;
 
-            public function saveUser(Device $device, string $userId, string $name, ?\Closure $guard = null, bool $onlyIfMissing = false): DeviceUser
+            public function saveUser(Device $device, string $userId, string $name, ?\Closure $guard = null, bool $onlyIfMissing = false, ?int $privilege = null, ?string $password = null): DeviceUser
             {
                 if ($device->id === $this->failOn) {
                     throw new DeviceException('The device did not answer.');
                 }
 
-                return parent::saveUser($device, $userId, $name, $guard, $onlyIfMissing);
+                return parent::saveUser($device, $userId, $name, $guard, $onlyIfMissing, $privilege, $password);
             }
         };
         $driver->failOn = $failing->id;
@@ -225,7 +229,7 @@ class EmployeePropagationTest extends TestCase
     }
 
     /**
-     * A terminal whose roster has never been read is READ-ONLY. Queueing a push at
+     * A terminal holding somebody nobody has matched is READ-ONLY. Queueing a push at
      * it would fail on the worker minutes later, by which time the operator has gone
      * — so it is refused here, with the reason, while they are still looking.
      */
@@ -235,7 +239,16 @@ class EmployeePropagationTest extends TestCase
 
         $this->app->instance(BiometricDeviceDriver::class, new FakeBiometricDriver);
 
-        $unadopted = $this->device('Warehouse', Device::UNADOPTED);
+        $unadopted = $this->device('Warehouse', Device::READ_ONLY);
+        // Since 2026-10-11 a terminal is only refused when somebody on it is
+        // unmatched — otherwise the write adopts it by itself.
+        \App\Models\DeviceRosterEntry::create([
+            'tenant_id' => $this->tenant->id,
+            'device_id' => $unadopted->id,
+            'device_user_id' => '77',
+            'device_name' => 'Unknown person',
+            'claim_status' => \App\Models\DeviceRosterEntry::UNCLAIMED,
+        ]);
 
         $res = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
             'device_ids' => [$this->adopted->id, $unadopted->id],
@@ -503,7 +516,7 @@ class EmployeePropagationTest extends TestCase
 
     private function onDevice(FakeBiometricDriver $driver, string $pin): void
     {
-        $driver->roster[] = new DeviceUser(uid: 7, userId: $pin, name: $this->employee->name, cardNumber: 2862247, fingerSlots: [5]);
+        $driver->roster[] = new DeviceUser(uid: 7, userId: $pin, name: $this->employee->name, privilege: 14, cardNumber: 2862247, fingerSlots: [5]);
     }
 
     /**
@@ -515,9 +528,19 @@ class EmployeePropagationTest extends TestCase
      * The F18 refuses renumbering (ACK_ERROR, 2026-09-23), so on the default capability
      * set the ID is left alone — never attempted — and the name is still pushed under it.
      */
-    public function test_on_the_f18_defaults_the_user_id_is_kept_and_the_name_still_pushed(): void
+    /*
+     * Casebook DC-014 (owner, 2026-10-11): a terminal left on the old ID is a FAILURE,
+     * not a green row with a note — every save must put the code on every terminal.
+     * The name still goes out.
+     */
+    public function test_a_model_with_no_way_to_move_the_id_is_reported_failed_with_the_name_still_pushed(): void
     {
         $driver = new FakeBiometricDriver;
+        // A model with neither method: no in-place move, and no delete to re-add with.
+        $driver->capabilityOverrides = [
+            \Promoseven\Biometric\Capability\Capability::USER_RENUMBER => \Promoseven\Biometric\Capability\Capability::NOT_IMPLEMENTED,
+            \Promoseven\Biometric\Capability\Capability::USER_DELETE => \Promoseven\Biometric\Capability\Capability::NOT_IMPLEMENTED,
+        ];
         $this->app->instance(BiometricDeviceDriver::class, $driver);
         $this->onDevice($driver, '960802797');
         $old = $this->mapTo($this->adopted, '960802797');
@@ -525,8 +548,8 @@ class EmployeePropagationTest extends TestCase
         $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
             'device_ids' => [$this->adopted->id],
             'to_employee_code' => true,
-        ])->assertOk()->assertJsonCount(1, 'data.written')->assertJsonCount(0, 'data.failed')
-            ->assertJsonPath('data.written.0.pin', '960802797');
+        ])->assertOk()->assertJsonCount(0, 'data.written')->assertJsonCount(1, 'data.failed')
+            ->assertJsonPath('data.failed.0.error', fn ($e) => str_contains($e, 'Name written, but the user ID is still 960802797'));
 
         $this->assertSame([], $driver->renumbers);
         $this->assertSame([['960802797', $this->employee->name]], $driver->writes);
@@ -657,5 +680,303 @@ class EmployeePropagationTest extends TestCase
 
         $this->assertNull($old->fresh()->valid_to);
         $this->assertSame([], $driver->writes);
+    }
+
+    /*
+     * Rule 21 / DC-014: the F18 refuses an in-place move, so its method is to re-add
+     * the person under the code with their card and fingers put back (rule 19).
+     */
+    public function test_on_the_f18_the_id_moves_by_re_adding_with_card_and_fingers_back(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $this->mapTo($this->adopted, '960802797');
+        $blob = "\x4A\x2DSS21".random_bytes(300);
+        $driver->templates = [['user_id' => '960802797', 'uid' => 7, 'slot' => 5, 'valid' => 1, 'size' => 306, 'sha1' => sha1($blob), 'template' => $blob]];
+
+        $res = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk();
+
+        $this->assertSame([], $res->json('data.failed'), json_encode($res->json('data.failed')));
+        $res->assertJsonPath('data.written.0.pin', '501');
+        $this->assertSame(['960802797'], $driver->deletes);
+        $this->assertSame([['501', 2862247]], $driver->cardWrites);
+        $this->assertSame([['user_id' => '501', 'slot' => 5, 'template' => $blob]], $driver->uploads);
+        $this->assertStringContainsString('by re-adding them', $res->json('data.written.0.message'));
+        $this->assertSame(14, collect($driver->roster)->firstWhere('userId', '501')->privilege, 'an admin stays an admin');
+    }
+
+    public function test_a_model_that_cannot_put_fingers_back_is_refused_before_anything_is_deleted(): void
+    {
+        $driver = new FakeBiometricDriver;
+        // The F22 today: no in-place move proven, no fingerprint write proven.
+        $driver->capabilityOverrides = [
+            \Promoseven\Biometric\Capability\Capability::USER_RENUMBER => \Promoseven\Biometric\Capability\Capability::UNKNOWN,
+            \Promoseven\Biometric\Capability\Capability::TEMPLATE_UPLOAD => \Promoseven\Biometric\Capability\Capability::UNKNOWN,
+        ];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $this->mapTo($this->adopted, '960802797');
+
+        $res = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(1, 'data.failed');
+
+        $this->assertStringContainsString('cannot take fingerprints from this app yet', $res->json('data.failed.0.error'));
+        $this->assertSame([], $driver->deletes);
+        $this->assertSame([], $driver->writes);
+    }
+
+    /*
+     * The pre-check and the claim are ONE check (2026-10-11): a number whose terminal
+     * roster entry the owner has given to this employee — no mapping behind it — is
+     * free for the move, and the claim after the delete accepts it too.
+     */
+    public function test_a_number_given_to_them_on_the_roster_is_claimable_after_the_delete(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $this->mapTo($this->adopted, '960802797');
+        \App\Models\DeviceRosterEntry::create([
+            'tenant_id' => $this->adopted->tenant_id, 'device_id' => $this->adopted->id, 'device_user_id' => '501',
+            'device_name' => 'old test record', 'claim_status' => \App\Models\DeviceRosterEntry::CLAIMED,
+            'claimed_employee_id' => $this->employee->id, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+        $driver->templates = [];
+        $driver->roster[0] = new DeviceUser(uid: 7, userId: '960802797', name: $this->employee->name, cardNumber: 2862247, fingerSlots: []);
+
+        $res = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id], 'to_employee_code' => true,
+        ])->assertOk();
+
+        $this->assertSame([], $res->json('data.failed'), json_encode($res->json('data.failed')));
+        $res->assertJsonPath('data.written.0.pin', '501');
+    }
+
+    // ---------------------------------------------------------------- the buttons on a red row (DC-014)
+
+    private function unlinkedHolder(FakeBiometricDriver $driver, string $pin, string $name, ?int $claimedBy = null): void
+    {
+        $driver->roster[] = new DeviceUser(uid: 6, userId: $pin, name: $name, cardNumber: 2862247, fingerSlots: [5]);
+        \App\Models\DeviceRosterEntry::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'device_user_id' => $pin,
+            'device_name' => $name, 'claim_status' => \App\Models\DeviceRosterEntry::CLAIMED,
+            'claimed_employee_id' => $claimedBy, 'first_seen_at' => now(), 'last_seen_at' => now(),
+        ]);
+    }
+
+    /*
+     * The Ali case: his code is held on IT ROOM by "ali-it", a test record linked to no
+     * employee. The push row offers to free it; freeing saves the record and its finger
+     * first, deletes it, and the next push moves him onto the number.
+     */
+    public function test_a_number_held_by_an_unlinked_record_is_offered_freed_and_then_taken(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $driver->roster[] = new DeviceUser(uid: 7, userId: '960802797', name: $this->employee->name, cardNumber: 7511517, fingerSlots: []);
+        $this->mapTo($this->adopted, '960802797');
+        $this->unlinkedHolder($driver, '501', 'ali-it');
+        $driver->templates = [['user_id' => '501', 'uid' => 6, 'slot' => 5, 'valid' => 1, 'size' => 4, 'sha1' => sha1('AAAA'), 'template' => 'AAAA']];
+
+        $first = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id], 'to_employee_code' => true,
+        ])->assertOk();
+        $first->assertJsonPath('data.failed.0.action.type', 'release_number')
+            ->assertJsonPath('data.failed.0.action.device_user_id', '501')
+            ->assertJsonPath('data.failed.0.action.holder', 'ali-it');
+        $this->assertSame([], $driver->deletes, 'nothing changes until the operator presses the button');
+
+        $release = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/devices/{$this->adopted->id}/release-number", [
+            'device_user_id' => '501',
+        ])->assertOk();
+        $this->assertSame(['501'], $driver->deletes);
+        \Illuminate\Support\Facades\Storage::disk('local')->assertExists($release->json('data.snapshot'));
+        $saved = json_decode(\Illuminate\Support\Facades\Crypt::decryptString(\Illuminate\Support\Facades\Storage::disk('local')->get($release->json('data.snapshot'))), true);
+        $this->assertSame('ali-it', $saved['record']['name']);
+        $this->assertSame(base64_encode('AAAA'), $saved['templates'][0]['template']);
+
+        $driver->templates = [];
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id], 'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(0, 'data.failed')->assertJsonPath('data.written.0.pin', '501');
+    }
+
+    /*
+     * "ali-it and Ali Mohamed are the same person" (owner, 2026-10-11). The duplicate's
+     * finger becomes the employee's copy, its punches are credited to them, it is
+     * removed, and the next push gives them ONE record at the code with every finger.
+     */
+    public function test_same_person_merges_the_duplicate_then_one_record_carries_everything(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $driver->roster[] = new DeviceUser(uid: 7, userId: '960802797', name: $this->employee->name, privilege: 14, cardNumber: 7511517, fingerSlots: []);
+        $this->mapTo($this->adopted, '960802797');
+        $this->unlinkedHolder($driver, '501', 'ali-it');
+        $five = "\x4A\x2DSS21".random_bytes(100);
+        $driver->templates = [['user_id' => '501', 'uid' => 6, 'slot' => 5, 'valid' => 1, 'size' => strlen($five), 'sha1' => sha1($five), 'template' => $five]];
+        AttendanceLog::create(['tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'device_user_id' => '501', 'punched_at' => now()->subWeek(), 'status' => 0]);
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/devices/{$this->adopted->id}/release-number", [
+            'device_user_id' => '501', 'same_person' => true,
+        ])->assertOk()->assertJsonPath('message', fn ($m) => str_contains($m, 'merged into'));
+
+        $this->assertSame(['501'], $driver->deletes);
+        $this->assertSame([5], app(\App\Services\Employees\FingerprintVault::class)->storedSlots($this->employee->id));
+        $this->assertSame($this->employee->id, (int) AttendanceLog::query()->where('device_user_id', '501')->value('employee_id'));
+
+        $driver->templates = [];
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id], 'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(0, 'data.failed')->assertJsonPath('data.written.0.pin', '501');
+
+        $one = collect($driver->roster)->filter(fn ($u) => $u->name === $this->employee->name)->values();
+        $this->assertCount(1, $one, 'one record for the person');
+        $this->assertSame('501', $one[0]->userId);
+        $this->assertSame([5], $one[0]->fingerSlots);
+        $this->assertSame(14, $one[0]->privilege);
+        $this->assertSame([['501', 7511517]], $driver->cardWrites);
+    }
+
+    public function test_with_nobody_missing_a_finger_the_test_uses_a_temporary_user_and_deletes_it(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [\Promoseven\Biometric\Capability\Capability::TEMPLATE_UPLOAD => \Promoseven\Biometric\Capability\Capability::UNKNOWN];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797'); // already holds finger 5
+        $this->mapTo($this->adopted, '960802797');
+        $other = $this->device('IT ROOM', Device::ADOPTED);
+        $blob = "\x4A\x2DSS21".random_bytes(150);
+        \App\Models\BiometricTemplate::create([
+            'tenant_id' => $this->tenant->id, 'employee_id' => $this->employee->id, 'device_id' => $other->id,
+            'finger_slot' => 5, 'template' => base64_encode($blob), 'template_sha1' => sha1($blob),
+            'template_size' => strlen($blob), 'template_format' => 'binary:F18', 'verified_at' => now(),
+        ]);
+
+        $this->asAdmin()->postJson("/api/devices/{$this->adopted->id}/fingerprint-write-test")
+            ->assertOk()->assertJsonPath('message', fn ($m) => str_contains($m, 'temporary user'));
+
+        $this->assertCount(1, $driver->uploads);
+        $temp = $driver->uploads[0]['user_id'];
+        $this->assertNotSame('960802797', $temp, 'no real person received the test finger');
+        $this->assertSame([$temp], $driver->deletes, 'only the temporary user was deleted');
+        $this->assertFalse(collect($driver->roster)->contains(fn ($u) => $u->userId === $temp));
+        $this->assertSame('implemented', $this->adopted->fresh()->capabilities_cache['template.upload']);
+    }
+
+    public function test_a_number_that_belonged_to_an_employee_is_never_offered_or_freed(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $driver->roster[] = new DeviceUser(uid: 7, userId: '960802797', name: $this->employee->name, fingerSlots: []);
+        $this->mapTo($this->adopted, '960802797');
+        $other = Employee::create(['tenant_id' => $this->tenant->id, 'name' => 'Real person', 'employee_code' => '999', 'is_active' => true]);
+        $this->unlinkedHolder($driver, '501', 'Real person', $other->id);
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id], 'to_employee_code' => true,
+        ])->assertOk()->assertJsonPath('data.failed.0.action', null);
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/devices/{$this->adopted->id}/release-number", [
+            'device_user_id' => '501',
+        ])->assertStatus(409);
+        $this->assertSame([], $driver->deletes);
+    }
+
+    /*
+     * On The Road: the F22 never wrote a fingerprint. The push row offers the test;
+     * the test ADDS one finger the system holds to someone missing it there — nobody
+     * deleted — and raises the level for that terminal only.
+     */
+    public function test_the_fingerprint_write_test_adds_one_held_finger_and_unlocks_only_that_terminal(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [
+            \Promoseven\Biometric\Capability\Capability::USER_RENUMBER => \Promoseven\Biometric\Capability\Capability::UNKNOWN,
+            \Promoseven\Biometric\Capability\Capability::TEMPLATE_UPLOAD => \Promoseven\Biometric\Capability\Capability::UNKNOWN,
+        ];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797'); // fingers [5] on the terminal
+        $this->mapTo($this->adopted, '960802797');
+        $other = $this->device('IT ROOM', Device::ADOPTED);
+        $blob = "\x4A\x2DSS21".random_bytes(200);
+        \App\Models\BiometricTemplate::create([
+            'tenant_id' => $this->tenant->id, 'employee_id' => $this->employee->id, 'device_id' => $other->id,
+            'finger_slot' => 6, 'template' => base64_encode($blob), 'template_sha1' => sha1($blob),
+            'template_size' => strlen($blob), 'template_format' => 'binary:F18', 'verified_at' => now(),
+        ]);
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id], 'to_employee_code' => true,
+        ])->assertOk()->assertJsonPath('data.failed.0.action.type', 'test_fingerprint_write');
+
+        $this->asAdmin()->postJson("/api/devices/{$this->adopted->id}/fingerprint-write-test")
+            ->assertOk()->assertJsonPath('data.slot', 6);
+
+        $this->assertSame([['user_id' => '960802797', 'slot' => 6, 'template' => $blob]], $driver->uploads);
+        $this->assertSame([], $driver->deletes);
+        $this->assertSame('implemented', $this->adopted->fresh()->capabilities_cache['template.upload']);
+        $this->assertArrayNotHasKey('template.upload', $other->fresh()->capabilities_cache ?? []);
+    }
+
+    /*
+     * The keypad password (2026-10-12). A push writes the system's password only where
+     * the model's password.write is CONFIRMED; until then it keeps the terminal's own,
+     * which library releases before 2.13.0 erased on every write.
+     */
+    public function test_a_push_keeps_the_terminal_password_until_writing_one_is_confirmed(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        Tenancy::set($this->tenant->id);
+        $this->employee->update(['device_password' => '4321']);
+        Tenancy::clear();
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", ['device_ids' => [$this->adopted->id]])->assertOk();
+
+        $this->assertCount(1, $driver->passwordsWritten);
+        $this->assertNull(array_values($driver->passwordsWritten)[0], 'held back: null keeps the terminal\'s password');
+    }
+
+    public function test_a_push_writes_the_password_once_the_model_has_confirmed_it(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [Capability::PASSWORD_WRITE => Capability::CONFIRMED];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        Tenancy::set($this->tenant->id);
+        $this->employee->update(['device_password' => '4321']);
+        Tenancy::clear();
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", ['device_ids' => [$this->adopted->id]])->assertOk();
+
+        $this->assertSame(['4321'], array_values($driver->passwordsWritten));
+    }
+
+    public function test_a_roster_read_keeps_a_password_only_the_terminal_knew_and_never_overwrites_ours(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        Tenancy::set($this->tenant->id);
+        $this->mapTo($this->adopted, '501');
+        $other = Employee::create(['tenant_id' => $this->tenant->id, 'name' => 'Omar', 'employee_code' => '502', 'is_active' => true, 'device_password' => '1111']);
+        EmployeeDeviceMap::create(['tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'employee_id' => $other->id, 'device_user_id' => '502', 'valid_from' => now()->subYear()]);
+        $driver->roster = [
+            new DeviceUser(uid: 1, userId: '501', name: 'Aisha Rahman', password: '4321'),
+            new DeviceUser(uid: 2, userId: '502', name: 'Omar', password: '9999'),
+        ];
+
+        app(DeviceUserSyncService::class)->syncEnrollmentState($this->adopted);
+
+        $this->assertSame('4321', $this->employee->fresh()->device_password, 'captured from the terminal');
+        $this->assertSame('1111', $other->fresh()->device_password, 'the system\'s own password is never overwritten by a read');
+        Tenancy::clear();
     }
 }

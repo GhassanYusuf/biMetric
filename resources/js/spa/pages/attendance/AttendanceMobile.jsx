@@ -1,24 +1,25 @@
 import { useState } from 'react';
 import { FOCUS } from '../../shared/theme';
-import { Badge, Button, Card, EmptyState, PageHeader, SelectField, Skeleton, TextField } from '../../shared/ui';
+import { ActionMenu, Badge, Button, Card, EmptyState, PageHeader, Pager, SelectField, Skeleton, TextField } from '../../shared/ui';
 import UnmatchedName from './UnmatchedName';
-import { MatchedEmployee, NationalIdLookup, Pager, formatPunch, groupByDay, verifyLabel } from './parts';
+import DepartmentTree from '../employees/DepartmentTree';
+import { formatPunch, groupByDay, verifyLabel } from './parts';
 
 // Same object as the desktop's, for the same reason: one place that knows what a
 // cleared filter bar is.
-const NO_FILTERS = { employee_id: '', device_id: '', from: '', to: '' };
+const NO_FILTERS = { employee_id: '', device_id: '', department_id: '', search: '', from: '', to: '' };
 
 // Mobile attendance: collapsed filters behind a toggle (they'd otherwise eat the
 // whole first screen), then punches grouped under sticky day headers.
 export default function AttendanceMobile({
-    rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting,
-    matched, onLookup, onClearMatch, lookingUp, canLookup,
+    rows, devices, departments, unassignedCount, departmentsLoaded,
+    filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems,
 }) {
     const [filtersOpen, setFiltersOpen] = useState(false);
-    const hasFilters = !!(filters.employee_id || filters.device_id || filters.from || filters.to);
+    const hasFilters = !!(filters.employee_id || filters.device_id || filters.department_id || filters.search || filters.from || filters.to);
     // The employee counts too: with the panel shut, the badge is the only thing
     // saying the list has been narrowed by something.
-    const activeCount = [filters.employee_id, filters.device_id, filters.from, filters.to].filter(Boolean).length;
+    const activeCount = [filters.employee_id, filters.device_id, filters.department_id, filters.from, filters.to].filter(Boolean).length;
 
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
@@ -27,17 +28,8 @@ export default function AttendanceMobile({
     return (
         <div className="space-y-4">
             <PageHeader title="Attendance" compact>
-                {/* Same export as desktop, same filters, same server-side scope. */}
-                <Button
-                    variant="secondary"
-                    className="min-h-[38px] px-3 text-sm"
-                    loading={exporting}
-                    disabled={exporting}
-                    onClick={onExport}
-                    title="Download these punches as a PDF"
-                >
-                    {exporting ? 'Preparing…' : 'PDF'}
-                </Button>
+                {/* Same exports as desktop, same filters, same server-side scope. */}
+                <ActionMenu label="Export" className="min-h-[38px] px-3 text-sm" items={exportItems} />
                 <Button
                     variant="secondary"
                     className="min-h-[38px] px-3 text-sm"
@@ -49,21 +41,27 @@ export default function AttendanceMobile({
                 </Button>
             </PageHeader>
 
-            {/*
-              | Outside the collapsible panel deliberately. The panel is shut by
-              | default, and a list quietly showing one employee with nothing on
-              | screen saying so reads as "the device stopped recording".
-            */}
-            {matched && <MatchedEmployee employee={matched} onClear={onClearMatch} />}
+            {/* Search and the tree stay out from behind the Filters toggle: they are
+                how most people get to one person's punches (rule 5: desktop has both). */}
+            <TextField
+                aria-label="Search punches"
+                placeholder="Search by name, code or PIN…"
+                value={search}
+                onChange={(e) => onSearch(e.target.value)}
+            />
+            <DepartmentTree
+                variant="collapsible"
+                departments={departments}
+                unassignedCount={unassignedCount}
+                loaded={departmentsLoaded}
+                counts={false}
+                allLabel="Everyone"
+                value={filters.department_id ?? ''}
+                onChange={(id) => set('department_id', id)}
+            />
 
             {filtersOpen && (
                 <Card className="space-y-3 p-4">
-                    {canLookup && (
-                        <>
-                            <NationalIdLookup onLookup={onLookup} busy={lookingUp} />
-                            <div className="h-px bg-slate-100" />
-                        </>
-                    )}
                     <SelectField label="Device" value={filters.device_id} onChange={(e) => set('device_id', e.target.value)}>
                         <option value="">All devices</option>
                         {devices.map((d) => (
@@ -125,7 +123,7 @@ export default function AttendanceMobile({
                 </div>
             )}
 
-            <Pager pagination={pagination} onPage={onPage} loading={loading} />
+            <Pager pagination={pagination} onPage={onPage} loading={loading} noun="punches" />
         </div>
     );
 }

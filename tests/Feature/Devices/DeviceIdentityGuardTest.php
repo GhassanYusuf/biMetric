@@ -58,16 +58,42 @@ class DeviceIdentityGuardTest extends TestCase
 
     // ---------------------------------------------------------------- adoption gate
 
-    public function test_a_new_device_refuses_writes_until_its_roster_is_accounted_for(): void
+    /**
+     * Since 2026-10-11 a write prepares the terminal itself: it reads the roster and,
+     * finding a stranger there, refuses — the same protection the manual step gave,
+     * without the operator having to take it.
+     */
+    public function test_a_new_device_holding_a_stranger_refuses_the_write(): void
     {
         $device = $this->device();
         $employee = $this->employee('Nadia', '100');
+        $this->driver->roster = [new DeviceUser(1, '5', 'Existing Person')];
 
-        $this->assertSame(Device::UNADOPTED, $device->adoption_status);
+        try {
+            $this->sync()->pushEmployee($device, $employee);
+            $this->fail('The write should have been refused.');
+        } catch (DeviceNotAdoptedException $e) {
+            $this->assertStringContainsString('Existing Person (PIN 5)', $e->getMessage());
+        }
 
-        $this->expectException(DeviceNotAdoptedException::class);
+        // Read, not written: the stranger is recorded and still the only one there.
+        $this->assertSame(Device::READ_ONLY, $device->refresh()->adoption_status);
+        $this->assertCount(1, $this->driver->roster);
+    }
+
+    public function test_a_new_device_with_nobody_unmatched_is_adopted_by_the_write_itself(): void
+    {
+        $device = $this->device();
+        $employee = $this->employee('Nadia', '100');
+        $this->driver->roster = [];
+        $this->app->make(DeviceIdentityResolver::class)->claim($device, $employee);
 
         $this->sync()->pushEmployee($device, $employee);
+
+        $device->refresh();
+        $this->assertSame(Device::ADOPTED, $device->adoption_status);
+        $this->assertNotNull($device->roster_read_at);
+        $this->assertCount(1, $this->driver->roster);
     }
 
     public function test_reading_a_roster_leaves_the_device_read_only_while_entries_are_undecided(): void
@@ -355,6 +381,67 @@ class DeviceIdentityGuardTest extends TestCase
     }
 
     // ------------------------------------------------------------------- helpers
+
+    /**
+     * A C3 stores 041112750 as 41112750, so its driver reports a "move" to the
+     * employee code as the person already being there (2026-10-11). That must read as
+     * "already done" — not a failure, and not a closed-and-reopened mapping on every
+     * save.
+     */
+    public function test_a_move_the_driver_finds_already_done_changes_nothing(): void
+    {
+        $device = $this->adoptedDeviceHolding([]);
+        $employee = $this->employee('Tariq', '041112750');
+        $this->app->make(DeviceIdentityResolver::class)->claim($device, $employee, '41112750');
+        $mapId = EmployeeDeviceMap::where('employee_id', $employee->id)->value('id');
+
+        // Stand-in for C3Driver::renumberUser() on a Pin that only differs by a
+        // leading zero: it returns the record where it already is.
+        $this->driver->capabilityOverrides = [Capability::USER_RENUMBER => 'implemented'];
+        $driver = new class extends FakeBiometricDriver {
+            public function renumberUser(Device $device, string $fromUserId, string $toUserId): DeviceUser
+            {
+                return new DeviceUser(319, $fromUserId, 'Tariq');
+            }
+        };
+        $driver->capabilityOverrides = $this->driver->capabilityOverrides;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+
+        $result = $this->app->make(DeviceUserSyncService::class)->renumberEmployee($device, $employee, '041112750');
+
+        $this->assertStringContainsString('already user ID 41112750', $result['message']);
+        $this->assertSame(1, EmployeeDeviceMap::where('employee_id', $employee->id)->count());
+        $this->assertNull(EmployeeDeviceMap::find($mapId)->valid_to);
+    }
+
+    /**
+     * The person was once seen at the new number, so a roster entry for it — claimed
+     * by them — is still there. The move must replace it, not crash on the unique
+     * (device, PIN) index after the hardware has already moved (Ghassan, 2026-10-11).
+     */
+    public function test_a_move_onto_a_number_this_person_once_held_records_cleanly(): void
+    {
+        $device = $this->adoptedDeviceHolding([]);
+        $employee = $this->employee('Ghassan', '830108246');
+        $this->driver->roster = [new DeviceUser(247, '656', 'Gassan')];
+        $this->app->make(DeviceIdentityResolver::class)->claim($device, $employee, '656');
+        DeviceRosterEntry::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $device->id, 'device_uid' => 247,
+            'device_user_id' => '656', 'device_name' => 'Gassan',
+            'claim_status' => DeviceRosterEntry::CLAIMED, 'claimed_employee_id' => $employee->id,
+        ]);
+        DeviceRosterEntry::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $device->id, 'device_uid' => 247,
+            'device_user_id' => '830108246', 'device_name' => 'Gassan',
+            'claim_status' => DeviceRosterEntry::CLAIMED, 'claimed_employee_id' => $employee->id,
+        ]);
+        $this->driver->capabilityOverrides = [Capability::USER_RENUMBER => 'implemented'];
+
+        $this->sync()->renumberEmployee($device, $employee, '830108246');
+
+        $this->assertSame('830108246', $this->app->make(DeviceIdentityResolver::class)->activeMap($device, $employee)->device_user_id);
+        $this->assertSame(['830108246'], DeviceRosterEntry::where('device_id', $device->id)->pluck('device_user_id')->all());
+    }
 
     private function device(string $name = 'IT Room'): Device
     {

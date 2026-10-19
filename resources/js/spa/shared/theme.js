@@ -45,11 +45,19 @@ export const TREND = {
 | card     resting surfaces
 | raised   hover / active surfaces and popovers
 | overlay  command palette, dropdowns, sheets
+|
+| `menu` breaks the rule on purpose. The rule exists so a RESTING card cannot
+| read as a ghost. A dropdown floating over content is the opposite case: there
+| is nothing behind it saying where it stops. Dropped over the employee table —
+| itself white, with a hover tint on the row underneath — a shadow alone left
+| the panel unreadable (2026-10-05). The hairline gives it an edge; the shadow
+| lifts it off the row.
 */
 export const ELEVATION = {
     card: 'shadow-[0_1px_2px_rgba(16,24,40,0.04),0_4px_16px_-8px_rgba(16,24,40,0.08)]',
     raised: 'shadow-[0_2px_4px_rgba(16,24,40,0.06),0_12px_28px_-12px_rgba(16,24,40,0.16)]',
     overlay: 'shadow-[0_8px_16px_rgba(16,24,40,0.08),0_32px_64px_-24px_rgba(16,24,40,0.28)]',
+    menu: 'ring-1 ring-slate-900/10 shadow-[0_10px_20px_-6px_rgba(16,24,40,0.18),0_28px_56px_-20px_rgba(16,24,40,0.32)]',
 };
 
 // Cards sit at 16px; only small controls get pill/12px radii.

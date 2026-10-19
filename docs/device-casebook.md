@@ -1,0 +1,499 @@
+# Device casebook
+
+**Last updated: 2026-10-18**
+
+The history of every problem met between this software and the terminals — what was
+seen, what was done about it, what the cause turned out to be, how it was fixed and
+how the fix was proven. Required by **CLAUDE.md rule 20** (owner, 2026-10-11): *"log it
+all, what have you done, what was the problem and how you got it fixed — a memo for
+yourself, so next time we try to find a problem or fix it you have a history to read."*
+
+**Read this before investigating any device problem.** Search it for the device name,
+the model, the IP, the command number, the error text. Most problems here have a
+cousin already in this file, and the dead ends are recorded so they are not walked
+twice.
+
+How it differs from the other records:
+
+| File | Answers |
+|---|---|
+| `docs/PROJECT-STATE.md` | Where are we now? What is open, who owes what? |
+| `docs/device-capabilities.md` | What can each model do — the settled facts? |
+| **this file** | **What went wrong before, how was it found, what fixed it?** |
+
+---
+
+## How to write an entry
+
+- **Open it when the investigation starts**, not when it ends. Add to it as you go.
+  An investigation abandoned halfway is still an entry (`Status: OPEN`) — the next
+  person starts where it stopped.
+- **One entry per problem.** A problem that turns out to be two gets two entries,
+  cross-referenced.
+- **Newest first.** IDs are sequential and never reused: `DC-NNN`.
+- **Absolute dates and UTC times.** Never "today" or "last week".
+- **Name the hardware exactly:** name, model, IP — e.g. `IT ROOM (F18, 192.168.7.62)`.
+- **Direction:** `software → device` (a write, a command), `device → software` (a
+  read, a decode, a stored value), or both.
+- **"What was done" includes every action taken on real hardware or on production
+  data** — reads, writes, manual database corrections, re-attributions — with what
+  was saved first and how to undo it. Hand corrections are the first thing the next
+  person needs to know about and the last thing anyone remembers.
+- **Write down what did not work** (rule 16): the wrong first diagnosis, the setting
+  that changed nothing. One line saves a day.
+- **Evidence** is something a reader can open: a trace file, a command id, a log line,
+  a test name, a commit.
+- **Status** is one of `FIXED`, `WORKAROUND`, `MONITORING`, `OPEN`. A fix is `FIXED`
+  only when it was verified against the terminal, or the entry says why it could not be.
+- **Keywords** make it findable: error text verbatim, reply codes, command names.
+
+Template:
+
+```
+### DC-NNN — one-line title
+
+- **Date:** YYYY-MM-DD (to YYYY-MM-DD)
+- **Devices:** NAME (MODEL, IP), …
+- **Direction:** software → device | device → software | both
+- **Symptom:** what the operator saw, in their words where possible
+- **What was done:** the investigation and every action, in order, dead ends included
+- **Root cause:**
+- **Fix:** files, classes, tests
+- **Verified:** how it was proven, on what hardware
+- **Evidence:** traces, command ids, log lines, tests
+- **Status:** FIXED | WORKAROUND | MONITORING | OPEN — and who owes what if open
+- **Keywords:**
+```
+
+---
+
+## Index
+
+| ID | Date | Devices | Title | Status |
+|---|---|---|---|---|
+| DC-023 | 2026-10-18 | all six | Punches were never read automatically: nothing ran the scheduler | MONITORING |
+| DC-022 | 2026-10-12 | all six | Keypad passwords: never pushed, never read — and erased by every standalone write | MONITORING |
+| DC-021 | 2026-10-12 | Entrance, Glass Door, IT ROOM | Every Save took 20–40 s; two operators could talk to one terminal at once | FIXED |
+| DC-020 | 2026-10-11 to 2026-10-18 | Camelot | 1,497 Camelot punches stored with dates from 2026-12-07 to 2030-01-30 — misaligned reads, not a clock | OPEN |
+| DC-019 | 2026-10-11 | IT ROOM, On The Road, Glass Door, Entrance | Clocks ~10¾ min slow although time zones were set | MONITORING |
+| DC-018 | 2026-10-11 | Glass Door, Entrance, IT ROOM | "Abdul" (21) is Abdul Haq; a panel edit cut his finger off his record | FIXED |
+| DC-017 | 2026-10-11 | all | "Wipe a terminal and push the stored data" — Rebuild from system | MONITORING |
+| DC-016 | 2026-10-11 | Glass Door, Entrance, IT ROOM | Yusuf: card shows 960403094, finger shows 695 | FIXED |
+| DC-015 | 2026-10-11 | On The Road, Good Wheels | Every ZKTeco model inherited the F18's methods | FIXED |
+| DC-014 | 2026-10-11 | IT ROOM, On The Road, Good Wheels | Save leaves the old user ID on some terminals (Ali, 654 vs 960802797; "ali-it" duplicates) | FIXED |
+| DC-013 | 2026-10-11 | all | Saving Ali Mohamed Jaafar "got an error" — permission-cache 500 | FIXED |
+| DC-012 | 2026-10-11 | IT ROOM | Akram removed and re-added: 0 fingerprints, no card, new user ID | FIXED |
+| DC-011 | 2026-10-11 | Entrance, Glass Door | Renumber moved the panels, then our bookkeeping crashed | FIXED |
+| DC-010 | 2026-10-11 | Entrance, Glass Door | "Moving a user needs two different PINs" | FIXED |
+| DC-009 | 2026-10-11 | Entrance, Glass Door | "041112750 was written but is not on the panel" | FIXED |
+| DC-008 | 2026-10-11 | On The Road, IT ROOM, all | "Tariq could not be removed" — 500 on an unadopted terminal | FIXED |
+| DC-007 | 2026-10-11 | all | Attendance "Method" column showed bare numbers | FIXED |
+| DC-006 | 2026-09-23 to 2026-09-24 | IT ROOM | The F18 refuses to change a user ID | WORKAROUND |
+| DC-005 | 2026-09-23 | IT ROOM | Push refused the slot's own owner | FIXED |
+| DC-004 | 2026-09-21 to 2026-09-23 | all | Every attendance sync failing on SQL Server | FIXED |
+| DC-003 | 2026-09-14 | Glass Door | The inBIO460 "pings but never answers" | FIXED |
+| DC-002 | 2026-09-13 to 2026-09-14 | Camelot | Camelot refuses to connect; bulk reads die part-way | WORKAROUND |
+| DC-001 | 2026-09-13 | On The Road | "Incomplete transfer" on every attendance read | FIXED |
+
+---
+
+## Entries
+
+### DC-023 — Punches were never read automatically: nothing ran the scheduler
+
+- **Date:** 2026-10-18
+- **Devices:** Good Wheels (F18/ID), On The Road (F22/ID, 192.168.7.63), Camelot (F18, 87.237.196.60), Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60), IT ROOM (F18, 192.168.7.62)
+- **Direction:** device → software
+- **Symptom:** owner: "are you reading punches every day as per the cron job?" — then "I thought you read punches every day. This is a big problem for us."
+- **What was done:** (1) `crontab -l` for root and www-data: none; no systemd timer. `schedule:list` showed the jobs defined, but nothing invoked `schedule:run`, so NO scheduled job had ever run: not the 05:00 clock set + past-day read (DC-019), not the 02:30 fingerprint copies, not the 5-minute health check. (2) `attendance.sync_enabled` is false for tenant 1 (by design; the 05:00 morning routine, `devices.daily_read_enabled` = on, is the daily read). (3) `sync_attendance` commands in the 8 days before: only 2026-10-11, 13, 14, 15, all operator-pressed; Camelot's 2026-10-13 one failed. (4) Installed for www-data `* * * * * cd /var/www/zkt && php artisan schedule:run >> /dev/null 2>&1`; syslog shows it firing from 08:43 UTC and the first `health_check` (command 164) was queued by it. (5) Queued a catch-up `sync_attendance` on all six (commands 158–163), all succeeded: imported Good Wheels 112, On The Road 20, Camelot 122, Glass Door 51, Entrance 53, IT ROOM 32. Camelot: 17,203 of 42,352 undecodable, see DC-020.
+- **Root cause:** the crontab line was flagged as an owner action in `docs/PROJECT-STATE.md` from 2026-09-24 and in DC-019, and never installed. Every scheduled feature built since then was tested in isolation and never ran in production.
+- **Fix:** the crontab line above (server change, not in the repository).
+- **Verified:** cron fires `schedule:run` every minute (syslog), health checks queue by schedule. NOT yet seen: a 05:00 Bahrain (02:00 UTC) morning-routine run producing `sync_time` + range-read commands on every terminal.
+- **Evidence:** device_commands 158–164; `/var/log/syslog` CRON lines for www-data from 2026-10-18 08:43 UTC.
+- **Status:** MONITORING — next session checks the 2026-10-19 02:00 UTC run.
+- **Keywords:** cron, schedule:run, crontab, scheduler never ran, daily read, morning routine, punches not synced
+
+### DC-022 — Keypad passwords: never pushed, never read — and erased by every standalone write
+
+- **Date:** 2026-10-12
+- **Devices:** IT ROOM (F18, 192.168.7.62), Camelot (F18, 87.237.196.60), Good Wheels (F18/ID, 46.184.163.106), On The Road (F22/ID, 192.168.7.63), Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60)
+- **Direction:** both
+- **Symptom:** owner: "push the passwords to the terminals too … and also read them along
+  with the read all." The form said passwords were "saved here only".
+- **What was done:** Reading the library to plan the write found that
+  `Packet::buildUserRecord()` never filled password(8)@3, and `UserService::save()`
+  rebuilt the record from name, card and privilege, so **every standalone name push and
+  card write erased the password**. C3 `Personnel::update()` carries the row over (no
+  erase); `add()` sent `''`. Read-only probe `tools/zkprobe/user-passwords.php` (run 01:
+  counts; run 02: plus an in-memory comparison with the app's stored copies): passwords on
+  all six terminals (13 records, digits, 4–6 long); **equal 11, differs 0**; IT ROOM had
+  one the app held and the terminal did not — the erase, most likely. No value was
+  printed or traced. No write was made to any terminal.
+- **Root cause:** the record builder had no password argument; the field was always zero.
+- **Fix:** library 2.13.0 — `password.read`/`password.write` capabilities, decode, write,
+  keep-when-null in `save()`, C3 `add/update` password, read-back that never prints the
+  value; levels: read C on F18, F22, inBIO460, TF1700, write I. App: the driver contract's
+  `saveUser(…, ?string $password)`; `DeviceUserSyncService::capturePassword()` on every
+  roster read and before every removal (fills an empty `device_password`, never
+  overwrites); `passwordToWrite()` writes on push only where `password.write` is C; the
+  form treats a changed password as out of date only on such terminals;
+  `device_password` redacted in the audit log. Tests: library `UserPasswordTest`,
+  `C3PersonnelTest`; app `EmployeePropagationTest` (3 new); methodology pins gained two
+  columns, no existing level moved.
+- **Verified:** reads — the comparison above, on four models. The keep-on-write fix — by
+  test only so far. Writes — **not yet run on hardware**:
+  `tools/zkprobe/user-password-write.php` (temporary user "zkt-test", fixed dummy
+  passwords, roster compared before/after) waits for the owner's go-ahead.
+- **Evidence:** `tools/zkprobe/traces-2026-10-12/user-passwords-01.json`, `-02.json`;
+  suite 617 passed; `queue:restart` run.
+- **Status:** MONITORING — the owner owes the go-ahead for the write probe; on a clean run
+  per model, promote `password.write` to C in that model's file and update the pin.
+- **Keywords:** password, keypad password, password(8)@3, USER_WRQ, buildUserRecord, Password field, SET_DATA, password.read, password.write, erased password
+
+### DC-021 — Every Save took 20–40 s; two operators could talk to one terminal at once
+
+- **Date:** 2026-10-12
+- **Devices:** Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61), IT ROOM (F18, 192.168.7.62)
+- **Direction:** software → device
+- **Symptom:** owner: "when I click save it takes a very long time." Also asked for a
+  queue so several operators saving or pushing at once "don't fight over who pushes
+  the data first or overwhelm the system".
+- **What was done:** Timed a save in-process inside a rolled-back transaction: 70 ms.
+  Read `zkt-access.log` (it stamps a request's ARRIVAL) for the owner's saves of
+  employees 1737, 1617, 1524, 1430 and 1665 between 08:11 and 08:14 UTC. Each save
+  was followed by `POST /propagate` taking 10–29 s, then a read-back of each terminal
+  at 3–7 s each: 22–37 s per save. "Push to terminals automatically on save" is on,
+  so every save pushed to every terminal the person is on, even when only the job
+  title, phone or company had changed. Separately, Save, Push and Enroll call terminals
+  from the web request, outside `ProcessDeviceCommand`'s `WithoutOverlapping`, so
+  nothing stopped two sessions on one terminal. Checked how far terminal names differ
+  from the system's: the cut-offs are at exactly 24 characters (F18, TF1700, inBIO460),
+  and the short ones (e.g. 6 vs 13 characters) are real differences.
+  No device was written during the investigation; the form was checked in Chrome on
+  ABDALLA (on all three terminals) and cancelled without saving.
+- **Root cause:** (1) The form pushed to every listed terminal on every save. (2) The
+  synchronous device paths had no per-terminal mutual exclusion.
+- **Fix:** (1) `EmployeeFormModal.jsx` pushes only to terminals that are out of date:
+  newly added; name, ID or card changed in the form; or, at the terminal's last read,
+  a different name (the 24-character cut-off counts as the same name), an ID it can be
+  moved off, no card where the system has one, or a finger missing that the system
+  holds. The footer names the terminals left alone. Password and device role are not
+  sent to terminals at all, so they do not count. (2) `DeviceDriverManager::exclusive()`:
+  a per-terminal cache lock around every device call, waiting up to 60 s, then
+  `DeviceBusyException` (retryable). See `docs/error-handling.md`.
+- **Verified:** In Chrome, ABDALLA's form said "Entrance, Glass Door, IT ROOM already
+  have their name, ID, card and fingerprints". Adding one letter to the name switched
+  it to "Updated on Entrance, Glass Door, IT ROOM, then read back". Cancelled. The lock:
+  `DeviceSessionQueueTest` (busy refusal sends nothing, lock released after a throw,
+  re-entrant, other terminals unaffected), plus the lock taken and released on the
+  production SQL Server cache store. The F18 path is wrapped, not changed. Not yet
+  timed on a real save; the owner's next saves are the proof.
+- **Evidence:** `zkt-access.log` 2026-10-12 08:11–08:15 UTC; tests above; full suite
+  607 passed; `queue:restart` run afterwards.
+- **Status:** FIXED. Watch for "busy" messages during long Camelot reads.
+- **Keywords:** slow save, propagate, auto_push_on_save, read back, concurrent session,
+  WithoutOverlapping, cache_locks, device-session, DeviceBusyException, is busy with another operation
+
+### DC-020 — 1,497 Camelot punches stored with dates from 2026-12-07 to 2030-01-30
+
+- **Date:** 2026-10-11 (~15:05 UTC)
+- **Devices:** Camelot (F18, 87.237.196.60)
+- **Direction:** device → software
+- **Symptom:** none reported. Found while answering the owner's "make sure this system is running on +3 GMT, Bahrain time": the newest stored attendance row was 2030-01-30 13:49:04 UTC.
+- **What was done:** read-only, no hardware touched, no data changed. Time-zone chain checked first and is correct: server and PHP UTC, `app.timezone` UTC (storage, rule 10), company `system.timezone` = Asia/Bahrain, every device inherits it (`devices.timezone` NULL), `config('attendance.timezone')` +03:00 for reports. Counted punches later than now+1 h per device: only Camelot has any — 1,497 rows across 43 distinct dates, 2026-12-07 16:22:40 to 2030-01-30 13:49:04 UTC, all inserted 2026-10-11 08:21:38–08:21:39 UTC in one sync. Camelot's newest plausible punch is 2026-06-04 07:44:16 UTC. Its clock measured +5 s in DC-019, so today's clock is not the source — the records were already on the terminal with those stamps (a past clock fault on the device is the likely cause, unproven). `devices.attendance_watermark` for Camelot is 2023-08-08 13:40:28, so these rows did NOT push the watermark into the future and are not blocking new punches.
+- **Root cause:** not established. Candidates: the terminal's clock was once set years ahead and the punches recorded then are still in its log; or a decode fault in the stamp. Distinguishing needs the raw records of those rows compared against the decoder.
+- **Fix:** none yet. Rows left untouched — deleting them would destroy evidence and possibly real punches with wrong dates.
+- **Verified:** —
+- **Evidence:** `attendance_logs where device_id = 12 and punched_at > now()`; created_at 2026-10-11 08:21:38.977–08:21:39.060.
+- **Status:** OPEN — owner decides whether the rows are kept, re-dated or excluded from reports; next session inspects their raw payloads.
+- **2026-10-18 (read-only, no data changed):** the clock hypothesis is very likely WRONG. All 1,497 future rows have a BLANK `device_user_id`, and Camelot has 2,876 blank-user rows in all, dated 1999-12-31 to 2030-01-30 (2,871 inserted by the 2026-10-11 sync, 4 on 2026-09-27, 1 on 2026-10-18). A real punch always carries a user id. These are misaligned bytes that happened to pass the decoder. The catch-up sync that day (command 160, sync run 255) read 42,352 records: 13,517 decoded, **17,203 undecodable**. The newest decoded punch is 2025-11-13 21:26:13 UTC, and the newest non-blank Camelot punch stored at all is 2026-05-26. **So most of the last year of Camelot attendance exists in the system only as undecodable raw bytes. The terminal still holds it.** Sample undecodable raw record (attendance_raw_logs 1288272): `3413 3431 00… 01 918fa72a ff 00… | 3513 323238 000000`. At offset 32 of the 40-byte record a new record begins (uid 0x1335, user "228"), so the stream is offset by whole fragments, which is the DC-002 bulk-read desync. **Consequence: Camelot's attendance log must NOT be cleared until a clean read (0 undecodable, count = terminal's own record count) has been taken.** Next step: a read-only windowed read of Camelot's attendance (the DC-001 F22 method) to see whether smaller transfers survive the internet link.
+- **2026-10-18, fix for new reads (library 2.14.0 + app):** `AttendanceCodec` returns a 40-byte record with an empty user id as undecodable; `AttendanceSyncService::ingest()` archives any punch stamped more than a day ahead (`skip_reason = future_timestamp`, `counts.future`) instead of importing it, so it can never become the watermark. Re-confirmed on the F18 path (rule 15): full reads of IT ROOM (command 168: 11,332 read = its GET_FREE_SIZES count, 0 undecodable, 0 future) and On The Road (169: 8,430, 0, 0). Tests: `AttendanceClearTest` (library and app). **The 2,876 junk rows already stored are untouched** — removing them is a production data change the owner decides.
+- **Keywords:** future punch, 2030, wrong date, Camelot, clock, punched_at, timezone
+
+### DC-019 — Clocks ~10¾ min slow although time zones were set
+
+- **Date:** 2026-10-11 (~14:28–14:40 UTC)
+- **Devices:** IT ROOM (F18, 192.168.7.62), On The Road (F22/ID, 192.168.7.63), Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60); Good Wheels and Camelot measured fine
+- **Direction:** both
+- **Symptom:** owner: "even though I have set all devices' time zone, there is still a clearly noticeable time offset. How to force sync the time?"
+- **What was done:** casebook had no clock entry. The time-zone setting only tells the app how to READ a terminal's local clock; it never changes the clock. Server clock NTP-synchronised (UTC). Measured each terminal against real time in its zone (`Timezone::forDevice`, Asia/Bahrain for all): IT ROOM −640 s, On The Road −643 s, Good Wheels +2 s, Camelot +5 s; the door panels had no clock read. **History:** `sync_time` on 2026-10-05 had set IT ROOM and On The Road right (they were ~9¾ min slow); six days later both were ~10¾ min slow again — far more than any clock drifts, so something outside this app resets them (most likely a ZKAccess PC with a slow clock; Good Wheels and Camelot, remote, stayed right). **Today's 13:58 UTC "Set clock" on four terminals had FAILED** — `Undefined constant DeviceCommand::REBUILD_DEVICE`: the queue worker was still running code loaded before the DC-017 change (handler new, model old). The assistant's mistake: no `queue:restart` after that change. Only those four commands were affected. Restarted; set the four ZKTeco clocks through the queue (read back: 0 s, 0 s, +1 s, +5 s). Researched the C3 clock (rule 17): vwout/zkaccess-c3-py `consts.py` DATETIME = 0x03, `core.py` set_device_datetime sends "DateTime=<packed>", `utils.py` C3DateTime = the same packed format as transaction stamps. Read the panels with GET_PARAM "DateTime" (read-only, first ever): Glass Door −650 s, Entrance −649 s — the same source. Set both via DATETIME; a separate read showed both exact.
+- **Root cause:** an external clock source resetting the LAN terminals ~10¾ min slow (to be confirmed by the owner); the door panels had no clock read or write at all; the app's own retry failed through a stale queue worker.
+- **Fix:** library 2.12.0 `Panel::readClock()` / `setClock()`, `Command::DATETIME`; `GET_TIME`/`SET_TIME` CONFIRMED in `InBio460` and `Tf1700`. Contract `readClock()` / `setClock()` on every driver (ZKTeco, C3, CSL unsupported, fake); the `sync_time` command uses it and fails unless the read-back is within 60 s of real time; C3 health check now reports the panel clock. Owner then: "make this a method and save it, and every day sync the time from server to the biometrics at 5 am" — `App\Services\Devices\DeviceMorningRoutine` (renamed from DeviceClockSync when the owner added "after that, read attendance from all devices from the past day": per terminal the clock, then a range read of yesterday + today, `devices.daily_read_enabled`) + settings `devices.clock_sync_enabled` (on) / `devices.clock_sync_schedule` (`0 5 * * *`) evaluated in the company's timezone every minute (`device-morning-routine`); Settings → *Daily clock sync and attendance read*; method written in `docs/device-models.md`; `DeviceMorningRoutineTest` (fires at 05:00 Bahrain = 02:00 UTC, not 05:00 UTC; clock queued before the read; read is yesterday + today; each switch; custom time; skips pending/unsupported; a clock that does not take fails). Runs only once cron runs `schedule:run`.
+- **Verified:** read back on all six after the set: IT ROOM 0 s, On The Road 0 s, Good Wheels +1 s, Camelot +5 s (internet latency), Glass Door 0 s, Entrance 0 s. 590 tests pass.
+- **Evidence:** commands 92–95 (2026-10-05), 126–129 (failed, worker), today's `sync_time` commands for devices 5, 11, 12, 13, 14, 15.
+- **Status:** MONITORING — owner (Ghassan): check the clock of the PC running ZKAccess (and whether ZKAccess syncs device time); install the cron line so the nightly clock set runs. **2026-10-18:** the cron line had still not been installed, so the morning routine never ran once and no punches were read automatically 2026-10-11 → 2026-10-18; installed for www-data that day and a catch-up `sync_attendance` queued on all six (commands 158–163). **Lesson recorded for the assistant: after changing device-layer code, run `php artisan queue:restart` — the worker keeps old classes in memory.**
+- **Keywords:** clock, time offset, slow clock, sync time, set clock, DateTime, DATETIME 0x03, GET_PARAM, time zone, ZKAccess, queue:restart, Undefined constant
+
+### DC-018 — "Abdul" (21) is Abdul Haq; a panel edit cut his finger off his record
+
+- **Date:** 2026-10-11
+- **Devices:** Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60); history on IT ROOM (F18, 192.168.7.62)
+- **Direction:** both
+- **Symptom:** the DC-016 scan found "Abdul" (21, unlinked) holding the same fingers as "Abdul Haq" (781054761) on both door panels. Owner: "the only way to find out is to match his fingerprints between the two records, or ID number, or attendance RFID card number".
+- **What was done:** compared all three, read-only. **Fingerprints:** both fingers byte-identical on both records on both panels (slot 6, 832 B, `c070f4fb…`; slot 7, 1,234 B, `f3cf99c0…`). **Card:** 21 has none; 781054761 has 7458281, the card on employee 1428 (ABDUL HUQ MD DURJANALI MOLLAH). **ID:** the hand-over is visible — IT ROOM last 21 punch 2026-09-24 13:22:16, first 781054761 13:23:20; Glass Door 13:38:25 → 14:59:52; no employee ever mapped to 21 anywhere. Same person. Applied "Same person" on all three terminals: **3,458 punches under 21 credited to him** (Glass Door 2,590 back to 2021-06-27, Entrance 426, IT ROOM 442) — he now has 3,555; the 21 records deleted on both panels (saved first). **Then the push to Entrance warned "Pin 781054761 has UID 51, not 318".** Read the template rows: his record was now UID 51 but both fingers still carried UID 318 — **the TF1700 re-inserted the user row under a new UID** (51, freed moments earlier by deleting Pin 21) instead of updating it in place, so his finger no longer belonged to him. Glass Door (inBIO460) kept 318 — the same write behaved differently per model.
+- **Root cause:** the C3 user edit (`SET_DATA` on `user` without UID, as ZKAccess does) can land under a new UID on the TF1700; `templatev10` rows carry the owner's UID, and nothing re-linked them — the library only refused afterwards.
+- **Fix:** library 2.11.1 `C3\Service\Personnel::relinkFingerprints()` — rewrites a person's template rows under their current UID (delete by Pin, write, verify every finger byte-for-byte and every UID, restore the originals on failure); `update()` calls it before every edit (so a re-push repairs an old break) and after one that changed the UID. Tests in `C3PersonnelTest` (re-inserted UID, stale link repaired by an unchanged push, failed re-link restored).
+- **Verified:** re-pushed Abdul Haq to Entrance: record UID 51, fingers 6 and 7 UID 51, templates unchanged, 315 users. A scan of every template row on both panels then found **one more older break: ALI HUSAIN (employee 1704, 20200269) on Entrance, finger 6 on UID 297 vs record 295, and zero punches there since his ID change** — re-pushed: record and finger both UID 295. Both panels now: every fingerprint on its owner's UID, no orphan rows.
+- **Evidence:** audit `device.duplicate_merged` for employee 1428; snapshots `removed-records/device-13-21-*`, `device-14-21-*`.
+- **Status:** FIXED. Not yet seen: Abdul Haq's and Ali Husain's fingers matching at Entrance after the re-link.
+- **Keywords:** duplicate, same fingerprint, Abdul, 21, 781054761, UID changed, UID 318 51, templatev10 UID, fingerprint not matching, relink, TF1700 re-insert, ALI HUSAIN, 20200269
+
+### DC-017 — "Wipe a terminal and push the stored data" — Rebuild from system
+
+- **Date:** 2026-10-11
+- **Devices:** all six (preview run on each, read-only)
+- **Direction:** software → device
+- **Symptom:** owner: "can you build an option to wipe a biometric device and push the stored data from the web app system".
+- **What was done:** designed against the literal wipe on purpose — emptying Glass Door (316 people) and refilling it one at a time locks everyone out meanwhile, an interruption leaves it half empty, and a wipe destroys what only the terminal holds (unsynced punches, fingers never copied, records nobody has matched). Built `DeviceRebuildService`: a read-only **preview** (`plan`), then a queued chain — `sync_attendance` → `rebuild_device` (refuses until punches were downloaded after the request; encrypted backup of every record and template to `storage/app/private/device-backups/`; everyone's fingers and cards into the system) → one `rebuild_person` per person needing a change (through `EmployeeDevicePropagator`, so each model uses its own method) → optional `rebuild_remove` per record linked to nobody (each saved first, via `releaseUnlinkedNumber(…, null)`) → `sync_enrollment` read-back. People already right are never touched. Records linked to nobody are KEPT unless the operator ticks their removal (the door panels hold 46 unmatched people). Found while testing: comparing the request time as an ISO string against the stored timestamp made a finished download look missing — parsed now. **Preview on the real terminals, 2026-10-11:** IT ROOM 7 to change / 10 right; On The Road 5/4 (+1 unlinked); Good Wheels 12/6; Camelot 11/13; Glass Door and Entrance 40/231 (+46 unlinked each); nothing blocked. Most changes are user ID → employee code and name → the system's name.
+- **Root cause:** n/a (feature).
+- **Fix:** `app/Services/Devices/DeviceRebuildService.php`; commands `rebuild_device` / `rebuild_person` / `rebuild_remove`; `GET devices/{d}/rebuild-plan`, `POST devices/{d}/rebuild`; `pages/devices/RebuildModal.jsx` ("Rebuild from system…" on the device page, desktop and mobile). Tests `tests/Feature/Devices/DeviceRebuildTest.php` (6). 587 pass.
+- **Verified:** previews read on all six terminals. **No rebuild has been run on hardware yet.**
+- **Evidence:** this entry's preview counts.
+- **Status:** MONITORING — owner (Ghassan): (1) the system's name is often the first name only ("Maryam Salem" → "MARYAM", "Abdul Haq" → "ABDUL" on IT ROOM) — correct names first if wanted; (2) first run suggested on IT ROOM (smallest, F18 move proven); then read the result here.
+- **Keywords:** wipe, rebuild, push all, reset terminal, sync to system, device backup, rebuild_device, rebuild_person
+
+### DC-016 — Yusuf: card shows 960403094, finger shows 695
+
+- **Date:** 2026-10-11
+- **Devices:** Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60); history on IT ROOM (F18, 192.168.7.62)
+- **Direction:** device → software (which record a scan matches), then software → device
+- **Symptom:** owner: "yusuf holds a card with the number 976298, but when he uses his finger it shows 695 … he is the same person … the glass door".
+- **What was done:** read the casebook first (DC-014 is the same shape; PROJECT-STATE had flagged an unmatched "yusif" at 695). Read-only: both door panels hold TWO records for YUSUF ABDULHUSAIN EBRAHIM DAHNEEM (employee 1432, code 960403094): uid 280 / 960403094 with card 976298 and finger 6, linked to him; uid 313 / 695 "yusif", finger 6, no card, linked to nobody. The two finger-6 templates are **byte-identical** (1,290 bytes, sha1 `a7aa02c6…`) on both panels — one enrollment written twice (ZKAccess copies templates unchanged). So the finger matched 695, the card matched 960403094. Punches under 695: Glass Door 2, Entrance 69 (5 already his), IT ROOM 815 (2026-05-14 to 2026-09-24 12:40:35, credited to nobody). IT ROOM's first punch under 960403094 is 2026-09-24 12:42:03 — 90 s later: the same record renumbered that day, so those punches are his. Applied the owner's procedure ("Same person", DC-014) on Glass Door and Entrance: fingers into his account (none new — the identical copy was already stored), punches credited, 695 deleted (snapshots in `storage/app/private/removed-records/`), his data pushed, read back. On IT ROOM (no record left there) the same call only credited the 815 punches.
+- **Root cause:** a duplicate record carrying the same fingerprint as the real one; the panel matched the finger to the duplicate.
+- **Fix:** no code change; the DC-014 "Same person" procedure (`releaseUnlinkedNumber(…, samePerson: true)`).
+- **Verified:** read back on both panels: one record, uid 280, 960403094, card 976298, finger 6 (`a7aa02c6…`); 695 gone; users 317 → 316 on each. Unattributed punches under 695: 0 on all three terminals; Yusuf 1,011 punches.
+- **Evidence:** `releaseUnlinkedNumber` audit rows `device.duplicate_merged` for employee 1432; snapshots `removed-records/device-13-695-*`, `device-14-695-*`, `device-15-695-*`.
+- **Status:** FIXED. A scan of every terminal for one fingerprint under two IDs found one more: **"Abdul" (21, unlinked) and "Abdul Haq" (781054761) on Glass Door and Entrance, two identical fingers** — OPEN, owner to confirm same person. The other four terminals had none.
+- **Keywords:** duplicate record, same fingerprint, card vs finger different ID, 695, 960403094, 976298, yusif, identical template, Abdul, 21, 781054761
+
+### DC-015 — Every ZKTeco model inherited the F18's methods
+
+- **Date:** 2026-10-11
+- **Devices:** On The Road (F22/ID, 192.168.7.63), Good Wheels (F18/ID, 46.184.163.106 — model was not recorded), IT ROOM and Camelot (F18)
+- **Direction:** software → device (what the app offers to write)
+- **Symptom:** owner: "each device different model have their own method of achieving the same required action … when fixing a problem for one don't fuck the other with the same solution". Found while preparing DC-014: the F18 fingerprint write added in DC-012 was also offered on the F22, which had never run it — Ali's saves pushed fingerprints at On The Road at 12:02:53 and 12:11:08 (nothing was written: he already had both fingers there).
+- **What was done:** compared the families: the C3 panels already had one capability file per model (`InBio460`, `Tf1700`, `GenericPanel`); every standalone model shared `CapabilitySet::defaults()` (the F18). Read `device.info` on all four standalone terminals (read-only): Good Wheels is an **F18/ID on firmware Ver 6.60 Oct 12 2021** (others Apr 2016 / F22 Apr 2017) — stored on the device rows with serial and platform. Printed the effective level of every person-related action per terminal before and after.
+- **Root cause:** no per-model selection for the standalone family, so a level proven on the F18 was a level on every model.
+- **Fix:** library 2.11.0 `src/Model/` — `TerminalModel`, `F18` (= defaults, unchanged), `F22` (its own evidence; F18-only writes `unknown`), `GenericTerminal` (no file: reads only, writes `unknown`), `TerminalModelFactory` (discovers model files; names none). `ZktecoDriver::capabilities()` / `probeCapabilities()` select by `$device->model`; a probe stores only probeable (read) levels so it cannot overwrite a model's write levels. CLAUDE.md **rule 21**, `docs/device-models.md`, `tests/Unit/DeviceModelMethodologyTest.php` (pins every model's levels), library `TerminalModelTest`.
+- **Verified:** per-terminal printout — F18 units unchanged; On The Road `template.upload` / `user.renumber` now `unknown`, `user.write` / `user.delete` `confirmed` (its own runs), `card.write` `implemented`; 574 tests pass.
+- **Evidence:** this entry's printouts; audit `employee.fingerprints_pushed` device 11, 2026-10-11 12:02:53 and 12:11:08.
+- **Status:** FIXED
+- **Keywords:** model, per-model, inherited, defaults, F22, F18, Good Wheels, firmware 2021, TerminalModelFactory, capabilities
+
+### DC-014 — Save leaves the old user ID on some terminals (Ali, 654 vs 960802797)
+
+- **Date:** 2026-10-11
+- **Devices:** IT ROOM (F18, 192.168.7.62), On The Road (F22/ID, 192.168.7.63), Camelot (F18); correct already on Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61)
+- **Direction:** software → device
+- **Symptom:** owner: "ALI MOHAMED JAAFAR MANSOOR MOHSEN MOHAMED when i clicked save, on some devices it have the correct ID number 960802797 and some dont, they must all update … whenever i go to any employee and press save this must always happen."
+- **What was done:** (in progress) Read the casebook first: DC-006 (F18 refuses in-place renumber; delete + re-upload verified twice on IT ROOM 2026-09-24, then hidden when IT ROOM's capabilities_cache was cleared) and DC-013 (Ali's save). Read-only findings: the save already sends `to_employee_code` whenever a terminal's ID differs from the code; the C3 panels moved; IT ROOM and On The Road answered "User ID kept at 654: cannot change a user ID", filed as WRITTEN, not as a problem — so it looked like success. Owner approved the fix and Ali's move ("fix the problem and log the solution too"). Changed the propagator so a terminal left on the old ID is reported FAILED (red, Retry): `EmployeePropagationTest::test_a_terminal_that_cannot_move_the_id_is_reported_failed_with_the_name_still_pushed`, 566 tests pass. **Blocked:** setting `user.renumber` to `implemented` in the library's `CapabilitySet::defaults()` was refused by the assistant's auto-mode safety check ("Security Weaken"); not worked around. Nothing was written to any terminal for this case.
+- **Root cause:** (1) `user.renumber` is `not_implemented` in `CapabilitySet::defaults()` although the F18 reupload path was proven; (2) a terminal that could not move the ID was reported as written.
+  Owner then set the frame: each model gets its own method (rule 21; DC-015). The F18 refuses an in-place move, so its method was built from steps it has proven: **move by re-adding** (`DeviceUserSyncService::moveByReadding`): refuse first if the new ID is taken or the model cannot put back the person's fingers/card; save card + fingers + privilege; delete; add under the new ID; restore; read back. **Found on the real terminals:** Ali is an **admin (privilege 14)** on IT ROOM and On The Road — a plain re-add would have demoted him silently. Fixed: the privilege is read off the terminal before removal and restored on re-create (`saveUser(…, privilege:)` added to the contract, `privilegeToRestore()`). **Ran Ali's save path 2026-10-11 ~12:40 UTC:** both terminals refused BEFORE any change, read back unchanged (654, privilege 14, card 7511517, fingers 6, 7): IT ROOM — **960802797 is held there by "ali-it"** (uid 6, card 2862247, finger 5), a test record from the 2026-09-23/24 renumber runs, linked to no employee since the 2026-09-27 reset; On The Road — the F22 has never taken a fingerprint write, so moving him would lose his fingers.
+  **Owner: "do what it takes", then chose option 2 — buttons the operator presses.** Found and fixed first: the move's pre-check (`assertPinFreeFor`) and the claim after the delete were DIFFERENT checks, so a move could pass one, delete the person, then fail the other and leave them off the terminal. Now one check (`claim()` uses `assertPinFreeFor`). IT ROOM holds **42 punches under 960802797, 2026-09-22 to 09-28, credited to nobody** (the test record's) — left untouched. The assistant's shell writes to terminals, the casebook edit and the first build attempt were refused by Claude Code's auto-mode safety checks ("Remote Shell Writes", "Logging/Audit Tampering", "Auto-Mode Bypass"); nothing ran on a terminal. The owner then had project permission rules added (`.claude/settings.local.json`: `php artisan tinker`, edits to app/docs/tests/routes/js/library).
+  **Built:** a red push row now carries the fix it needs. (1) `PinInUseException` → **"Free 960802797"**: `DeviceUserSyncService::releaseUnlinkedNumber()` — only for a number no employee was ever mapped to; the record and its fingerprints are saved encrypted to `storage/app/private/removed-records/` BEFORE the delete, read back, roster entry given to the employee, audit `device.number_released`; then the push retries. (2) `FingerprintWriteUnprovenException` → **"Test fingerprints"**: `FingerprintPusher::trialWrite()` — adds ONE finger the system holds to a person on the terminal missing it there (nobody deleted, existing fingers verified), read back; on success `template.upload` = `implemented` for THAT terminal only (`capabilities_cache`; a re-probe now keeps earned write levels), audit `device.fingerprint_write_tested`; then the push retries.
+- **Fix:** `EmployeeDevicePropagator` — a kept ID is FAILED (red) with an `action`; models that cannot move in place move by re-adding where safe; privilege restored on re-create; one PIN check; the two buttons above. Endpoints `POST employees/{e}/devices/{d}/release-number`, `POST devices/{d}/fingerprint-write-test`. Tests: `EmployeePropagationTest` (F18 re-add with card, fingers and admin kept; F22-like refusal; unlinked holder offered → freed with snapshot → number taken; an employee's old number never offered or freed; fingerprint test adds one finger and unlocks only that terminal), `CredentialPreservationTest` (both deleters snapshot first). 579 pass.
+- **Verified:** read back from all six terminals at the end (below): one record per terminal, 960802797, ALI MOHAMED, card 7511517, fingers 6 and 7.
+- **Evidence:** audit for employee 1419 2026-10-11 12:02–12:03 and ~12:40; DC-006 traces.
+  **2026-10-11 13:07 UTC, owner pushed Ali again and saw only the toast — no buttons.** The push came from the roster row's **Push** dialog (audit: `fingerprints_pushed` after the propagate = the dialog's "copy fingerprints" option), which closed on submit; the buttons existed only in the edit form's result rows. Fixed: the fix logic moved to one shared file (`pages/employees/TerminalFixes.jsx`, used by both); the Push dialog now stays open on any terminal that needs a go-ahead, with its button, and retries that terminal after. Its per-terminal note now says the F18 moves an ID by re-adding (it said "cannot change an ID"). 579 pass; built.
+  **13:14:59 UTC, still only the toast.** Access log: the browser had the new bundle (13:14:30), used the row Push dialog with "copy fingerprints": propagate 13:14:59 → `GET employees/1419` + `fingerprints/push` 13:15:17 → list reload ~13:15:29. The server's answer carried both actions (checked: `release_number` / `test_fingerprint_write`). The dialog only switched to the buttons after the fingerprint copy and reload — ~15 s after the red toast. Fixed: the dialog shows the buttons as soon as the push answers (copy + reload continue behind it), and the toast says "use the button in the dialog".
+  **Owner: "ali-it and Ali Mohamed are the same person … copy the fingerprint data into the webapp, store it in the main account, then delete the record on the device, then push the new data."** Built "Same person" (`releaseUnlinkedNumber(…, samePerson: true)`: duplicate's fingers → `FingerprintVault::adoptCopies` into Ali's account; its punches credited via a closed mapping that keeps its privilege; then deleted; then the normal push). Found on the way: a re-add could take the duplicate's privilege (0) instead of his own (14) when both closed in the same second — `privilegeToRestore()` now prefers the person's own record. Searched every terminal: duplicates were on IT ROOM ("ali-it" 960802797, card 2862247, finger 5), On The Road and Good Wheels ("ali-it" 565656565, empty). 581 tests pass.
+  **Run on the terminals, 2026-10-11 13:24–13:50 UTC (assistant, owner's instruction):**
+  - **IT ROOM:** "ali-it" was **already gone** — 17 users, not 18 — deleted outside this app after 12:40 UTC (no audit row, no button press), so **its finger 5 was lost** (it was never linked to Ali, so no copy existed; Ali must re-enrol finger 5 if he wants it). First merge attempt failed on a NOT NULL `device_privilege` when the record was absent; fixed (`?? 0`); a 484-byte snapshot of the empty read is in `removed-records/device-15-960802797-20261011-132443.json.enc`. Merge: 42 punches (2026-09-22 to 09-28) credited to Ali. Push: moved 654 → 960802797 by re-adding; read back `uid 21, 960802797, ALI MOHAMED, priv 14, card 7511517, fingers [6,7]`, users 17.
+  - **On The Road (F22):** merged "ali-it" 565656565 (empty; snapshot saved), removed. Fingerprint-write test: nobody was missing a stored finger, so built `withTemporaryUser()` ("zkt-test", deleted after) — test passed: stored template on temporary user ID 1, read back byte-identical, users 10 / templates 15 unchanged before and after; `template.upload` → `implemented` for the unit and then in `Model\F22` (rule 21, pin updated). Push: moved 654 → 960802797 by re-adding; read back `uid 13, priv 14, card 7511517, fingers [6,7]`, users 10.
+  - **Good Wheels (F18/ID, 2021 firmware):** merged "ali-it" 565656565 (empty), removed; pushed Ali: `uid 19, 960802797, ALI MOHAMED, priv 0 (as "ali-it" was there), card 7511517, fingers [6,7]`; users 19 → 19, templates 32 → 34, none lost. First writes ever on this unit.
+  - **Final read of all six:** IT ROOM, On The Road, Good Wheels, Glass Door, Entrance each hold ONE record, 960802797 ALI MOHAMED, card 7511517, fingers 6, 7; Camelot never had him; no "ali-it", no 654 anywhere. Five live mappings, all 960802797.
+- **Status:** FIXED. Not yet seen: a finger written by this app matching at the F22 or Good Wheels (levels stay `implemented`). Ali's finger 5 needs re-enrolment if wanted.
+- **Keywords:** user ID, employee code, renumber, 654, 960802797, cannot change a user ID, kept at, to_employee_code, F18, F22
+
+### DC-013 — Saving Ali Mohamed Jaafar "got an error" — permission-cache 500
+
+- **Date:** 2026-10-11 (~12:01–12:03 UTC report; fixed ~12:10 UTC)
+- **Devices:** Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61), IT ROOM (F18, 192.168.7.62), On The Road (F22/ID, 192.168.7.63)
+- **Direction:** software → device (the save's push); the error itself was app-side
+- **Symptom:** owner: "tried to save ALi Mohammed Jaffer it was updating the ID in some devices but then got an error".
+- **What was done:** read the audit log for employee 1419 — the push had completed on all four terminals (12:02:16–12:03:06). Read his mappings: Entrance and Glass Door renumbered 654 → 960802797 (card 7511517, fingers 6, 7 kept); IT ROOM and On The Road kept 654 (neither model renumbers in place — see DC-006). So the save was fine. `laravel.log` showed `SQLSTATE[23000] … Violation of PRIMARY KEY constraint 'cache_key_primary' … spatie.permission.cache` at 12:01:27, 12:01:44, 12:02:15, 12:02:51, stack through `EmployeeController::index()` — the Employees page's own live refresh (rule 18) during the save. 28 that day, 130 since 2026-09-22. Found `Tenancy::set()` calling `forgetCachedPermissions()`.
+- **Root cause:** `Tenancy::set()` runs on every request (`ResolveTenant`) and every job, and deleted the shared permission cache entry each time. Overlapping requests then rebuilt it together; SQL Server's MERGE in Laravel's database cache store collided on the key. A long device save plus a page polling for live changes is the worst case.
+- **Fix:** `Tenancy::set()` → `clearPermissionsCollection()` (in-memory only; the cached list has no team in it). `config/permission.php` cache store → `file` (`PERMISSION_CACHE_STORE`); `phpunit.xml` pins `array`. `queue:restart`.
+- **Verified:** the cache key survives two tenant switches; 34 permissions cached; owner account authorised; 560 tests pass.
+- **Evidence:** `storage/logs/laravel.log` 2026-10-11 12:01–12:02; `docs/PROJECT-STATE.md` session log 2026-10-11.
+- **Status:** FIXED. **Incident caused during the fix:** ~12:05–12:08 UTC one test run (before `phpunit.xml` pinned the store) wrote an EMPTY permission list into the live file cache; live permission checks could have been refused for those minutes. Cleared. **Open, owner:** move Ali to 960802797 on IT ROOM and On The Road by remove + re-add (rule 19 restores card and fingers).
+- **Keywords:** cache_key_primary, spatie.permission.cache, 500, Server error, MERGE, forgetCachedPermissions, Tenancy::set
+
+### DC-012 — Akram removed and re-added: 0 fingerprints, no card, new user ID
+
+- **Date:** 2026-10-11 (11:16 UTC removal; fixed by ~11:45 UTC)
+- **Devices:** IT ROOM (F18, 192.168.7.62); his copies came from Entrance (TF1700, 192.168.7.60) and Glass Door (inBIO460, 192.168.7.61)
+- **Direction:** both — delete and push (software → device), read-back (device → software)
+- **Symptom:** owner removed AKRAM MIKNAS (employee 1434, code 440105943) from IT ROOM, added him back from the system: "it show IT Room 0 with yellow badge". Expected: the fingerprint stored in the app and written back.
+- **What was done:** audit + mappings showed no fingerprint copy had ever been taken from IT ROOM; the removal (`removeEmployee`) deleted the record and also deleted any stored copy for that terminal; the re-add wrote neither card nor finger; the read-back then wrote the terminal's empty card onto `employees.card_number` (card 7553651 lost from his record too). Found `ZktecoDriver::uploadTemplates()` threw "not built yet" — no F18 could receive a template at all. Built `TemplateService::addTemplates()` (library 2.10.0, `SAVE_USERTEMPS`). **Hardware actions:** saved IT ROOM's users + template digests (18 users, 15 templates); wrote Akram's slot 6 (1,132 bytes, copy read off the inBIO460) to uid 20 → read back byte-identical (sha1 `d507071a…`), every other user/template unchanged (diff); `setUserCard(440105943, 7553651)` read back; `employees.card_number` restored by hand; `readEnrollment` + `recordCard` to bring records in line. Then ran the owner's exact scenario twice through the real services: remove → add back. First run: card and finger came back, but he got **PIN 2** — his old PIN was "reserved" against him. Fixed, removed again, re-added with "use employee code" → 440105943, card, finger 6.
+- **Root cause:** four bugs: no copy taken before a delete; stored copies deleted when a terminal lost the finger; re-add never wrote credentials back; a terminal's empty card cleared the record card. Plus a fifth: a removed person could not return to their own PIN.
+- **Fix:** `DeviceUserSyncService::saveCredentialsBeforeRemoval()` (refuses 409 if it cannot), `restoreCredentials()` / `cardToRestore()`; `FingerprintVault` keeps copies; `FingerprintPusher::restoreOnto()`; `readEnrollment` never clears the record card; `DeviceIdentityResolver::pinWasOnlyEverTheirs()`; roster reads capture everyone's fingers and cards; nightly roster read scheduled. CLAUDE.md **rule 19** + `docs/credential-preservation.md`; `tests/Unit/CredentialPreservationTest.php`, `tests/Feature/Devices/FingerprintPushTest.php`.
+- **Verified:** on IT ROOM, read back: `uid 20, user_id 440105943, card 7553651, finger_slots [6]`, 18 users. Backup coverage: stored copies 12 (5 people) → 505 (203 people) after queued roster reads, commands 114–119 and 120–125.
+- **Evidence:** before/after snapshots `itroom-before.json` / `itroom-after.json` (session scratchpad, not committed); audit rows `employee.fingerprints_captured` / `employee.fingerprints_pushed` for 1434; `docs/device-capabilities.md` `template.upload`.
+- **Status:** FIXED. **Open, owner:** Akram to scan finger 6 at IT ROOM — write is proven, a real MATCH is not (`template.upload` stays `implemented` until then). Cron for `schedule:run` is not installed, so the nightly backup does not run yet.
+- **Keywords:** fingerprint lost, 0 fingerprints, yellow badge, card wiped, SAVE_USERTEMPS, template upload, addTemplates, removeEmployee, re-add, PIN reserved, never reissued
+
+### DC-011 — Renumber moved the panels, then our bookkeeping crashed
+
+- **Date:** 2026-10-11
+- **Devices:** Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61)
+- **Direction:** software → device, then app-side
+- **Symptom:** moving Ghassan (employee 1429) 656 → 830108246: the panels changed, then the request failed — panels and our records disagreed.
+- **What was done:** read the panels back: PIN 830108246, UID 247, finger 6 — the move had worked. The DB step failed on a leftover roster row already at 830108246 for the same employee (from an earlier wrong mapping). Corrected his mappings and roster rows by hand. Before that, on the owner's word "Ghassan yes it's the same person": merged employees 1729 and 1786 into 1429 (`EmployeeMergeService`), closed the wrong 830108246 maps, re-read rosters, claimed roster PIN 656, `attendance:reattribute 13` (41 punches), direct update of 129 PIN-656 punches on Entrance (a full reattribute was NOT run there because it would clear 5 PIN-695 punches attributed to 1432 Yousif), backed up fingers 3 and 6.
+- **Root cause:** `renumberEmployee` assumed the target PIN had no roster row; a same-employee leftover made the insert collide.
+- **Fix:** inside the transaction, a same-employee leftover roster entry at the new PIN is removed first. Test added.
+- **Verified:** panel read-back; DB records corrected and re-read.
+- **Evidence:** `docs/PROJECT-STATE.md` 2026-10-11 log.
+- **Status:** FIXED. **Open, owner:** Camelot (F18) still has Ghassan as PIN 1 — can now be moved by remove + re-add (rule 19 restores fingers 3, 6 and Camelot's card 7632913).
+- **Keywords:** renumberEmployee, roster leftover, duplicate key, Ghassan, 830108246, 656
+
+### DC-010 — "Moving a user needs two different PINs"
+
+- **Date:** 2026-10-11
+- **Devices:** Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61)
+- **Direction:** software → device
+- **Symptom:** pushing with "use employee code" failed with "Moving a user needs two different Pins" for someone already at that ID.
+- **What was done:** traced to `C3Driver::renumberUser` asked to move a PIN to itself (numerically equal after DC-009's comparison).
+- **Root cause:** no "already there" short-circuit.
+- **Fix:** `C3Driver::renumberUser` returns the record unchanged when the PINs match; `DeviceUserSyncService::renumberEmployee` returns "already user ID …" with no bookkeeping. Test added.
+- **Verified:** tests; subsequent pushes to the panels.
+- **Evidence:** `docs/device-capabilities.md` (C3 PINs).
+- **Status:** FIXED
+- **Keywords:** two different Pins, renumber, same PIN, C3
+
+### DC-009 — "041112750 was written but is not on the panel"
+
+- **Date:** 2026-10-11
+- **Devices:** Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61)
+- **Direction:** both — write, then read-back compare
+- **Symptom:** "FAILED on Entrance/Glass Door — 041112750 was written but is not on the panel" (Tariq, employee 1739).
+- **What was done:** read the panels: they hold him as **41112750** (UID 319, card 1739519, finger 6). C3 PINs are integers; the leading zero is dropped by the panel. The write had worked; our string compare said it had not. Tariq's mappings on 13/14 corrected by hand to 41112750.
+- **Root cause:** string comparison of a numeric PIN.
+- **Fix:** `C3Driver::samePin()` (numeric compare); `tests/.../C3PinComparisonTest`.
+- **Verified:** read-back on both panels.
+- **Evidence:** `docs/device-capabilities.md`.
+- **Status:** FIXED
+- **Keywords:** leading zero, 041112750, 41112750, was written but is not on the panel, C3 PIN integer
+
+### DC-008 — "Tariq could not be removed" — 500 on an unadopted terminal
+
+- **Date:** 2026-10-11 (08:38–09:10 UTC)
+- **Devices:** On The Road (F22/ID, 192.168.7.63), IT ROOM (F18, 192.168.7.62), then all six
+- **Direction:** software → device
+- **Symptom:** "Tariq could not be removed from On The Road" with no reason; later the owner: "read and write must be always allowed for all devices", "make the code do its job without making me going back and forth".
+- **What was done:** On The Road was not adopted; `DeviceNotAdoptedException` fell through to a generic 500. Made it a 409 with the reason and the toast show it. On the owner's go-ahead: adopted On The Road (08:38 UTC), backed up Tariq's finger 6, owner removed him (09:07:55, verified: PIN 940 gone, 11 users). IT ROOM refused next (09:08:24): read its roster (19 users, all claimed), owner approved, `finishAdoption` on the other five (09:10:34). Removing the write gate entirely was refused by the safety classifier and not done; replaced by auto-adoption.
+- **Root cause:** an unhandled exception class, and a gate that required a manual step even when the roster was fully claimed.
+- **Fix:** 409 `reason=not_adopted`; `DeviceAdoptionService::adoptIfClear()` — `Device::assertWritable()` reads the roster and adopts when no unclaimed people are known, refuses naming up to 5 people otherwise. `docs/device-identity-and-adoption.md`.
+- **Verified:** hardware read after removal; all six terminals `adopted`.
+- **Evidence:** DeviceIdentityGuardTest, DeviceAdoptionGateTest.
+- **Status:** FIXED. Tariq (PIN 940) still on IT ROOM, for the owner to remove.
+- **Keywords:** not adopted, read-only, DeviceNotAdoptedException, 409, adoption, assertWritable
+
+### DC-007 — Attendance "Method" column showed bare numbers
+
+- **Date:** 2026-10-11
+- **Devices:** all; unknown codes 48–51 seen once each on Camelot (F18)
+- **Direction:** device → software (decode)
+- **Symptom:** owner: "the column named method must show me how did the person log in, not just a number".
+- **What was done:** decoded with the vendor's own ZKAccess `VerifyType` dictionary (`draft/extracted/Languages/language_en-US.xml`): 0 Any, 1 Fingerprint, 2 Personnel ID, 3 Password, 4 Card, 6 Card or fingerprint, … 15 Face, 200 Other. Checked against data: 74 of 76 people punching with code 4 hold a card.
+- **Root cause:** codes were never mapped.
+- **Fix:** `App\Support\VerifyMethod` + `parts.jsx`, "Unknown (n)" for unmapped codes; `VerifyMethodLabelsTest` keeps both in step. `docs/protocol-overview.md`.
+- **Verified:** against stored punches as above.
+- **Evidence:** VerifyMethodLabelsTest.
+- **Status:** FIXED. Codes 48–51 remain unknown.
+- **Keywords:** verify type, method, VerifyType, punch method, code 4, code 15
+
+### DC-006 — The F18 refuses to change a user ID
+
+- **Date:** 2026-09-23 to 2026-09-24
+- **Devices:** IT ROOM (F18, 192.168.7.62), test user `ali-it2` uid 6
+- **Direction:** software → device
+- **Symptom:** a changed employee code never reached the terminal; the renumber was refused.
+- **What was done:** `UserService::renumber()` (rewrite same uid with a new user id) → **ACK_ERROR** for `000000005`, `5`, `10055`, record untouched each time; leading zeros ruled out. Built delete + re-upload with templates (`renumberByReupload`, `SAVE_USERTEMPS`); owner-authorised run on `ali-it` 2026-09-24: 960802797 → 5 → 960802797, both verified, template byte-identical, `valid` byte kept.
+- **Root cause:** firmware will not change the user id of an existing uid.
+- **Fix:** `user.renumber` `not_implemented` in `defaults()`; the reupload path enabled for IT ROOM only via `capabilities_cache` — **that cache was later cleared**, so it is hidden again. Since 2026-10-11 (DC-012) remove + re-add also moves an F18 user, keeping card and fingers.
+- **Verified:** hardware runs above.
+- **Evidence:** `tools/zkprobe/traces-2026-09-23/renumber-itroom-01.json`, `tools/zkprobe/traces-2026-09-24/renumber-reupload-01.json`, `-02.json`.
+- **Status:** WORKAROUND. A real finger scan after a move was never observed.
+- **Keywords:** ACK_ERROR, renumber, user id change, USER_WRQ, SAVE_USERTEMPS, F18
+
+### DC-005 — Push refused the slot's own owner
+
+- **Date:** 2026-09-23
+- **Devices:** IT ROOM (F18, 192.168.7.62)
+- **Direction:** software → device (refused before the write)
+- **Symptom:** "slot 960802797 already holds ali-test, who is not claimed by this employee" — though mapping and roster both said employee 1414 owned it.
+- **What was done:** `slotBelongsTo()` compared `claimed_employee_id === $employee->id`; SQL Server returns `"1414"` (string).
+- **Root cause:** strict comparison of integer columns that SQL Server returns as strings; SQLite tests cannot catch it.
+- **Fix:** integer casts on `DeviceRosterEntry` and `EmployeeDeviceMap` keys; `test_ownership_keys_are_integers_whatever_the_driver_returns`.
+- **Verified:** push succeeded after the fix.
+- **Evidence:** `docs/PROJECT-STATE.md` 2026-09-23.
+- **Status:** FIXED. Any strictly compared integer column needs the same cast.
+- **Keywords:** not claimed by this employee, SQL Server string id, strict comparison, slotBelongsTo
+
+### DC-004 — Every attendance sync failing on SQL Server
+
+- **Date:** 2026-09-21 to 2026-09-23
+- **Devices:** all (reported on IT ROOM, command 67)
+- **Direction:** device → software (storing a read)
+- **Symptom:** failed `sync_attendance`; IT ROOM's newest stored punch stuck at 2026-09-16; the failure was not even logged.
+- **What was done:** `insertOrIgnore` does not exist on SQL Server; device log files for 2026-09-15/21/23 were owned by root (artisan run as root), so the worker (www-data) could not log.
+- **Root cause:** SQLite-only query builder call after the move to SQL Server; root-owned log files.
+- **Fix:** no-op `upsert()` on the unique index, per-batch de-duplication, chunks under the 2,100-parameter limit (`docs/attendance-sync-flow.md`); `chown -R www-data:www-data storage bootstrap/cache`.
+- **Verified:** sync recovered the missing punches from the terminals.
+- **Evidence:** `docs/PROJECT-STATE.md` 2026-09-23.
+- **Status:** FIXED. **Trap:** run artisan as `sudo -u www-data`, or chown after a root run.
+- **Keywords:** insertOrIgnore, SQL Server, 2100 parameters, root-owned log, sync failed
+
+### DC-003 — The inBIO460 "pings but never answers"
+
+- **Date:** 2026-09-14
+- **Devices:** Glass Door (inBIO460, 192.168.7.61); later Entrance (TF1700, 192.168.7.60)
+- **Direction:** both
+- **Symptom:** recorded for weeks as "pings but does not answer" — assumed dead.
+- **What was done:** research (rule 17): an inBIO is a C3 / PullSDK access panel — TCP, different frame and CRC. Speaking C3, it answered with serial, firmware and table schema. Both connect forms were refused (`0x76` → −13, `0x01` → −98) with valid CRCs; the working path was **no connect at all** — `GETPARAM`, `DATATABLE_CFG`, `GETDATA` answer session-less. `GETDATA` answers `0x0D` (buffered) instead of inline rows.
+- **Root cause:** speaking the wrong protocol.
+- **Fix:** C3 driver (`app/Services/Devices/C3/`, library `src/C3/`).
+- **Verified:** full reads on both panels.
+- **Evidence:** `tools/zkprobe/inbio460.php`; references `vwout/zkaccess-c3-py`, `-lua`.
+- **Status:** FIXED
+- **Keywords:** inBIO, C3, PullSDK, silent device, no answer, CRC-16/ARC, 0x0D
+
+### DC-002 — Camelot refuses to connect; bulk reads die part-way
+
+- **Date:** 2026-09-13 to 2026-09-14
+- **Devices:** Camelot (F18, 87.237.196.60 at the time)
+- **Direction:** device → software
+- **Symptom:** `CMD_CONNECT` answered `ACK_UNAUTH` (2005); full reads failed at CONNECT (1000), AUTH (1102) or PREPARE_BUFFER (1503) at random.
+- **What was done:** comm key is 0 but the device still wants the AUTH exchange — `CMD_AUTH` with `makeCommKey(0, sessionId)` → `ACK_OK`. Bulk read fixed in `BulkReader` (library 2.1.0): 41,632 records in ~285–300 s, twice. TCP added (2.2.0), a `wrapTcp` header bug found and fixed; TCP not proven on Camelot. **Did not help:** pacing reads at 100/300/1000 ms.
+- **Root cause:** a firmware that requires AUTH with key 0; a flaky public link that degrades under load.
+- **Fix:** AUTH handshake; reads go through the queue with retry/backoff (rule 11).
+- **Verified:** two complete reads.
+- **Evidence:** `docs/PROJECT-STATE.md` Camelot section; library CHANGELOG 2.1.0/2.2.0.
+- **Status:** WORKAROUND — reliable per attempt only through retries.
+- **Keywords:** ACK_UNAUTH, 2005, CMD_AUTH, comm key 0, Camelot, flaky, PREPARE_BUFFER timeout
+
+### DC-001 — "Incomplete transfer" on every attendance read
+
+- **Date:** 2026-09-13
+- **Devices:** On The Road (F22, 192.168.7.63)
+- **Direction:** device → software
+- **Symptom:** "Incomplete transfer": 54–75 % of the attendance table, then four seconds of silence, 0 of 3 reads complete.
+- **What was done:** first diagnosis — socket receive buffer / switch to TCP — was **wrong**: `/proc/net/snmp` counted 3 `RcvbufErrors` across a read that lost ~145,000 bytes; the device had stopped sending. The firmware supports windowed reads: `PREPARE_BUFFER` (1503) → `READ_BUFFER` (1504) 16 KB at a time → `FREE_DATA` (1502). On this model the users table refuses windowed reads (reply 4991) — windowing is per table.
+- **Root cause:** the push read overruns this firmware; it must be asked one window at a time.
+- **Fix:** library `Transport/BulkReader` prefers windowed reads, push envelope as fallback (`tests/Unit/WindowedReadTest.php`).
+- **Verified:** 6 of 6 reads, 326,124 bytes, 8,153 records; 18 of 18 across three tables.
+- **Evidence:** `tools/zkprobe/traces-2026-09-13/`, `docs/protocol-overview.md` "Windowed reads".
+- **Status:** FIXED
+- **Keywords:** Incomplete transfer, windowed read, 1503, 1504, 4991, RcvbufErrors, F22
+
+---
+
+## Findings older than this casebook
+
+Recorded in the rules themselves, without an entry of their own:
+
+- **Rule 10:** device timestamps stored without UTC conversion produced 6,432
+  duplicate rows at a 3-hour offset, and a watermark 3 hours in the future.
+- **Rule 11:** a date-parsing bug silently discarded a third of the attendance for
+  months — why sync counts undecodable records instead of dropping them.

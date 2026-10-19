@@ -27,11 +27,14 @@ use Promoseven\Biometric\Exception\UnsupportedCommandException;
  * WHAT A CAPTURE MEANS. A template table that decoded is the device's full truth for
  * the people mapped to it, so for each live mapping on that terminal:
  *   - a finger present on the device is stored (or refreshed when its digest changed);
- *   - a finger row for this terminal that is no longer on it is dropped, because the
- *     table decoded and its absence is real (rule 10) — the same rule
- *     DeviceUserSyncService::recordTemplates() already applies to the slot rows.
+ *   - a finger that is no longer on the terminal KEEPS its copy (owner's rule,
+ *     2026-10-11). The copy exists for exactly the moment the terminal loses the
+ *     finger — a removal, a wipe, a re-add — so dropping it on that moment defeated
+ *     it: Akram was removed from IT Room and re-added with nothing to put back. Only
+ *     bare slot markers (no template) follow the terminal.
  * A read that failed or is unsupported captures nothing and deletes nothing — "could
- * not read" must never erase a copy.
+ * not read" must never erase a copy. Where a terminal is "on the device" is the
+ * mapping's fingerprint_slots, never these rows.
  *
  * Copies from OTHER terminals are never touched by a capture from this one: one
  * finger enrolled on two terminals is two templates, and each belongs to its source.
@@ -175,6 +178,51 @@ class FingerprintVault
     }
 
     /**
+     * Stores fingers read off a DUPLICATE record on $device as this employee's copies
+     * (2026-10-11: "ali-it" on IT ROOM was Ali — his finger 5 lived only there).
+     * Add-only: a slot already stored for this employee from this terminal keeps its
+     * copy; the duplicate's is still in the removal snapshot. Returns how many were added.
+     *
+     * @param list<array{slot:int, size?:int, sha1:string, template:string}> $records
+     */
+    public function adoptCopies(Device $device, int $employeeId, array $records): int
+    {
+        $this->assertReady();
+        $added = 0;
+
+        foreach ($records as $r) {
+            $exists = BiometricTemplate::query()
+                ->where('device_id', $device->id)
+                ->where('employee_id', $employeeId)
+                ->where('finger_slot', (int) $r['slot'])
+                ->exists();
+            if ($exists || (string) $r['template'] === '') {
+                continue;
+            }
+
+            BiometricTemplate::create([
+                'tenant_id' => $device->tenant_id,
+                'device_id' => $device->id,
+                'employee_id' => $employeeId,
+                'finger_slot' => (int) $r['slot'],
+                // Base64 before encryption, as syncOne(): the cast is for strings.
+                'template' => base64_encode((string) $r['template']),
+                'template_size' => (int) ($r['size'] ?? strlen((string) $r['template'])),
+                'template_sha1' => (string) $r['sha1'],
+                'template_format' => self::format((string) $device->protocol, $device->model),
+                'verified_at' => now(),
+            ]);
+            $added++;
+        }
+
+        if ($added > 0) {
+            $this->audit($device, $employeeId, ['stored' => $added, 'refreshed' => 0, 'dropped' => 0]);
+        }
+
+        return $added;
+    }
+
+    /**
      * Fingers with a stored copy, for display. Never bytes.
      *
      * @return list<int>
@@ -218,6 +266,46 @@ class FingerprintVault
                 'sha1' => $t->template_sha1,
                 'source_device_id' => $t->device_id,
             ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The copy to write to $target, per finger: the newest stored ZKFinger v10
+     * template for each slot, from ANY terminal, preferring one taken from the same
+     * protocol family as the target. Decrypted, so for a device write only.
+     *
+     * CROSS-FAMILY ON EVIDENCE, NOT ASSUMPTION: four people's templates read from a
+     * standalone terminal over UDP were byte-identical to the C3 panels' templatev10
+     * rows (2026-09-15) — ZKAccess distributes one enrollment to both families
+     * unchanged. That is what makes "enroll on the F18, push to Glass Door" possible.
+     * Whether a finger enrolled on an F18 then MATCHES at a panel is confirmed per
+     * panel by a real scan; until then the push is EXPERIMENTAL (docs/enrollment-flow.md).
+     * The `SS21` signature is checked here and again by the library.
+     *
+     * @return list<array{fid:int,template:string,sha1:string,source_device_id:int}>
+     */
+    public function copiesFor(int $employeeId, Device $target): array
+    {
+        return BiometricTemplate::query()
+            ->where('employee_id', $employeeId)
+            ->whereNotNull('template_sha1')
+            ->whereNotNull('template')
+            ->orderByDesc('updated_at')
+            ->get()
+            ->map(fn (BiometricTemplate $t) => [
+                'fid' => (int) $t->finger_slot,
+                'template' => base64_decode((string) $t->template, true) ?: '',
+                'sha1' => (string) $t->template_sha1,
+                'source_device_id' => (int) $t->device_id,
+                'same_family' => str_starts_with((string) $t->template_format, $target->protocol.':'),
+            ])
+            // ZKFinger v10 marker `SS21` at offset 2, in hex for DeviceModelIsolationTest.
+            ->filter(fn (array $c) => substr($c['template'], 2, 4) === "\x53\x53\x32\x31")
+            ->sortByDesc('same_family')
+            ->unique('fid')
+            ->sortBy('fid')
+            ->map(fn (array $c) => array_diff_key($c, ['same_family' => true]))
             ->values()
             ->all();
     }
@@ -267,10 +355,12 @@ class FingerprintVault
 
         $gone = $existing->keys()->diff(array_keys($onDevice));
         if ($gone->isNotEmpty()) {
+            // Markers only; a stored template outlives the terminal's copy (see above).
             $counts['dropped'] = BiometricTemplate::query()
                 ->where('employee_id', $employeeId)
                 ->where('device_id', $device->id)
                 ->whereIn('finger_slot', $gone->all())
+                ->whereNull('template_sha1')
                 ->delete();
         }
 

@@ -256,6 +256,50 @@ class DeviceAdoptionService
         ];
     }
 
+    /**
+     * Unlocks writes by itself whenever that is safe (owner's request, 2026-10-11:
+     * "make the code do its job without making me go back and forth").
+     *
+     * The operator used to have to read a terminal's roster and press "Allow writes"
+     * before any write — even when every person on it was already matched, which is
+     * when the step decides nothing. Now a write does that itself:
+     *
+     *   - people on the terminal nobody has matched (already known)  → refuse, without
+     *     touching the hardware: only a human can say who they are;
+     *   - otherwise read the roster afresh (a READ — it cannot harm anything) and, if
+     *     that turns up nobody unmatched, adopt and let the write proceed.
+     *
+     * The check itself is unchanged — it is run by the system instead of by a person
+     * pressing a button. Each push still reads its target slot first
+     * (DeviceUserSyncService::pushEmployee, guard 3).
+     *
+     * @return bool whether the device now accepts writes
+     */
+    public function adoptIfClear(Device $device, ?int $actorId = null): bool
+    {
+        if ($device->adoption_status === Device::ADOPTED) {
+            return true;
+        }
+
+        if ($this->pendingCount($device) > 0) {
+            return false;
+        }
+
+        // Fresh evidence: somebody may have been enrolled at the terminal since the
+        // last read. Matching by PIN happens inside readRoster().
+        $this->readRoster($device);
+        $device->refresh();
+
+        if ($this->pendingCount($device) > 0) {
+            return false;
+        }
+
+        $this->finishAdoption($device, $actorId);
+        $device->refresh();
+
+        return true;
+    }
+
     /** Roster entries nobody has decided about yet. */
     public function pendingCount(Device $device): int
     {

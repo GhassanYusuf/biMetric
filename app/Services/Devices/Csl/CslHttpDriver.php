@@ -4,6 +4,7 @@ namespace App\Services\Devices\Csl;
 
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\Device;
+use App\Support\Timezone;
 use Illuminate\Support\Facades\Log;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Capability\CapabilitySet;
@@ -218,6 +219,8 @@ class CslHttpDriver implements BiometricDeviceDriver
         string $name,
         ?\Closure $guard = null,
         bool $onlyIfMissing = false,
+        ?int $privilege = null,
+        ?string $password = null,
     ): DeviceUser {
         throw new UnsupportedCommandException(
             "{$device->name} (CSL web portal) does not support writing user records through this driver."
@@ -242,6 +245,44 @@ class CslHttpDriver implements BiometricDeviceDriver
     {
         throw new UnsupportedCommandException(
             "{$device->name} (CSL web portal) does not support writing cards through this driver."
+        );
+    }
+
+    public function setUserPrivilege(Device $device, string $userId, bool $admin): DeviceUser
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not support changing a user's privilege through this driver."
+        );
+    }
+
+    // The portal exports punches; it publishes no count of what the terminal holds.
+    public function attendanceRecordCount(Device $device): ?int
+    {
+        return null;
+    }
+
+    public function clearAttendance(Device $device, int $expectedRecords): int
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not support clearing attendance through this driver."
+        );
+    }
+
+    /** The CSL portal exposes no clock this driver reads. Null = "not read" (rule 10). */
+    public function readClock(Device $device): ?\DateTimeImmutable
+    {
+        return null;
+    }
+
+    public function setClock(Device $device): array
+    {
+        throw new UnsupportedCommandException("{$device->name} (CSL web portal) does not support setting the clock through this driver.");
+    }
+
+    public function uploadTemplates(Device $device, string $userId, array $templates): array
+    {
+        throw new UnsupportedCommandException(
+            "{$device->name} (CSL web portal) does not support writing fingerprint templates."
         );
     }
 
@@ -312,6 +353,7 @@ class CslHttpDriver implements BiometricDeviceDriver
             Capability::TEMPLATE_DOWNLOAD => Capability::NOT_IMPLEMENTED,
             Capability::TEMPLATE_UPLOAD => Capability::NOT_IMPLEMENTED,
             Capability::USER_DISABLE => Capability::NOT_IMPLEMENTED,
+            Capability::USER_PRIVILEGE => Capability::NOT_IMPLEMENTED,
 
             // Never investigated on this firmware.
             Capability::VERIFY_MODE => Capability::UNKNOWN,
@@ -330,7 +372,7 @@ class CslHttpDriver implements BiometricDeviceDriver
             password: (string) $device->web_password,
             port: self::WEB_PORT,
             timeout: (float) config('attendance.device_timeout', 10.0),
-            timezone: $device->timezone ?: config('attendance.device_timezone', '+03:00'),
+            timezone: Timezone::forDevice($device),
         );
     }
 

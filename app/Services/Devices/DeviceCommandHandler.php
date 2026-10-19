@@ -63,11 +63,19 @@ class DeviceCommandHandler
                 to: $payload['to'] ?? null,
             ),
 
+            DeviceCommand::CLEAR_ATTENDANCE => app(AttendanceClearService::class)->clear($device, $command),
+
             DeviceCommand::SYNC_ENROLLMENT => $this->users->syncEnrollmentState($device),
 
             DeviceCommand::IMPORT_EMPLOYEES => $this->users->importFromDevice($device),
 
             DeviceCommand::RECONCILE_USERS => $this->users->reconcile($device),
+
+            DeviceCommand::REBUILD_DEVICE => app(DeviceRebuildService::class)->backupAndFanOut($device, $payload),
+
+            DeviceCommand::REBUILD_PERSON => app(DeviceRebuildService::class)->rebuildPerson($device, $this->employee($payload)),
+
+            DeviceCommand::REBUILD_REMOVE => app(DeviceRebuildService::class)->removeUnlinked($device, (string) ($payload['device_user_id'] ?? '')),
 
             DeviceCommand::PUSH_USER => $this->users->pushEmployee(
                 $device,
@@ -104,13 +112,23 @@ class DeviceCommandHandler
             ),
 
             DeviceCommand::SYNC_TIME => (function () use ($device) {
-                $before = $this->driver->run($device, fn (ProtocolDevice $d) => $d->time());
-                $this->driver->run($device, fn (ProtocolDevice $d) => $d->syncTime());
-                $after = $this->driver->run($device, fn (ProtocolDevice $d) => $d->time());
+                // Each family sets its clock its own way (contract setClock, 2026-10-11:
+                // the C3 door panels via DATETIME); this used to speak ZKTeco directly.
+                ['before' => $before, 'after' => $after] = $this->driver->setClock($device);
 
                 // Read back rather than trusting the write: the device stamps every
                 // future punch with this clock, so a silently rejected write would
                 // corrupt attendance from here on.
+                $zone = \App\Support\Timezone::forDevice($device);
+                $now = new \DateTimeImmutable('now', new \DateTimeZone($zone));
+                $off = $after === null ? null : abs(strtotime($after->format('Y-m-d H:i:s')) - strtotime($now->format('Y-m-d H:i:s')));
+                if ($off === null || $off > 60) {
+                    throw new \RuntimeException(
+                        "{$device->name} accepted the clock but reads back "
+                        .($after?->format('Y-m-d H:i:s') ?? 'nothing')." instead of {$now->format('Y-m-d H:i:s')} ({$zone})."
+                    );
+                }
+
                 return [
                     'message' => sprintf(
                         'Device clock set. Was %s, now %s.',

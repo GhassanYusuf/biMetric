@@ -368,6 +368,42 @@ class DeviceSyncController extends Controller
      *
      * Returns an operator-facing refusal, or null when the device can do it.
      */
+    /**
+     * Queues CLEAR_ATTENDANCE (2026-10-18): erase the terminal's punch log once every
+     * punch on it is stored — AttendanceClearService refuses otherwise. Its own route
+     * rather than one more name in dispatchCommand() because it destroys data on the
+     * terminal, so it needs devices.update, not the devices.sync every operator has.
+     */
+    public function clearAttendance(Device $device): JsonResponse
+    {
+        $this->authorize('update', $device);
+
+        if (! $device->capabilitySet()->supports(Capability::ATTENDANCE_CLEAR)) {
+            $error = $this->capabilityRefusal($device, DeviceCommand::CLEAR_ATTENDANCE);
+
+            return ApiResponse::error($error, ['command' => [$error]], 422);
+        }
+
+        $pending = DeviceCommand::query()
+            ->where('device_id', $device->id)
+            ->where('command', DeviceCommand::CLEAR_ATTENDANCE)
+            ->whereIn('status', [DeviceCommand::STATUS_QUEUED, DeviceCommand::STATUS_RUNNING])
+            ->first();
+
+        if ($pending !== null) {
+            return ApiResponse::success(new DeviceCommandResource($pending), "A punch clear is already queued on {$device->name}.");
+        }
+
+        // One attempt: a refusal is a decision, and a VerificationException after the
+        // clear must reach an operator rather than be retried behind their back.
+        $command = $this->bus->dispatch($device, DeviceCommand::CLEAR_ATTENDANCE, [], maxAttempts: 1);
+
+        return ApiResponse::success(
+            new DeviceCommandResource($command),
+            "Queued: save every punch on {$device->name}, then clear them from the terminal.",
+        );
+    }
+
     private function capabilityRefusal(Device $device, string $command): ?string
     {
         $required = match ($command) {
@@ -376,6 +412,7 @@ class DeviceSyncController extends Controller
             DeviceCommand::IMPORT_EMPLOYEES,
             DeviceCommand::RECONCILE_USERS => Capability::USER_READ,
             DeviceCommand::SYNC_TIME => Capability::SET_TIME,
+            DeviceCommand::CLEAR_ATTENDANCE => Capability::ATTENDANCE_CLEAR,
             default => null, // health/info/probe are always available
         };
 

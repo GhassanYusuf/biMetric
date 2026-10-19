@@ -1,9 +1,9 @@
-import { Button, Card, EmptyState, PageHeader, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
-import { hours, rangeLabel } from './parts';
+import { ActionMenu, Button, Card, EmptyState, PageHeader, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
+import { ExportRuns, hours, rangeLabel } from './parts';
 
 // Desktop payroll summary: range + department filters, one row per employee,
 // and a totals row that comes from the server's own sum.
-export default function ReportsDesktop({ report, departments, filters, onFilter, loading, exporting, onExport }) {
+export default function ReportsDesktop({ report, departments, filters, onFilter, loading, exporting, onExport, runs, downloading, deleting, onDownloadRun, onDeleteRun, allEmployeesItems }) {
     const rows = report?.rows ?? [];
 
     function set(key, value) {
@@ -17,8 +17,19 @@ export default function ReportsDesktop({ report, departments, filters, onFilter,
                 subtitle={`${rangeLabel(report)} · ${(report?.totals?.employees ?? 0).toLocaleString()} active employees`}
             >
                 {loading && <Spinner className="h-5 w-5 text-violet-600" />}
-                <Button variant="secondary" loading={exporting} disabled={exporting} onClick={onExport}>
-                    {exporting ? 'Preparing…' : 'Export PDF'}
+                <Button variant="secondary" loading={exporting === 'payroll'} disabled={!!exporting} onClick={() => onExport('payroll')}>
+                    {exporting === 'payroll' ? 'Preparing…' : 'Payroll PDF'}
+                </Button>
+                <Button variant="secondary" loading={exporting === 'statement'} disabled={!!exporting} onClick={() => onExport('statement')}>
+                    {exporting === 'statement' ? 'Preparing…' : 'Monthly statement'}
+                </Button>
+                <ActionMenu
+                    label="All employees"
+                    className="min-h-[42px] px-4 text-sm"
+                    items={allEmployeesItems}
+                />
+                <Button loading={exporting === 'report'} disabled={!!exporting} onClick={() => onExport('report')}>
+                    {exporting === 'report' ? 'Preparing…' : 'Attendance report'}
                 </Button>
             </PageHeader>
 
@@ -39,6 +50,8 @@ export default function ReportsDesktop({ report, departments, filters, onFilter,
                     )}
                 </div>
             </Card>
+
+            <ExportRuns runs={runs} downloading={downloading} deleting={deleting} onDownload={onDownloadRun} onDelete={onDeleteRun} />
 
             <TableShell>
                 <Thead>

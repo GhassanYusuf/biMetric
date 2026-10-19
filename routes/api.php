@@ -1,26 +1,30 @@
 <?php
 
+use App\Http\Controllers\Api\AccessLevelController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\ClientErrorController;
 use App\Http\Controllers\Api\DashboardController;
-use App\Http\Controllers\Api\AccessLevelController;
 use App\Http\Controllers\Api\DepartmentController;
-use App\Http\Controllers\Api\MultiCardGroupController;
 use App\Http\Controllers\Api\DeviceAdoptionController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\DeviceEnrollmentController;
 use App\Http\Controllers\Api\DeviceGroupController;
 use App\Http\Controllers\Api\DeviceReconciliationController;
 use App\Http\Controllers\Api\DeviceSyncController;
+use App\Http\Controllers\Api\DeviceTimezoneController;
+use App\Http\Controllers\Api\DuplicateScanController;
 use App\Http\Controllers\Api\EmployeeController;
-use App\Http\Controllers\Api\LiveController;
-use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\HolidayController;
+use App\Http\Controllers\Api\LegacyDataController;
+use App\Http\Controllers\Api\LiveController;
+use App\Http\Controllers\Api\MultiCardGroupController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\ReportExportController;
+use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\WaiverController;
 use Illuminate\Support\Facades\Route;
 
@@ -84,6 +88,16 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::get('settings', [SettingController::class, 'index']);
     Route::put('settings', [SettingController::class, 'update']);
 
+    /*
+     | Time zones and device clocks (2026-10-05). The plan and the clock check are
+     | read-only; only `apply` queues the hardware write, and it goes through the
+     | command bus rather than running inline.
+     */
+    Route::get('settings/timezones', [DeviceTimezoneController::class, 'plan']);
+    Route::post('settings/timezones/check', [DeviceTimezoneController::class, 'check']);
+    Route::get('settings/attendance-schedule', [DeviceTimezoneController::class, 'schedule']);
+    Route::post('settings/timezones/apply', [DeviceTimezoneController::class, 'apply']);
+
     // Access levels + multi-card groups for the employee form. Database only —
     // nothing here writes to a panel (2026-09-23).
     Route::apiResource('access-levels', AccessLevelController::class)->except('show')->names('api.access-levels');
@@ -95,34 +109,18 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::get('employees/next-code', [EmployeeController::class, 'nextCode']);
 
     /*
-     * Resolves a national id to the employment holding it. It is the ONLY read the
-     * national id has, and it is one-way: you must already know the number to get
-     * an answer, and the answer never contains one.
-     *
-     * POST, not GET, because the number must not travel in a URL. A query string is
-     * written to the access log, kept in browser history, and handed to the next
-     * origin the page talks to in the Referer header — three copies of a government
-     * id in places nobody is guarding.
-     *
-     * Throttled: exact-match lookup over a sequential numbering scheme is an oracle.
-     * 20/minute is more than an operator working through a stack of ID cards needs,
-     * and useless for enumerating one.
-     *
-     * Declared before the resource for the same reason next-code is — consistency of
-     * reading order; `POST employees/lookup` does not itself collide with `store`.
+     * Duplicate scanning (2026-10-06). `duplicate-groups` is a fixed path with no
+     * employee in it, so it MUST precede the resource below or it is swallowed by
+     * `employees/{employee}` and bound as an employee id — the same trap the
+     * next-code route above already documents. All three are reads.
      */
-    Route::post('employees/lookup', [EmployeeController::class, 'lookup'])
-        ->middleware('throttle:20,1');
+    Route::get('employees/duplicate-groups', [DuplicateScanController::class, 'index']);
+    Route::post('employees/merge/preview', [DuplicateScanController::class, 'preview']);
 
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
+    Route::get('employees/{employee}/duplicates', [DuplicateScanController::class, 'forEmployee']);
     Route::get('employees/{employee}/attendance-summary', [EmployeeController::class, 'attendanceSummary']);
-    /*
-     * The national id is WRITE-ONLY over HTTP. Nothing reads one back — the employee
-     * resource carries only `has_national_id` and a masked tail. It is government id,
-     * and the HRMS join key, so a screen that can list them is a screen that can leak
-     * them. See EmployeeController::setNationalId().
-     */
-    Route::put('employees/{employee}/national-id', [EmployeeController::class, 'setNationalId']);
+    Route::get('employees/{employee}/report', [EmployeeController::class, 'report']);
     Route::post('employees/{employee}/photo', [EmployeeController::class, 'uploadPhoto']);
     Route::delete('employees/{employee}/photo', [EmployeeController::class, 'removePhoto']);
     /*
@@ -142,10 +140,18 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('employees/merge', [EmployeeController::class, 'merge']);
     Route::post('employees/{employee}/devices/{device}/push', [EmployeeController::class, 'pushToDevice']);
     Route::post('employees/{employee}/devices/{device}/remove', [EmployeeController::class, 'removeFromDevice']);
+    Route::put('employees/{employee}/devices/{device}/privilege', [EmployeeController::class, 'setDevicePrivilege']);
+    // Frees a number held on the terminal by a record linked to no employee, for this
+    // employee — record and fingerprints saved first (casebook DC-014).
+    Route::post('employees/{employee}/devices/{device}/release-number', [EmployeeController::class, 'releaseNumber']);
 
     // Reads their fingerprints from the terminals they are on into the system's
     // encrypted copy. Read-only on the terminals (FingerprintVault, 2026-09-24).
     Route::post('employees/{employee}/fingerprints/read', [EmployeeController::class, 'readFingerprints']);
+
+    // Writes their stored fingerprints to terminals missing them — how a finger enrolled
+    // on the F18 reaches the C3 panels, which cannot capture one (2026-09-24). Add-only.
+    Route::post('employees/{employee}/fingerprints/push', [EmployeeController::class, 'pushFingerprints']);
 
     // Live read of one employee's enrollment (which finger slots, which card).
     Route::get('employees/{employee}/devices/{device}/enrollment', [EmployeeController::class, 'enrollment']);
@@ -175,6 +181,11 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Kept read-only and deliberately cheap — see DeviceSyncController::syncProgress.
     Route::get('devices/{device}/sync-progress', [DeviceSyncController::class, 'syncProgress']);
     Route::post('devices/{device}/sync-enrollment', [DeviceController::class, 'syncEnrollment']);
+    // First fingerprint write on a model that never did one; add-only (rule 21).
+    Route::post('devices/{device}/fingerprint-write-test', [DeviceController::class, 'fingerprintWriteTest']);
+    // "Rebuild from system": preview (read-only), then the queued chain (DeviceRebuildService).
+    Route::get('devices/{device}/rebuild-plan', [DeviceController::class, 'rebuildPlan']);
+    Route::post('devices/{device}/rebuild', [DeviceController::class, 'rebuild']);
 
     /*
     |----------------------------------------------------------------------------
@@ -210,6 +221,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('device-commands/{command}/retry', [DeviceSyncController::class, 'retry']);
     Route::post('device-commands/{command}/cancel', [DeviceSyncController::class, 'cancel']);
     Route::post('devices/{device}/commands', [DeviceSyncController::class, 'dispatchCommand']);
+    Route::post('devices/{device}/clear-attendance', [DeviceSyncController::class, 'clearAttendance']);
     Route::get('devices/{device}/status-history', [DeviceSyncController::class, 'statusHistory']);
 
     /*
@@ -265,6 +277,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('employees/{employee}/waivers', [WaiverController::class, 'toggle']);
 
     // Holidays (index/store/update/destroy — no individual show needed)
+    Route::get('holidays/rules', [HolidayController::class, 'rules']);
+    Route::put('holidays/rules', [HolidayController::class, 'updateRules']);
     Route::apiResource('holidays', HolidayController::class)->except('show')->names('api.holidays');
 
     // Dashboard + reports
@@ -279,9 +293,32 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::get('exports/attendance', [ExportController::class, 'attendanceLog']);
     Route::get('exports/employees/{employee}/attendance', [ExportController::class, 'employeeAttendance']);
     Route::get('exports/payroll', [ExportController::class, 'payrollSummary']);
+    Route::get('exports/attendance-report', [ExportController::class, 'attendanceReport']);
+    Route::get('exports/monthly-statement', [ExportController::class, 'monthlyStatement']);
+    Route::get('exports/monthly-statement/excel', [ExportController::class, 'monthlyStatementExcel']);
+    Route::get('exports/employees/{employee}/report', [ExportController::class, 'employeeReport']);
+    // Every employee's report for a period, as one PDF built in the background.
+    Route::get('exports/employee-reports', [ReportExportController::class, 'index']);
+    Route::post('exports/employee-reports', [ReportExportController::class, 'store']);
+    Route::get('exports/employee-reports/{reportExport}', [ReportExportController::class, 'show']);
+    Route::get('exports/employee-reports/{reportExport}/download', [ReportExportController::class, 'download']);
+    Route::delete('exports/employee-reports/{reportExport}', [ReportExportController::class, 'destroy']);
 
     // Audit trail
     Route::get('audit-logs', [AuditLogController::class, 'index']);
+
+    /*
+    |----------------------------------------------------------------------------
+    | Legacy ZKAccess import and backup snapshot
+    |----------------------------------------------------------------------------
+    | Import is deliberate two-step: preview stores the upload as canonical JSON
+    | and dry-runs it, apply replays exactly those bytes. Export downloads the
+    | current state in the same canonical shape so a backup can be re-imported.
+    | Both are gated on Employee policy abilities inside the controller.
+    */
+    Route::post('legacy/import/preview', [LegacyDataController::class, 'previewImport']);
+    Route::post('legacy/import/{token}/apply', [LegacyDataController::class, 'applyImport']);
+    Route::get('legacy/export', [LegacyDataController::class, 'exportSnapshot']);
 
     // Notifications (per-user)
     Route::get('notifications', [NotificationController::class, 'index']);
@@ -289,3 +326,7 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
     Route::post('notifications/read-all', [NotificationController::class, 'markAllAsRead']);
 });
+
+// Integration API (/api/v1) — kept in its own file so its auth, throttle and idempotency
+// middleware are declared once. See routes/api_v1.php.
+require __DIR__.'/api_v1.php';

@@ -6,29 +6,32 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Employee\StoreEmployeeRequest;
 use App\Http\Requests\Api\Employee\UpdateEmployeeRequest;
 use App\Http\Resources\EmployeeResource;
-use App\Models\AuditLog;
 use App\Models\Device;
+use App\Models\Department;
 use App\Models\Employee;
-use App\Models\Person;
 use App\Services\Attendance\AttendanceSummaryService;
+use App\Services\Attendance\EmployeeReportService;
 use App\Services\Devices\DeviceUserSyncService;
 use App\Services\Devices\EnrollmentOrchestratorService;
+use App\Services\Employees\EmployeeCodeAllocator;
 use App\Services\Employees\EmployeeDevicePropagator;
 use App\Services\Employees\EmployeeMergeService;
+use App\Services\Employees\FingerprintPusher;
 use App\Services\Employees\FingerprintVault;
 use App\Support\ApiResponse;
-use App\Support\Tenancy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 use Promoseven\Biometric\Exception\DeviceException;
 use Promoseven\Biometric\Exception\UnsupportedCommandException;
 
 class EmployeeController extends Controller
 {
+    /** The department and its ancestors, so the resource can name the company. */
+    private const DEPARTMENT = ['department:id,name,parent_id', 'department.parent:id,name,parent_id'];
+
     /**
      * The device actions below run INLINE rather than through DeviceCommandBus,
      * because each is triggered by an operator standing at the terminal with the
@@ -50,32 +53,41 @@ class EmployeeController extends Controller
             // `deviceMaps` answers "enrolled on which terminal?" — the flat
             // enrollment columns on employees cannot, once there is more than
             // one device.
-            ->with(['department:id,name', 'deviceMaps.device:id,name', 'person', 'accessLevels:id', ...self::copyRelations()])
-            ->when($request->filled('search'), function ($q) use ($request) {
-                $term = '%'.$request->string('search')->trim().'%';
-                $q->where(function ($sub) use ($term) {
-                    $sub->where('name', 'like', $term)
-                        ->orWhere('employee_code', 'like', $term)
-                        ->orWhere('department', 'like', $term)
-                        ->orWhere('email', 'like', $term);
-                });
-            })
-            ->when($request->filled('department_id'), fn ($q) => $q->where('department_id', $request->integer('department_id')))
-            ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
+            ->with([...self::DEPARTMENT, 'deviceMaps.device:id,name', 'accessLevels:id', ...self::copyRelations()])
             /*
-             * IDENTITY FILTERS. The one that matters operationally is
-             * has_national_id=0: without a national id a person cannot be exported to
-             * the HRMS, and after importing a roster that is most of them. Filtering
-             * to exactly those is how an operator works through the backlog instead of
-             * hunting for gaps in a list of three hundred.
+             * Every word must match somewhere (2026-10-11). The list shows first and
+             * last name together, so "ali mohamed" has to find ALI / MOHAMED JAAFAR
+             * even though the two words live in different columns. Word by word rather
+             * than a CONCAT, which SQL Server and SQLite spell differently.
              */
-            ->when($request->filled('has_national_id'), function ($q) use ($request) {
-                $request->boolean('has_national_id')
-                    ? $q->whereHas('person', fn ($p) => $p->whereNotNull('national_id_hash'))
-                    : $q->where(fn ($sub) => $sub
-                        ->whereNull('person_id')
-                        ->orWhereHas('person', fn ($p) => $p->whereNull('national_id_hash')));
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $words = preg_split('/\s+/', $request->string('search')->trim()->toString(), -1, PREG_SPLIT_NO_EMPTY);
+                foreach ($words as $word) {
+                    $term = '%'.$word.'%';
+                    $q->where(function ($sub) use ($term) {
+                        $sub->where('name', 'like', $term)
+                            ->orWhere('last_name', 'like', $term)
+                            ->orWhere('employee_code', 'like', $term)
+                            ->orWhere('department', 'like', $term)
+                            ->orWhere('job_title', 'like', $term)
+                            ->orWhere('email', 'like', $term);
+                    });
+                }
             })
+            // The department tree (2026-10-11): a node selects itself and everything
+            // beneath it, so picking a company lists its departments' people too.
+            // `none` is the tree's "Unassigned" node — a real state, not an id.
+            ->when($request->query('department_id') === 'none', fn ($q) => $q->whereNull('department_id'))
+            ->when(
+                $request->filled('department_id') && $request->query('department_id') !== 'none',
+                fn ($q) => $q->whereIn('department_id', Department::subtreeIds($request->integer('department_id'))),
+            )
+            ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
+            // Resigned (2026-10-12): `1` only them, `0` everyone still employed. Absent =
+            // both, so other callers (search, merge) still find a resigned person.
+            ->when($request->filled('resigned') && Employee::hasEmploymentColumns(), fn ($q) => $request->boolean('resigned')
+                ? $q->whereNotNull('resigned_at')
+                : $q->whereNull('resigned_at'))
             // Enrolled on a specific terminal, via the live mapping — not the flat
             // snapshot columns, which cannot say WHICH device once there are two.
             ->when($request->filled('device_id'), fn ($q) => $q->whereHas(
@@ -88,12 +100,26 @@ class EmployeeController extends Controller
                 fn ($m) => $m->whereNull('valid_to'),
             ))
             ->orderBy('name')
-            ->paginate($request->integer('per_page', 25));
+            ->paginate($this->perPage($request));
 
         return ApiResponse::success(
             EmployeeResource::collection($employees),
             'Employees retrieved.',
         );
+    }
+
+    /**
+     * Page size for the roster list, bounded at both ends.
+     *
+     * The cap matters: this query eager-loads department, device maps, access
+     * levels and every copy relation, so `?per_page=100000` would ask the server
+     * to hydrate the entire company — and its relations — into one JSON
+     * response. The roster is browsed page by page, so a large request buys the
+     * caller nothing they could not simply page through.
+     */
+    private function perPage(Request $request): int
+    {
+        return min(max($request->integer('per_page', 25), 1), 200);
     }
 
     /**
@@ -111,27 +137,12 @@ class EmployeeController extends Controller
     {
         $this->authorize('create', Employee::class);
 
-        $taken = Employee::query()
-            ->pluck('employee_code')
-            ->filter(fn ($code) => is_string($code) && ctype_digit($code))
-            ->map(fn ($code) => (int) $code)
-            ->filter(fn (int $code) => $code > 0)
-            ->unique()
-            ->sort()
-            ->values();
-
-        $suggestion = 1;
-        foreach ($taken as $code) {
-            if ($code > $suggestion) {
-                break; // found the gap
-            }
-            $suggestion = $code + 1;
-        }
+        ['code' => $suggestion, 'taken' => $taken] = app(EmployeeCodeAllocator::class)->next();
 
         return ApiResponse::success(
             [
                 'code' => (string) $suggestion,
-                'taken_count' => $taken->count(),
+                'taken_count' => $taken,
             ],
             "Next free employee code is {$suggestion}.",
         );
@@ -141,7 +152,7 @@ class EmployeeController extends Controller
     {
         $this->authorize('create', Employee::class);
 
-        $data = $request->safe()->except(['photo', 'access_level_ids', 'national_id']);
+        $data = $request->safe()->except(['photo', 'access_level_ids']);
 
         if ($request->hasFile('photo')) {
             $data['photo_path'] = $request->file('photo')->store('employees', 'public');
@@ -150,196 +161,18 @@ class EmployeeController extends Controller
         $employee = DB::transaction(function () use ($request, $data) {
             $employee = Employee::create($data);
             $this->syncAccessLevels($request, $employee);
-            $this->applyNationalIdFromForm($request, $employee);
 
             return $employee;
         });
 
-        return ApiResponse::created(new EmployeeResource($employee->fresh()->load(['accessLevels:id', 'person', ...self::copyRelations()])), 'Employee added.');
-    }
-
-    /**
-     * Resolves a national id to the employment that holds it, in THIS company.
-     *
-     * The one read the national id has, and deliberately a narrow one: the caller
-     * must already know the number, and what comes back never contains one. Nothing
-     * here decrypts anything — Person::findByNationalId() matches on the blind
-     * index, so the ciphertext is not touched.
-     *
-     * EXACT MATCH ONLY, and it cannot be otherwise: a hash has no prefix, so there
-     * is no "starts with" or "contains" search on a national id and there will not
-     * be one — that would mean storing the document searchable in plaintext.
-     * Punctuation and case do not matter, because the index is over the normalised
-     * value (see Person::hashNationalId()).
-     *
-     * The intended caller is the Attendance screen: a national id is what an
-     * operator is holding when somebody asks why their hours are short, and it is
-     * the one key that is the same document across sister companies.
-     */
-    public function lookup(Request $request): JsonResponse
-    {
-        $this->authorize('viewAny', Employee::class);
-
-        $data = $request->validate([
-            'national_id' => ['required', 'string', 'min:4', 'max:64'],
-        ]);
-
-        $person = Person::findByNationalId(trim($data['national_id']));
-
-        /*
-         * Person is NOT tenant-scoped — that is the whole point of it, one human
-         * across sister companies. The EMPLOYMENT is, so resolving through the
-         * relation is what stops this company's operator turning a number into a
-         * name at another company. Do not "helpfully" widen this with
-         * withoutGlobalScopes().
-         *
-         * Ordered by is_active so a rehire resolves to the current employment rather
-         * than whichever row was written first.
-         */
-        $employee = $person?->employments()
-            ->with(['department:id,name', 'deviceMaps.device:id,name', 'person'])
-            ->withCount('attendanceLogs')
-            ->orderByDesc('is_active')
-            ->first();
-
-        $this->auditLookup($request, $employee);
-
-        if ($employee === null) {
-            return ApiResponse::error(
-                'No employee in this company holds that national ID. It has to match the whole number — '
-                .'check it, or search by name or code on the Employees screen.',
-                status: 404,
-            );
-        }
-
-        return ApiResponse::success(new EmployeeResource($employee), "Found {$employee->name}.");
-    }
-
-    /**
-     * Records that somebody resolved a national id — hit AND miss.
-     *
-     * The miss is the one that matters. Somebody guessing numbers against this
-     * endpoint looks exactly like a run of misses from one user, and that pattern
-     * only exists in the audit if the misses are written down. The throttle bounds
-     * the rate; this is what makes the attempt visible afterwards.
-     *
-     * Neither the number NOR its hash is stored. An audit row is readable by more
-     * people than the employees table is, and a hash you can compare a guess
-     * against is still the document. Who asked, when, from where, and whether it
-     * matched is the whole useful content.
-     */
-    private function auditLookup(Request $request, ?Employee $employee): void
-    {
-        AuditLog::create([
-            'tenant_id' => Tenancy::id(),
-            'user_id' => $request->user()?->id,
-            'action' => 'employee.national_id_lookup',
-            'auditable_type' => Employee::class,
-            'auditable_id' => $employee?->id,
-            'changes' => ['matched' => $employee !== null],
-            'ip_address' => $request->ip(),
-            'user_agent' => substr((string) $request->userAgent(), 0, 255),
-        ]);
-    }
-
-    /**
-     * Sets or replaces this employment's national id — the HRMS join key.
-     *
-     * WRITE-ONLY BY DESIGN. There is no endpoint that reads a national id back; the
-     * list returns only whether one exists and a masked tail. It is government id,
-     * and a screen that can display them all is a screen that can leak them all.
-     *
-     * THE SAME ID ALREADY ON FILE IS A MATCH, NOT A CLASH. It means the same human is
-     * also employed by a sister company, which is exactly what the Person layer exists
-     * to express: they become one Person with two Employments, and punches at either
-     * company's terminal resolve to one attendance account.
-     */
-    public function setNationalId(Request $request, Employee $employee): JsonResponse
-    {
-        $this->authorize('update', $employee);
-
-        $data = $request->validate([
-            'national_id' => ['required', 'string', 'min:4', 'max:64'],
-        ]);
-
-        if (($refusal = $this->assignNationalId($employee, trim($data['national_id']))) !== null) {
-            return ApiResponse::error($refusal, status: 422);
-        }
-
-        return ApiResponse::success(
-            new EmployeeResource($employee->fresh()->load(['department:id,name', 'deviceMaps.device:id,name', 'person'])),
-            "National ID saved for {$employee->name}.",
-        );
-    }
-
-    /**
-     * Attaches a national id to the employee's Person, or says why not.
-     *
-     * One implementation for the three ways it arrives: the roster's inline editor
-     * (setNationalId) and the add / edit form (store, update — 2026-09-24, where it
-     * rides the same request so a refusal lands on the field and the whole save rolls
-     * back with it). Returns null on success, the operator-facing refusal otherwise.
-     */
-    private function assignNationalId(Employee $employee, string $nationalId): ?string
-    {
-        $person = $employee->person;
-        $existing = Person::findByNationalId($nationalId);
-
-        /*
-         * The same document on a SECOND employment within the SAME company is a typo,
-         * not a discovery. One human cannot be employed twice by one employer, and
-         * letting it through quietly shares a Person between two unrelated people —
-         * after which the next edit to either rewrites the document for both.
-         *
-         * Across DIFFERENT companies it is the sister-company case and is exactly what
-         * the Person layer is for, so that stays allowed.
-         */
-        if ($existing !== null && $existing->id !== $person?->id) {
-            $clash = $existing->employments()
-                ->withoutGlobalScopes()
-                ->where('tenant_id', $employee->tenant_id)
-                ->where('id', '!=', $employee->id)
-                ->first();
-
-            if ($clash !== null) {
-                return "That national ID is already on {$clash->name} (code {$clash->employee_code}) in this company. "
-                    .'Two employees here cannot be the same person — check the number, or correct the other record.';
-            }
-        }
-
-        if ($person === null) {
-            // Either attach to the human already holding this document — they work for a
-            // sister company too — or create them.
-            $person = $existing ?? Person::create([
-                'full_name' => $employee->name,
-                'status' => Person::UNVERIFIED,
-            ]);
-
-            $employee->forceFill(['person_id' => $person->id])->save();
-        } elseif ($existing !== null && $existing->id !== $person->id) {
-            // Two records we already believed were different humans turn out to be one.
-            // Merging them moves employments and attendance history, so it is not
-            // something to do silently as a side effect of typing in a field.
-            return "That national ID already belongs to {$existing->full_name}. "
-                .'If they are the same person, merge the two records rather than reassigning the ID.';
-        }
-
-        /*
-         * Changing the ID on a Person who holds SEVERAL employments is a document
-         * renewal and correctly applies to all of them — it is one human. The old
-         * number is superseded, not overwritten, so payroll exports made under it still
-         * reconcile (see Person::setNationalId()).
-         */
-        $person->setNationalId($nationalId);
-
-        return null;
+        return ApiResponse::created(new EmployeeResource($employee->fresh()->load([...self::DEPARTMENT, 'accessLevels:id', ...self::copyRelations()])), 'Employee added.');
     }
 
     public function show(Employee $employee): JsonResponse
     {
         $this->authorize('view', $employee);
 
-        $employee->loadCount('attendanceLogs')->load(['department:id,name', 'deviceMaps.device:id,name']);
+        $employee->loadCount('attendanceLogs')->load([...self::DEPARTMENT, 'deviceMaps.device:id,name', ...self::copyRelations()]);
 
         return ApiResponse::success(new EmployeeResource($employee), 'Employee retrieved.');
     }
@@ -348,7 +181,7 @@ class EmployeeController extends Controller
     {
         $this->authorize('update', $employee);
 
-        $data = $request->safe()->except(['photo', 'access_level_ids', 'national_id']);
+        $data = $request->safe()->except(['photo', 'access_level_ids']);
 
         if ($request->hasFile('photo')) {
             if ($employee->photo_path) {
@@ -360,33 +193,9 @@ class EmployeeController extends Controller
         DB::transaction(function () use ($request, $employee, $data) {
             $employee->update($data);
             $this->syncAccessLevels($request, $employee);
-            $this->applyNationalIdFromForm($request, $employee);
         });
 
-        return ApiResponse::success(new EmployeeResource($employee->fresh()->load(['accessLevels:id', 'person', ...self::copyRelations()])), 'Employee updated.');
-    }
-
-    /**
-     * Access levels are stored in THIS DATABASE ONLY (2026-09-23) — nothing is
-     * written to a C3 panel. Omitted means unchanged, so an older client that does
-     * not know about the tab cannot wipe someone's levels by saving.
-     */
-    /**
-     * The form's national id, when one was typed. Omitted or blank means unchanged:
-     * the stored value is never sent to the browser, so an untouched field must not
-     * clear it. A refusal throws a field error, which rolls back the surrounding save.
-     */
-    private function applyNationalIdFromForm(Request $request, Employee $employee): void
-    {
-        $nationalId = trim((string) $request->validated('national_id'));
-
-        if ($nationalId === '') {
-            return;
-        }
-
-        if (($refusal = $this->assignNationalId($employee, $nationalId)) !== null) {
-            throw ValidationException::withMessages(['national_id' => $refusal]);
-        }
+        return ApiResponse::success(new EmployeeResource($employee->fresh()->load([...self::DEPARTMENT, 'accessLevels:id', ...self::copyRelations()])), 'Employee updated.');
     }
 
     /**
@@ -405,6 +214,11 @@ class EmployeeController extends Controller
         return $ready ? ['biometricTemplates:id,employee_id,finger_slot,template_sha1'] : [];
     }
 
+    /**
+     * Access levels are stored in THIS DATABASE ONLY (2026-09-23) — nothing is
+     * written to a C3 panel. Omitted means unchanged, so an older client that does
+     * not know about the tab cannot wipe someone's levels by saving.
+     */
     private function syncAccessLevels(Request $request, Employee $employee): void
     {
         if ($request->has('access_level_ids')) {
@@ -428,7 +242,7 @@ class EmployeeController extends Controller
         }
         $employee->forceFill(['photo_path' => $request->file('photo')->store('employees', 'public')])->save();
 
-        return ApiResponse::success(new EmployeeResource($employee->fresh()->load('accessLevels:id')), 'Photo saved.');
+        return ApiResponse::success(new EmployeeResource($employee->fresh()->load([...self::DEPARTMENT, 'accessLevels:id'])), 'Photo saved.');
     }
 
     public function removePhoto(Employee $employee): JsonResponse
@@ -440,7 +254,7 @@ class EmployeeController extends Controller
             $employee->forceFill(['photo_path' => null])->save();
         }
 
-        return ApiResponse::success(new EmployeeResource($employee->fresh()->load('accessLevels:id')), 'Photo removed.');
+        return ApiResponse::success(new EmployeeResource($employee->fresh()->load([...self::DEPARTMENT, 'accessLevels:id'])), 'Photo removed.');
     }
 
     public function destroy(Employee $employee): JsonResponse
@@ -468,6 +282,25 @@ class EmployeeController extends Controller
     }
 
     /**
+     * The employee report screen's data (2026-09-27): one period plus the one before
+     * it, and the last year for the calendar. Read-only; see EmployeeReportService.
+     */
+    public function report(Request $request, Employee $employee, EmployeeReportService $reports): JsonResponse
+    {
+        $this->authorize('view', $employee);
+
+        $validated = $request->validate([
+            'period' => ['nullable', 'integer', 'in:'.implode(',', EmployeeReportService::PERIODS)],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        return ApiResponse::success(
+            $reports->report($employee, (int) ($validated['period'] ?? 30), $validated['to'] ?? null),
+            'Employee report generated.',
+        );
+    }
+
+    /**
      * Writes this employee onto SEVERAL terminals, IMMEDIATELY.
      *
      * The counterpart to saving them. `update()` deliberately still only touches the
@@ -490,6 +323,12 @@ class EmployeeController extends Controller
     public function propagate(Request $request, Employee $employee, EmployeeDevicePropagator $propagator): JsonResponse
     {
         $this->authorize('pushToDevice', $employee);
+
+        // A resigned employee is kept off the terminals (2026-10-12). Clear the
+        // resignation date first to put them back.
+        if ($employee->isResigned()) {
+            return ApiResponse::error("{$employee->name} has resigned, so is not put on terminals. Clear the resignation date first.", [], 409);
+        }
 
         $data = $request->validate([
             'device_ids' => ['required', 'array', 'min:1'],
@@ -629,12 +468,40 @@ class EmployeeController extends Controller
     {
         $this->authorize('pushToDevice', $employee);
 
+        // A resigned employee is kept off the terminals (2026-10-12). Clear the
+        // resignation date first to put them back.
+        if ($employee->isResigned()) {
+            return ApiResponse::error("{$employee->name} has resigned, so is not put on terminals. Clear the resignation date first.", [], 409);
+        }
+
         try {
             $result = $this->users->pushEmployee($device, $employee);
 
             return ApiResponse::success($result['raw'], $result['message']);
         } catch (DeviceException $e) {
             return ApiResponse::error("Failed to push to device: {$e->getMessage()}", [], 502);
+        }
+    }
+
+    /**
+     * Administrator or normal user on one terminal (2026-10-18). Synchronous like the
+     * other per-terminal writes on this screen — one user record, read back — so the
+     * operator sees the confirmed result on the button they pressed.
+     */
+    public function setDevicePrivilege(Request $request, Employee $employee, Device $device): JsonResponse
+    {
+        $this->authorize('pushToDevice', $employee);
+
+        $data = $request->validate(['admin' => ['required', 'boolean']]);
+
+        try {
+            $result = $this->users->setPrivilege($device, $employee, (bool) $data['admin']);
+
+            return ApiResponse::success($result['raw'], $result['message']);
+        } catch (DeviceException $e) {
+            return ApiResponse::error("Could not change the privilege: {$e->getMessage()}", [], 502);
+        } catch (\DomainException $e) {
+            return ApiResponse::error($e->getMessage(), [], 409);
         }
     }
 
@@ -648,6 +515,39 @@ class EmployeeController extends Controller
             return ApiResponse::success($result['raw'], $result['message']);
         } catch (DeviceException $e) {
             return ApiResponse::error("Failed to remove from device: {$e->getMessage()}", [], 502);
+        } catch (\DomainException $e) {
+            // Refused on purpose — e.g. their fingerprints could not be saved first.
+            return ApiResponse::error($e->getMessage(), [], 409);
+        }
+    }
+
+    /**
+     * Frees a user ID held on the terminal by a record no employee is linked to, and
+     * gives it to this employee (DeviceUserSyncService::releaseUnlinkedNumber). The
+     * button on a red "already in use" push row; the record and its fingerprints are
+     * saved before anything is deleted. Synchronous like the push it unblocks.
+     */
+    public function releaseNumber(Request $request, Employee $employee, Device $device): JsonResponse
+    {
+        $this->authorize('pushToDevice', $employee);
+
+        $data = $request->validate([
+            'device_user_id' => ['required', 'string', 'max:24'],
+            // The operator says the record IS this employee: its fingers and punches
+            // become theirs before it is removed (2026-10-11, "ali-it" was Ali).
+            'same_person' => ['sometimes', 'boolean'],
+        ]);
+
+        set_time_limit(120);
+
+        try {
+            $result = $this->users->releaseUnlinkedNumber($device, $data['device_user_id'], $employee, (bool) ($data['same_person'] ?? false));
+
+            return ApiResponse::success(['snapshot' => $result['snapshot']], $result['message']);
+        } catch (DeviceException $e) {
+            return ApiResponse::error("Could not free the number on {$device->name}: {$e->getMessage()}", [], 502);
+        } catch (\DomainException $e) {
+            return ApiResponse::error($e->getMessage(), [], 409);
         }
     }
 
@@ -684,6 +584,44 @@ class EmployeeController extends Controller
             'terminals' => $rows,
             'stored_fingerprint_slots' => $vault->storedSlots($employee->id),
         ], $message);
+    }
+
+    /**
+     * Writes this employee's stored fingerprints to terminals they are on where those
+     * fingers are missing (FingerprintPusher, 2026-09-24). Add-only: a finger a
+     * terminal already holds is never overwritten. One row per terminal.
+     */
+    public function pushFingerprints(Request $request, Employee $employee, FingerprintPusher $pusher): JsonResponse
+    {
+        $this->authorize('pushToDevice', $employee);
+
+        $data = $request->validate([
+            'device_ids' => ['required', 'array', 'min:1'],
+            'device_ids.*' => ['integer'],
+        ]);
+
+        set_time_limit(180);
+
+        $devices = Device::query()->whereIn('id', $data['device_ids'])->orderBy('name')->get();
+
+        try {
+            $rows = $pusher->push($employee, $devices);
+        } catch (\DomainException $e) {
+            return ApiResponse::error($e->getMessage(), [], 503);
+        }
+
+        $written = array_filter($rows, fn ($r) => $r['status'] === 'written');
+        $failed = array_filter($rows, fn ($r) => $r['status'] === 'failed');
+        $fingers = collect($written)->sum(fn ($r) => count($r['slots']));
+
+        $message = $written !== []
+            ? "Wrote {$fingers} finger(s) for {$employee->name} to ".count($written).' terminal(s).'
+            : "No fingerprints needed writing for {$employee->name}.";
+        if ($failed !== []) {
+            $message .= ' Failed on '.implode(', ', array_column($failed, 'device_name')).'.';
+        }
+
+        return ApiResponse::success(['terminals' => $rows], $message);
     }
 
     /**

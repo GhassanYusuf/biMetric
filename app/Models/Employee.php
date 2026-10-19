@@ -21,6 +21,8 @@ class Employee extends Model
         'person_id',
         'name',
         'employee_code',
+        // The caller's own key (integration API, 2026-10-08). Unique per tenant when set.
+        'external_id',
         'email',
         'department',
         'department_id',
@@ -54,10 +56,16 @@ class Employee extends Model
         'valid_period_enabled',
         'access_valid_from',
         'access_valid_to',
+        // Employment (2026-10-12). A label and a date — see the migration.
+        'employment_type',
+        'resigned_at',
     ];
 
     /** The device-side privilege levels this app records. Stored, never pushed. */
     public const PRIVILEGES = ['user', 'enroller', 'admin', 'superadmin'];
+
+    /** Employment types. A label only: no attendance rule reads it (owner, 2026-10-12). */
+    public const EMPLOYMENT_TYPES = ['full_time', 'part_time'];
 
     // Recoverable ciphertext, never serialised: EmployeeResource exposes only
     // whether one is set.
@@ -79,7 +87,70 @@ class Employee extends Model
             'valid_period_enabled' => 'boolean',
             'access_valid_from' => 'date',
             'access_valid_to' => 'date',
+            'resigned_at' => 'date',
         ];
+    }
+
+    /*
+     * A resigned employee is never active (2026-10-12). Enforced here rather than in
+     * each controller, so the SPA, the integration API and an import cannot disagree:
+     * inactive is the state this system already treats as "must not clock in".
+     * Clearing the date (a rehire) leaves is_active to whoever is saving.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Employee $employee) {
+            if (! static::hasEmploymentColumns()) {
+                unset($employee->employment_type, $employee->resigned_at);
+            }
+
+            if ($employee->resigned_at !== null) {
+                $employee->is_active = false;
+            }
+
+            /*
+             * The free-text `department` column predates the Company › Department tree
+             * and is still what reports, exports and the punch list print. When the tree
+             * link changes, the text follows it — the node's own name, which is the
+             * company for a person placed directly under one, exactly as `staff:import`
+             * writes it — so the two can never disagree about where someone works.
+             */
+            // Only when the caller did not set the text itself: an import carrying its own
+            // department name (ZKAccess's "LOGISTICS") keeps it.
+            if ($employee->isDirty('department_id') && ! $employee->isDirty('department')) {
+                $employee->department = $employee->department_id === null
+                    ? null
+                    : Department::withoutGlobalScopes()->whereKey($employee->department_id)->value('name');
+            }
+        });
+    }
+
+    /**
+     * Whether the 2026_10_12_100000 migration has run. Until it has, the screens must
+     * keep working: the list ignores the resigned filter and a save drops the two new
+     * fields, the same way EmployeeController::copyRelations() waits for its migration.
+     */
+    public static function hasEmploymentColumns(): bool
+    {
+        static $ready = null;
+
+        return $ready ??= \Illuminate\Support\Facades\Schema::hasColumn('employees', 'resigned_at');
+    }
+
+    public function isResigned(): bool
+    {
+        return $this->resigned_at !== null;
+    }
+
+    /**
+     * First and last name as one string — what the Employees list shows, and what
+     * every other screen that names a person should show too (2026-10-11). Not an
+     * appended attribute: callers that select only some columns must include
+     * `last_name`, and an append would quietly read it as null.
+     */
+    public function fullName(): string
+    {
+        return trim(implode(' ', array_filter([$this->name, $this->last_name], fn ($p) => $p !== null && $p !== '')));
     }
 
     protected function hasCard(): Attribute
@@ -99,10 +170,8 @@ class Employee extends Model
     /**
      * The human behind this employment.
      *
-     * Nullable while an employment is being reconciled — a device roster gives you a
-     * name and a PIN, never a national id, so a claimed entry starts without a Person
-     * and gains one when HR supplies the id. Attendance still collects meanwhile;
-     * payroll export is what blocks (see Person::isExportable()).
+     * Nullable: a device roster gives you a name and a PIN, so a claimed entry starts
+     * without a Person. Attendance collects either way.
      */
     public function person(): BelongsTo
     {

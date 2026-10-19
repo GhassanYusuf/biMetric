@@ -23,6 +23,15 @@ class AccessCard extends Model
     public const REVOKED = 'revoked';
     public const LOST = 'lost';
 
+    /*
+     * Why a card left a terminal, as revoke_reason. The difference decides whether it
+     * goes back on (CLAUDE.md rule 19): a card that went with its holder's record is
+     * restored when they return; one an operator cleared on purpose is not.
+     */
+    public const REASON_REMOVED_WITH_USER = 'Removed from device';
+
+    public const REASON_CLEARED = 'Cleared from the terminal';
+
     /** 0xFFFFFFFF, all bits set. See looksLikeSentinel(). */
     public const SENTINEL = 4294967295;
 

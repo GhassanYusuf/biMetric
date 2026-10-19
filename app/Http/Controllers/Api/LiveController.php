@@ -11,11 +11,14 @@ use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\DeviceGroup;
 use App\Models\DeviceRosterEntry;
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
 use App\Models\EnrollmentSession;
 use App\Models\Holiday;
+use App\Models\Setting;
 use App\Models\Notification;
+use App\Models\ReportExport;
 use App\Support\ApiResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -40,11 +43,14 @@ class LiveController extends Controller
         $user = $request->user();
 
         return ApiResponse::success([
-            'employees' => $this->stamp(Employee::query(), EmployeeDeviceMap::query(), AccessCard::query(), BiometricTemplate::query()),
+            'employees' => $this->stamp(Employee::query(), Department::query(), EmployeeDeviceMap::query(), AccessCard::query(), BiometricTemplate::query()),
             'devices' => $this->stamp(Device::query(), DeviceCommand::query(), DeviceGroup::query(), DeviceRosterEntry::query()),
             'attendance' => $this->stamp(AttendanceLog::query(), AttendanceSyncRun::query()),
             'enrollment' => $this->stamp(EnrollmentSession::query()),
-            'holidays' => $this->stamp(Holiday::query()),
+            // The attendance rules are settings, edited on the Holidays screen (2026-10-19).
+            'holidays' => $this->stamp(Holiday::query(), Setting::query()->where('key', 'like', 'attendance.%')),
+            // Background report files (2026-10-18): the Reports screen's export list.
+            'reports' => $this->stamp(ReportExport::query()),
             'notifications' => $this->stamp(Notification::query()->where('user_id', $user->id)),
         ], 'Live stamps.');
     }

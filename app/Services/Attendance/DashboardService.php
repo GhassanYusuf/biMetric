@@ -149,13 +149,13 @@ class DashboardService
     public function recentActivity(int $limit = 10): array
     {
         return AttendanceLog::query()
-            ->with(['employee:id,name', 'device:id,name'])
+            ->with(['employee:id,name,last_name', 'device:id,name'])
             ->latest('punched_at')
             ->limit($limit)
             ->get()
             ->map(fn (AttendanceLog $log) => [
                 'id' => $log->id,
-                'employee_name' => $log->employee?->name,
+                'employee_name' => $log->employee?->fullName(),
                 'device_name' => $log->device?->name,
                 'punched_at' => $log->punched_at?->toIso8601String(),
             ])

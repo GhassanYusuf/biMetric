@@ -204,6 +204,14 @@ return [
          * file. Using 'default' here means to use the `default` set in cache.php.
          */
 
-        'store' => 'default',
+        /*
+         * The file store, not the default (database) store (2026-10-11). On SQL
+         * Server Laravel's database cache writes with MERGE, and two requests
+         * rebuilding this entry at the same moment collide on the primary key —
+         * a 500 for whichever lost. File writes replace atomically. This host is a
+         * single web server; on several, use a shared store that is not the
+         * database (Redis) instead.
+         */
+        'store' => env('PERMISSION_CACHE_STORE', 'file'),
     ],
 ];

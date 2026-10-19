@@ -1,23 +1,24 @@
 import { FOCUS } from '../../shared/theme';
-import { Button, Card, EmptyState, PageHeader, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
+import { ActionMenu, Button, Card, EmptyState, PageHeader, Pager, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
 import UnmatchedName from './UnmatchedName';
-import { MatchedEmployee, NationalIdLookup, Pager, formatPunch, verifyLabel } from './parts';
+import DepartmentTree from '../employees/DepartmentTree';
+import { formatPunch, verifyLabel } from './parts';
 
 // Every filter this page owns, cleared. Named so "Clear filters" cannot forget one
 // — an employee_id left behind would leave the table showing one person under a
 // header claiming no filters are set.
-const NO_FILTERS = { employee_id: '', device_id: '', from: '', to: '' };
+const NO_FILTERS = { employee_id: '', device_id: '', department_id: '', search: '', from: '', to: '' };
 
 // Desktop attendance: filter bar + wide punch table + pager.
 export default function AttendanceDesktop({
-    rows, devices, filters, onFilter, loading, pagination, onPage, onSelect, onExport, exporting,
-    matched, onLookup, onClearMatch, lookingUp, canLookup,
+    rows, devices, departments, unassignedCount, departmentsLoaded,
+    filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems,
 }) {
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
     }
 
-    const hasFilters = !!(filters.employee_id || filters.device_id || filters.from || filters.to);
+    const hasFilters = !!(filters.employee_id || filters.device_id || filters.department_id || filters.search || filters.from || filters.to);
     const total = pagination?.total;
 
     return (
@@ -32,29 +33,35 @@ export default function AttendanceDesktop({
             >
                 {/* Refetches keep the table in place; this only says work is happening. */}
                 {loading && <Spinner className="h-5 w-5 text-violet-600" />}
-                {/* Exports everything matching the filters, not the visible page. */}
-                <Button
-                    variant="secondary"
-                    loading={exporting}
-                    disabled={exporting}
-                    onClick={onExport}
-                    title="Download these punches as a PDF"
-                >
-                    {exporting ? 'Preparing…' : 'Export PDF'}
-                </Button>
+                {/* These punches (everything matching the filters, not the visible page), or
+                    every employee as a PDF or an Excel workbook. */}
+                <ActionMenu label="Export" className="min-h-[42px] px-4 text-sm" items={exportItems} />
             </PageHeader>
 
-            {matched && <MatchedEmployee employee={matched} onClear={onClearMatch} />}
+            {/* The same Company › Department tree as the Employees page (2026-10-11),
+                on the left; the bar above the table narrows within it. */}
+            <div className="grid grid-cols-[15rem_minmax(0,1fr)] items-start gap-5 xl:grid-cols-[17rem_minmax(0,1fr)]">
+            <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
+                <DepartmentTree
+                    departments={departments}
+                    unassignedCount={unassignedCount}
+                    loaded={departmentsLoaded}
+                    counts={false}
+                    allLabel="Everyone"
+                    value={filters.department_id ?? ''}
+                    onChange={(id) => set('department_id', id)}
+                />
+            </div>
 
+            <div className="min-w-0 space-y-5">
             <Card className="space-y-4 p-4">
-                {/* Rule 5: mobile puts the same component in the same order. */}
-                {canLookup && (
-                    <>
-                        <NationalIdLookup onLookup={onLookup} busy={lookingUp} />
-                        <div className="h-px bg-slate-100" />
-                    </>
-                )}
-                <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-4">
+                <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-5">
+                    <TextField
+                        label="Search"
+                        placeholder="Name, code or PIN…"
+                        value={search}
+                        onChange={(e) => onSearch(e.target.value)}
+                    />
                     <SelectField label="Device" value={filters.device_id} onChange={(e) => set('device_id', e.target.value)}>
                         <option value="">All devices</option>
                         {devices.map((d) => (
@@ -135,7 +142,9 @@ export default function AttendanceDesktop({
                 </tbody>
             </TableShell>
 
-            <Pager pagination={pagination} onPage={onPage} loading={loading} />
+            <Pager pagination={pagination} onPage={onPage} loading={loading} noun="punches" />
+            </div>
+            </div>
         </div>
     );
 }

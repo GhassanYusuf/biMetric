@@ -15,7 +15,7 @@ class AttendanceLogResource extends JsonResource
         return [
             'id' => $this->id,
             'employee_id' => $this->employee_id,
-            'employee_name' => $this->whenLoaded('employee', fn () => $this->employee?->name),
+            'employee_name' => $this->whenLoaded('employee', fn () => $this->employee?->fullName()),
             'employee_code' => $this->device_user_id,
             'device_id' => $this->device_id,
             'device_name' => $this->whenLoaded('device', fn () => $this->device?->name),

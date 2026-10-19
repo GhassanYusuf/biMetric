@@ -125,3 +125,25 @@ export function adoptConfirm(device) {
         confirmLabel: 'Allow writes',
     };
 }
+
+/**
+ * "Clear punches from terminal" (2026-10-18). Shared by the devices list and device
+ * detail so both warn in the same words. `danger`: it erases the terminal's log —
+ * but only after every punch on it is stored, which the server proves before it
+ * clears anything, so the body says that too. Rule 9: a level that is implemented
+ * but not yet proven on this model is offered WITH a warning.
+ */
+export function clearPunchesConfirm(device) {
+    const proven = device?.capabilities?.['attendance.clear']?.confirmed === true;
+
+    return {
+        title: `Clear the punches stored on ${device.name}?`,
+        body: [
+            'Every punch on the terminal is read and saved in the system first. If any of them cannot be read cleanly, or the count does not match, nothing is cleared and you are told why.',
+            'Only the punch log is erased. Employees, cards and fingerprints stay on the terminal, and attendance already in the system is not affected.',
+            ...(proven ? [] : ['This has not yet been run on this model of terminal. The result is checked against the terminal afterwards.']),
+        ],
+        confirmLabel: 'Save and clear punches',
+        danger: true,
+    };
+}

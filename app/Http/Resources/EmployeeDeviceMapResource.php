@@ -23,6 +23,9 @@ class EmployeeDeviceMapResource extends JsonResource
             // What the device holds as their name, which can drift from ours.
             'device_held_name' => $this->device_name,
             'card_number' => $this->card_number,
+            // As last read off the terminal: 0 normal user, >0 may open its menu
+            // (14 administrator on the ZKTeco standalones). Null = never read.
+            'device_privilege' => $this->device_privilege,
             'fingerprint_slots' => $this->fingerprint_slots,
             'fingerprint_count' => $this->fingerprintCount(),
             'reconciliation_status' => $this->reconciliation_status,

@@ -28,13 +28,15 @@ class AttendanceController extends Controller
         $filters = $request->validate([
             'employee_id' => ['nullable', 'integer'],
             'device_id' => ['nullable', 'integer'],
+            'department_id' => ['nullable', 'regex:/^(none|\d+)$/'],
+            'search' => ['nullable', 'string', 'max:100'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
         ]);
 
         $logs = PunchLogQuery::build($user, PunchLogQuery::selfOnly($user), $filters)
-            ->with(['employee:id,name', 'device:id,name'])
+            ->with(['employee:id,name,last_name', 'device:id,name'])
             ->paginate($request->integer('per_page', 50));
 
         $this->attachTerminalNames($logs->getCollection());

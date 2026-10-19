@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button, Card, EmptyState, PageHeader } from '../../shared/ui';
-import { DayBadge, formatDate, partition } from './parts';
+import { AttendanceRulesCard, DayBadge, formatDate, partition } from './parts';
 
 // Mobile holidays: upcoming as tap-friendly cards; past behind a toggle so the
 // list opens on what matters.
-export default function HolidaysMobile({ rows, canManage, onAdd, onEdit, onDelete }) {
+export default function HolidaysMobile({ rows, canManage, onAdd, onEdit, onDelete, rulesProps }) {
     const { upcoming, past } = partition(rows);
     const [showPast, setShowPast] = useState(false);
 
@@ -13,6 +13,8 @@ export default function HolidaysMobile({ rows, canManage, onAdd, onEdit, onDelet
             <PageHeader title="Holidays" compact>
                 {canManage && <Button onClick={onAdd} className="px-3">+ Add</Button>}
             </PageHeader>
+
+            <AttendanceRulesCard {...rulesProps} compact />
 
             {rows.length === 0 ? (
                 <Card>

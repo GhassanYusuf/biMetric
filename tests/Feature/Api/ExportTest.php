@@ -5,13 +5,16 @@ namespace Tests\Feature\Api;
 use App\Models\AttendanceLog;
 use App\Models\Device;
 use App\Models\Employee;
+use App\Models\ReportExport;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Tenancy;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -149,7 +152,384 @@ class ExportTest extends TestCase
         $this->assertStringStartsWith('%PDF-', $res->getContent());
     }
 
+    public function test_the_attendance_report_exports_as_a_pdf(): void
+    {
+        $this->punchAtLocal('2026-09-14 08:32');
+        $this->punchAtLocal('2026-09-14 18:04');
+
+        $res = $this->login('admin@acme.test')->get('/api/exports/attendance-report?from=2026-09-01&to=2026-09-30');
+
+        $res->assertOk();
+        $this->assertSame('application/pdf', $res->headers->get('content-type'));
+        $this->assertStringStartsWith('%PDF-', $res->getContent());
+        $this->assertStringContainsString('attendance-report_2026-09-01_2026-09-30.pdf', $res->headers->get('content-disposition'));
+    }
+
+    public function test_the_monthly_statement_exports_as_a_pdf(): void
+    {
+        $this->punchAtLocal('2026-09-14 08:32');
+        $this->punchAtLocal('2026-09-14 18:04');
+
+        $res = $this->login('admin@acme.test')->get('/api/exports/monthly-statement?from=2026-08-20&to=2026-09-21');
+
+        $res->assertOk();
+        $this->assertStringStartsWith('%PDF-', $res->getContent());
+        $this->assertStringContainsString('monthly-statement_2026-08-20_2026-09-21.pdf', $res->headers->get('content-disposition'));
+    }
+
+    /**
+     * The statement's columns, read off the same summary as every other report. One
+     * row per calendar day, weekends included, in ZKTeco's layout (draft/OTR-SEP.xlsx).
+     */
+    public function test_every_employees_statement_exports_as_excel(): void
+    {
+        $this->punchAtLocal('2026-09-14 08:32');
+        $this->punchAtLocal('2026-09-14 18:04');
+
+        $res = $this->login('admin@acme.test')->get('/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14');
+
+        $res->assertOk();
+        $this->assertStringContainsString('monthly-statement_2026-09-01_2026-09-14.xlsx', $res->headers->get('content-disposition'));
+
+        $file = $res->baseResponse->getFile()->getPathname();
+        $zip = new \ZipArchive();
+        $this->assertTrue($zip->open($file) === true, 'not a valid xlsx');
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $this->assertStringContainsString('Monthly Statement Report', $sheet.$zip->getFromName('xl/sharedStrings.xml'));
+        $this->assertNotFalse($zip->getFromName('xl/worksheets/sheet2.xml'), 'the Summary sheet');
+        $zip->close();
+
+        $this->login('operator@acme.test')->getJson('/api/exports/monthly-statement/excel')->assertStatus(403);
+    }
+
+    public function test_the_monthly_statement_rows_follow_the_shift(): void
+    {
+        config([
+            'attendance.shift_start' => '09:00',
+            'attendance.shift_end' => '18:00',
+            'attendance.grace_minutes' => 15,
+            'attendance.work_days' => [0, 1, 2, 3, 4],
+        ]);
+
+        $this->punchAtLocal('2026-09-12 07:54');  // Saturday, an Off day, worked
+        $this->punchAtLocal('2026-09-12 15:01');
+        $this->punchAtLocal('2026-09-13 09:40');  // Sunday: late, then past the shift end
+        $this->punchAtLocal('2026-09-13 19:10');
+        $this->punchAtLocal('2026-09-14 07:30');  // Monday: one punch only
+        $this->punchAtLocal('2026-09-16 07:30');  // Wednesday: left early
+        $this->punchAtLocal('2026-09-16 17:00');
+        // Tuesday 2026-09-15 has no punch: absent.
+
+        Tenancy::set($this->acme->id);
+        $statement = app(\App\Services\Reports\MonthlyStatement::class)->build('2026-09-12', '2026-09-16');
+        Tenancy::clear();
+
+        $block = collect($statement['employees'])->firstWhere('employee.id', $this->employee->id);
+        $rows = collect($block['rows'])->keyBy('date');
+
+        $this->assertCount(5, $rows);
+
+        $saturday = $rows['09/12/2026'];
+        $this->assertSame(['Sat.', 'Off', '07:54', '15:01'], [$saturday['week'], $saturday['timetable'], $saturday['in'], $saturday['out']]);
+        $this->assertSame(427, $saturday['work']);
+        $this->assertSame(427, $saturday['ot2']);
+        $this->assertSame(0, $saturday['absent']);
+
+        $sunday = $rows['09/13/2026'];
+        $this->assertSame(40, $sunday['late']);
+        $this->assertSame(570, $sunday['work']);
+        $this->assertSame(70, $sunday['ot1']);
+        $this->assertSame(0, $sunday['early']);
+
+        $monday = $rows['09/14/2026'];
+        $this->assertTrue($monday['missed_punch_out']);
+        $this->assertNull($monday['out']);
+        $this->assertSame(0, $monday['work']);
+        $this->assertSame(0, $monday['absent']);
+
+        $this->assertSame(540, $rows['09/15/2026']['absent']);
+
+        $wednesday = $rows['09/16/2026'];
+        $this->assertSame(60, $wednesday['early']);
+        $this->assertSame(570, $wednesday['work']);
+
+        $this->assertSame(427 + 570 + 570, $block['totals']['work']);
+        $this->assertSame(540, $block['totals']['absent']);
+    }
+
+    /**
+     * The weekend set on the Holidays screen is what every report counts against
+     * (owner, 2026-10-19). With Friday alone as the weekend, a worked Saturday is a
+     * work day and a punchless Friday is an Off day, not an absence.
+     */
+    public function test_the_weekend_set_on_the_holidays_screen_drives_the_statement(): void
+    {
+        $this->punchAtLocal('2026-09-12 07:54');  // Saturday
+        $this->punchAtLocal('2026-09-12 17:00');
+
+        $res = $this->login('admin@acme.test')->putJson('/api/holidays/rules', ['weekend_days' => [5]]);
+        $res->assertOk()->assertJsonPath('data.weekend_days', [5])->assertJsonPath('data.work_days', [0, 1, 2, 3, 4, 6]);
+
+        Tenancy::set($this->acme->id);
+        $statement = app(\App\Services\Reports\MonthlyStatement::class)->build('2026-09-11', '2026-09-12');
+        Tenancy::clear();
+
+        $rows = collect(collect($statement['employees'])->firstWhere('employee.id', $this->employee->id)['rows'])->keyBy('date');
+
+        $this->assertSame('Off', $rows['09/11/2026']['timetable']);
+        $this->assertSame(0, $rows['09/11/2026']['absent']);
+        $this->assertNotSame('Off', $rows['09/12/2026']['timetable']);
+        $this->assertSame(0, $rows['09/12/2026']['ot2']);
+        $this->assertSame(546, $rows['09/12/2026']['work']);
+    }
+
+    /**
+     * The hours and indicator thresholds set on the Holidays screen drive the statement,
+     * the summary and the employee outcomes alike (owner, 2026-10-19).
+     */
+    public function test_the_hours_and_indicator_thresholds_drive_every_report(): void
+    {
+        $this->login('admin@acme.test')->putJson('/api/holidays/rules', [
+            'shift_start' => '07:30',
+            'shift_end' => '17:00',
+            'late_grace_minutes' => 10,
+            'early_leave_grace_minutes' => 5,
+            'leave_late_after_minutes' => 30,
+        ])->assertOk()->assertJsonPath('data.shift_start', '07:30')->assertJsonPath('data.leave_late_after_minutes', 30);
+
+        $this->punchAtLocal('2026-09-13 07:39');  // Sunday: inside the 10-minute allowance
+        $this->punchAtLocal('2026-09-13 16:56');  // inside the 5-minute early allowance
+        $this->punchAtLocal('2026-09-14 07:41');  // Monday: late by 11
+        $this->punchAtLocal('2026-09-14 17:29');  // under 30 past the end: not left late, no OT1
+        $this->punchAtLocal('2026-09-15 07:30');  // Tuesday
+        $this->punchAtLocal('2026-09-15 16:50');  // left early: 10 minutes, counted in full
+        $this->punchAtLocal('2026-09-16 07:30');  // Wednesday
+        $this->punchAtLocal('2026-09-16 17:45');  // left late: OT1 is everything after 17:00
+
+        Tenancy::set($this->acme->id);
+        $statement = app(\App\Services\Reports\MonthlyStatement::class)->build('2026-09-13', '2026-09-16');
+        $summary = app(\App\Services\Attendance\AttendanceSummaryService::class)->summary($this->employee, '2026-09-13', '2026-09-16');
+        Tenancy::clear();
+
+        $rows = collect(collect($statement['employees'])->firstWhere('employee.id', $this->employee->id)['rows'])->keyBy('date');
+        $this->assertSame('07:30-17:00', $rows['09/13/2026']['timetable']);
+        $this->assertSame([0, 0, 0], [$rows['09/13/2026']['late'], $rows['09/13/2026']['early'], $rows['09/13/2026']['ot1']]);
+        $this->assertSame(11, $rows['09/14/2026']['late']);
+        $this->assertSame(0, $rows['09/14/2026']['ot1']);
+        $this->assertSame(10, $rows['09/15/2026']['early']);
+        $this->assertSame(45, $rows['09/16/2026']['ot1']);
+
+        $daily = collect($summary['daily'])->keyBy('date');
+        $this->assertSame('early', $daily['2026-09-13']['arrival']);
+        $this->assertSame('come_late', $daily['2026-09-14']['arrival']);
+        $this->assertSame('leave_on_time', $daily['2026-09-14']['departure']);
+        $this->assertSame('leave_late', $daily['2026-09-16']['departure']);
+
+        $leftEarlyBefore = \App\Support\AttendanceRules::minutes('17:00') - 5;
+        $this->assertSame('on_time', \App\Services\Attendance\EmployeeReportService::outcome($daily['2026-09-13'], $leftEarlyBefore));
+        $this->assertSame('left_early', \App\Services\Attendance\EmployeeReportService::outcome($daily['2026-09-15'], $leftEarlyBefore));
+    }
+
+    public function test_a_shift_must_end_after_it_starts(): void
+    {
+        $this->login('admin@acme.test')
+            ->putJson('/api/holidays/rules', ['shift_start' => '19:00'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('shift_end');
+
+        $this->login('admin@acme.test')
+            ->putJson('/api/holidays/rules', ['late_grace_minutes' => 500, 'shift_start' => '7:3'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['late_grace_minutes', 'shift_start']);
+    }
+
+    public function test_the_weekend_cannot_be_every_day_or_set_without_permission(): void
+    {
+        $this->login('admin@acme.test')
+            ->putJson('/api/holidays/rules', ['weekend_days' => [0, 1, 2, 3, 4, 5, 6]])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('weekend_days');
+
+        // An operator holds no holidays.manage, so cannot move the company's week.
+        $this->login('operator@acme.test')
+            ->putJson('/api/holidays/rules', ['weekend_days' => [5]])
+            ->assertStatus(403);
+
+        $this->login('admin@acme.test')->getJson('/api/holidays/rules')
+            ->assertOk()->assertJsonPath('data.weekend_days', [5, 6]);
+    }
+
+    public function test_the_monthly_statement_asks_for_a_department_when_too_many_people(): void
+    {
+        Tenancy::set($this->acme->id);
+        foreach (range(1, 61) as $i) {
+            Employee::create(['tenant_id' => $this->acme->id, 'name' => "Extra {$i}", 'employee_code' => (string) (5000 + $i), 'is_active' => true]);
+        }
+        Tenancy::clear();
+
+        $this->login('admin@acme.test')
+            ->getJson('/api/exports/monthly-statement?from=2026-09-01&to=2026-09-14')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('department_id');
+    }
+
+    public function test_the_monthly_statement_is_refused_without_the_reports_permission(): void
+    {
+        $this->login('operator@acme.test')
+            ->getJson('/api/exports/monthly-statement')
+            ->assertStatus(403);
+    }
+
+    public function test_one_employees_report_exports_as_a_pdf(): void
+    {
+        $this->punchAtLocal('2026-09-14 08:32');
+
+        $res = $this->login('admin@acme.test')->get("/api/exports/employees/{$this->employee->id}/report?period=90");
+
+        $res->assertOk();
+        $this->assertStringStartsWith('%PDF-', $res->getContent());
+    }
+
+    public function test_one_employees_report_exports_for_any_period(): void
+    {
+        $this->punchAtLocal('2026-09-14 08:32');
+
+        $res = $this->login('admin@acme.test')
+            ->get("/api/exports/employees/{$this->employee->id}/report?from=2026-09-03&to=2026-09-21");
+
+        $res->assertOk();
+        $this->assertStringStartsWith('%PDF-', $res->getContent());
+        $this->assertStringContainsString('_2026-09-03_2026-09-21.pdf', $res->headers->get('content-disposition'));
+    }
+
+    /**
+     * Everybody's report for a period: started, built (the queue is sync under test),
+     * listed, and downloaded as ONE PDF — a contents page plus each person's pages.
+     */
+    public function test_every_employees_report_builds_into_one_pdf(): void
+    {
+        Storage::fake('local');
+        $this->punchAtLocal('2026-09-14 08:32');
+        $this->punchAtLocal('2026-09-14 18:04');
+        Tenancy::set($this->acme->id);
+        Employee::query()->update(['hired_date' => '2026-01-01']);
+        $people = Employee::query()->where('is_active', true)->count();
+        Tenancy::clear();
+
+        $client = $this->login('admin@acme.test');
+        $started = $client->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => '2026-09-30'])
+            ->assertStatus(202)
+            ->json('data');
+
+        $this->assertSame($people, $started['total']);
+
+        $run = $client->getJson("/api/exports/employee-reports/{$started['id']}")->assertOk()->json('data');
+        $this->assertSame('done', $run['status']);
+        $this->assertSame($people, $run['done']);
+        $this->assertSame([$started['id']], array_column($client->getJson('/api/exports/employee-reports')->json('data'), 'id'));
+
+        $file = $client->get("/api/exports/employee-reports/{$started['id']}/download");
+        $file->assertOk();
+        $this->assertStringStartsWith('%PDF-', $file->streamedContent());
+
+        // Contents + every person's report, each at least three pages.
+        $path = Storage::disk('local')->path(ReportExport::withoutGlobalScopes()->find($started['id'])->file_path);
+        preg_match('/Pages:\s+(\d+)/', shell_exec('pdfinfo '.escapeshellarg($path)), $m);
+        $this->assertGreaterThanOrEqual(1 + 3 * $people, (int) $m[1]);
+    }
+
+    public function test_a_report_file_can_be_deleted_and_old_ones_are_cleared(): void
+    {
+        Storage::fake('local');
+        $this->punchAtLocal('2026-09-14 08:32');
+        Tenancy::set($this->acme->id);
+        Employee::query()->update(['hired_date' => '2026-01-01']);
+        Tenancy::clear();
+
+        $client = $this->login('admin@acme.test');
+        $id = $client->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => '2026-09-14'])->assertStatus(202)->json('data.id');
+        $dir = ReportExport::withoutGlobalScopes()->find($id)->directory();
+        $this->assertNotEmpty(Storage::disk('local')->allFiles($dir));
+
+        // An operator holds no reports.view.
+        $this->login('operator@acme.test')->deleteJson("/api/exports/employee-reports/{$id}")->assertStatus(403);
+
+        $this->login('admin@acme.test')->deleteJson("/api/exports/employee-reports/{$id}")->assertOk();
+        $this->assertNull(ReportExport::withoutGlobalScopes()->find($id));
+        $this->assertEmpty(Storage::disk('local')->allFiles($dir));
+
+        // The daily prune: an eight-day-old file goes, a fresh one stays.
+        $old = $this->login('admin@acme.test')->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => '2026-09-14'])->json('data.id');
+        $fresh = $this->login('admin@acme.test')->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => '2026-09-13'])->json('data.id');
+        ReportExport::withoutGlobalScopes()->whereKey($old)->update(['created_at' => now()->subDays(8)]);
+
+        $this->assertSame(1, \App\Services\Reports\EmployeeReportsExport::prune());
+        $this->assertNull(ReportExport::withoutGlobalScopes()->find($old));
+        $this->assertNotNull(ReportExport::withoutGlobalScopes()->find($fresh));
+    }
+
+    public function test_only_one_set_of_employee_reports_is_built_at_a_time(): void
+    {
+        Bus::fake();
+        Tenancy::set($this->acme->id);
+        Employee::query()->update(['hired_date' => '2026-01-01']);
+        Tenancy::clear();
+        $client = $this->login('admin@acme.test');
+
+        $client->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => '2026-09-30'])->assertStatus(202);
+        $client->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => '2026-09-30'])->assertStatus(409);
+    }
+
+    public function test_employee_reports_refuse_future_dates_and_the_wrong_role(): void
+    {
+        Bus::fake();
+        $tomorrow = now(config('attendance.timezone'))->addDay()->toDateString();
+
+        $this->login('admin@acme.test')
+            ->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => $tomorrow])
+            ->assertStatus(422);
+        $this->login('operator@acme.test')
+            ->postJson('/api/exports/employee-reports', ['from' => '2026-09-01', 'to' => '2026-09-30'])
+            ->assertStatus(403);
+        Bus::assertNothingDispatched();
+    }
+
+    /** The periods are the screen's three; anything else would be a report nobody can open on screen. */
+    public function test_the_employee_report_only_offers_the_screens_periods(): void
+    {
+        $this->login('admin@acme.test')
+            ->getJson("/api/exports/employees/{$this->employee->id}/report?period=45")
+            ->assertStatus(422);
+    }
+
+    /**
+     * A work day that has not happened has no punches, and would be counted as an
+     * absence for everybody. A report over the future is refused, not invented.
+     */
+    public function test_the_attendance_report_refuses_future_dates(): void
+    {
+        $tomorrow = now(config('attendance.timezone'))->addDay()->toDateString();
+
+        $this->login('admin@acme.test')
+            ->getJson("/api/exports/attendance-report?to={$tomorrow}")
+            ->assertStatus(422);
+    }
+
+    public function test_the_attendance_report_refuses_more_than_a_year(): void
+    {
+        $this->login('admin@acme.test')
+            ->getJson('/api/exports/attendance-report?from=2025-01-01&to=2026-09-30')
+            ->assertStatus(422);
+    }
+
     // --- Who may download what ---------------------------------------------
+
+    public function test_the_attendance_report_is_refused_without_the_reports_permission(): void
+    {
+        $this->login('operator@acme.test')
+            ->getJson('/api/exports/attendance-report')
+            ->assertStatus(403);
+    }
 
     /**
      * An operator may read attendance but holds no reports.view, so the payroll

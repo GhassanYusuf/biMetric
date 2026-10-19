@@ -5,24 +5,49 @@ namespace App\Support;
 /**
  * How a punch was verified, as a label.
  *
- * The documented set — matching the attendance_logs schema comment and the SPA's
- * resources/js/spa/pages/attendance/parts.jsx — is 0 password, 1 fingerprint,
- * 2 card, 15 face.
+ * DOCUMENTED (2026-10-11), from the vendor: the `VerifyType` dictionary in ZKAccess
+ * 3.5.5's Languages/language_en-US.xml, the table ZKAccess itself labels events with.
+ * Cross-checked on this estate's data — 74 of 76 people with code-4 ("card") punches
+ * hold a card. Full evidence and the codes each terminal emits are in
+ * docs/protocol-overview.md.
  *
- * CAUTION: this database also holds methods 3 and 4, which are NOT in that set;
- * some ZKTeco firmware numbers verify modes differently. Those render as the raw
- * number rather than a guessed label, because mislabelling how somebody proved
- * who they were is worse than showing it undecoded. Resolve the real mapping
- * against the hardware before adding entries here, and change parts.jsx in the
- * same commit so a PDF and the screen never disagree.
+ * MUST match resources/js/spa/pages/attendance/parts.jsx, so a PDF and the screen
+ * never disagree. A code not listed renders "Unknown (n)", never a guess.
  */
 final class VerifyMethod
 {
     private const LABELS = [
-        0 => 'Password',
+        0 => 'Any',
         1 => 'Fingerprint',
-        2 => 'Card',
+        2 => 'Personnel ID',
+        3 => 'Password',
+        4 => 'Card',
+        5 => 'Fingerprint or password',
+        6 => 'Card or fingerprint',
+        7 => 'Card or password',
+        8 => 'Fingerprint + personnel ID',
+        9 => 'Fingerprint + password',
+        10 => 'Card + fingerprint',
+        11 => 'Card + password',
+        12 => 'Card + fingerprint + password',
+        13 => 'Fingerprint + personnel ID + password',
+        14 => 'Fingerprint + card or personnel ID',
         15 => 'Face',
+        16 => 'Face + fingerprint',
+        17 => 'Face + password',
+        18 => 'Face + card',
+        19 => 'Face + fingerprint + card',
+        20 => 'Face + fingerprint + password',
+        21 => 'Finger vein',
+        22 => 'Finger vein + password',
+        23 => 'Finger vein + card',
+        24 => 'Finger vein + card + password',
+        25 => 'Palm',
+        26 => 'Palm + card',
+        27 => 'Palm + face',
+        28 => 'Palm + fingerprint',
+        29 => 'Palm + face + fingerprint',
+        200 => 'Other',
     ];
 
     public static function label(?int $method): string
@@ -31,6 +56,6 @@ final class VerifyMethod
             return '—';
         }
 
-        return self::LABELS[$method] ?? (string) $method;
+        return self::LABELS[$method] ?? "Unknown ({$method})";
     }
 }

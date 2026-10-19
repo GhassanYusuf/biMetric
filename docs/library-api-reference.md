@@ -110,6 +110,22 @@ same uid, old id gone, every slot back); on any failure it re-uploads the origin
 and verifies that, then throws `VerificationException` with context
 `restored: true|false`. **EXPERIMENTAL** — never run on hardware.
 
+### `TemplateService::addTemplates()` — put stored fingers on a terminal (2.10.0)
+
+```php
+$device->templates()->addTemplates(string $userId, array $templates): array // [['fid'=>6,'template'=>$bytes], …] → slots written
+```
+
+Adds templates to a user the device already holds and returns the slots that read
+back byte-identical. Add-only (a filled slot is skipped). Sends the device's own
+72-byte record with the user's existing templates plus the new ones via
+`SAVE_USERTEMPS`, so name, card and existing fingers are rewritten as they were.
+Refuses before writing when the user is missing, the record cannot be isolated, or the
+template table will not decode (`UnsupportedCommandException`). Throws
+`VerificationException` when an existing finger changed (after writing the original
+back; context `restored`) or when none of the new slots was kept. **IMPLEMENTED**:
+write confirmed on the F18 2026-10-11; a real finger scan not yet observed.
+
 ### `save()` — the nullable arguments are the whole point
 
 Privilege and card live in the **same 72-byte record** as the name. Writing that
@@ -120,15 +136,33 @@ So `$privilege` and `$cardNumber` are nullable, and `null` means *read the curre
 value back and preserve it*. Pass a value only when you intend to change it.
 
 ```php
-$device->users()->save('261', 'Ghassan Yusuf');           // card + privilege preserved
+$device->users()->save('261', 'Ghassan Yusuf');           // card + privilege + password preserved
 $device->users()->save('261', 'Ghassan Yusuf', 0, 0);     // card CLEARED, admin DEMOTED
+$device->users()->save('261', 'Ghassan Yusuf', null, null, '4321'); // keypad password set (2.13.0)
 ```
+
+The fifth argument, `$password` (2.13.0), is the keypad password at offset 3 of the
+record: `null` keeps the device's, `''` clears it, a value of up to 8 bytes writes it,
+and the read-back must match or `VerificationException` is thrown without the value in
+the message. Before 2.13.0 there was no such argument and the field was written as
+zeros, so every `save()` and `setCard()` erased the password. `DeviceUser::$password`
+carries it on reads; `toArray()` gives only `has_password`.
 
 ### `save()` verifies the write
 
 The device sometimes acknowledges a write and drops it. `save()` reads the record
 back and throws `VerificationException` if it is not there. An ack is not a
 commit; see [error-handling.md](error-handling.md).
+
+### `setPrivilege()` — administrator or normal user (2.14.0)
+
+```php
+setPrivilege(string $userId, int $privilege): DeviceUser   // UserService::PRIVILEGE_USER (0) | PRIVILEGE_ADMIN (14)
+```
+
+Refuses a user not on the device and any other value; keeps name, card and password
+(through `save()`), and throws `VerificationException` when the privilege does not
+read back as written. IMPLEMENTED, never run on hardware (`user.privilege`).
 
 ### `ensureExists()`
 
@@ -151,11 +185,20 @@ all(): array                                        // decoded punches
 raw(): string                                       // undecoded bytes
 since(DateTimeInterface $since): array
 latestTimestamp(): ?DateTimeImmutable
-count(): int
+count(): int                                        // transfers the whole log
+deviceCount(): ?int                                 // the terminal's own count, no transfer (2.14.0)
 listen(int $eventMask = Command::EF_ATTLOG): void
 nextRealtimePunch(float $pollSeconds = 0.5): ?array
-clearAll(): void                                    // implemented, destructive
+clearAll(?int $expectedRecords = null): int         // implemented, destructive (guarded 2.14.0)
 ```
+
+`deviceCount()` reads `GET_FREE_SIZES` (`DeviceClient::recordCounts()`,
+`Codec\FreeSizesCodec`) — null when the reply does not decode, never a guessed 0.
+
+`clearAll($expectedRecords)` refuses (`ProtocolException`, nothing sent) when the
+terminal's count differs from what the caller says it stored, clears, and throws
+`VerificationException` unless the count afterwards is 0. Returns the number held
+before. Store every record first; this library cannot know whether you did.
 
 Decoded punches are `DateTimeImmutable` anchored to the **device's** timezone.
 Convert to UTC before storing — see [attendance-sync-flow.md](attendance-sync-flow.md)
@@ -414,6 +457,17 @@ try {
 | `catalogue()` | The panel describes its own schema. **Table and field indexes are read, never hard-coded** — the inBIO460 reports 12 tables, the TF1700 reports 11. Cached per session. |
 | `readTable()` | Handles both answers — inline rows, or a staged read. Callers do not need to know which. |
 | `readAttendance()` | `transaction` decoded into the same record shape the standalone family returns, so one consumer serves both. |
+
+### The clock — `Panel::readClock()` / `Panel::setClock()` (2.12.0)
+
+```php
+$panel->readClock('Asia/Bahrain'): ?\DateTimeImmutable            // GET_PARAM "DateTime"; null = not reported
+$panel->setClock(new \DateTimeImmutable('now', $zone), 'Asia/Bahrain'): ?\DateTimeImmutable  // DATETIME, then read back
+```
+
+The panel keeps local time with no zone; pass the device's zone. `setClock()` returns
+the clock as read back — compare it, do not trust the acknowledgement. CONFIRMED on the
+inBIO460 and the TF1700, 2026-10-11.
 
 ### The staged read — `C3\Protocol\BufferedReader`
 

@@ -1,27 +1,62 @@
-import { useState } from 'react';
-import { FOCUS } from '../../shared/theme';
-import { Button, TextField } from '../../shared/ui';
-
 /*
-| Verify-method decoding, matching the devices_table schema comment and the
-| legacy Inertia page exactly: 0 password, 1 fingerprint, 2 card, 15 face.
+| Verify-method decoding (2026-10-11). DOCUMENTED, from the vendor itself: the
+| `VerifyType` dictionary in ZKAccess 3.5.5's Languages/language_en-US.xml — the
+| table ZKAccess uses to label every event, for its pull panels (inBIO460, TF1700)
+| and its standalone terminals alike. See docs/protocol-overview.md.
 |
-| CAUTION: this database also contains methods 3 and 4, which are NOT in that
-| documented set — some ZKTeco firmware numbers verify modes differently. Those
-| render as the raw number rather than a guessed label, because mislabelling a
-| punch's verification method is worse than showing it undecoded. Resolve the
-| real mapping against the hardware before adding entries here.
+| This replaces the old 0 password / 1 fingerprint / 2 card / 15 face set, which came
+| from a schema comment and disagreed with the vendor on 0 and 2. Neither 0-as-
+| password nor 2 occurs in this database, so no stored punch changes meaning.
+|
+| Checked against this estate's own data, not taken on trust: of the 76 people who
+| punched with 4 ("Only Card"), 74 hold a card; of the 41 who punched with 1
+| ("Only Fingerprint"), 11 do. Codes 1/3/4 were seen on the F18s (IT Room, Camelot)
+| and the F22 (On The Road); 0/4/6/200 on the inBIO460 and TF1700.
+|
+| MUST match app/Support/VerifyMethod.php, which labels the PDF exports.
+|
+| A code the dictionary does not list (Camelot logged 48–51 once each) renders as
+| "Unknown (n)", never as a guess: a wrong method is worse than an undecoded one.
 */
 const VERIFY_METHODS = {
-    0: 'Password',
+    0: 'Any',
     1: 'Fingerprint',
-    2: 'Card',
+    2: 'Personnel ID',
+    3: 'Password',
+    4: 'Card',
+    5: 'Fingerprint or password',
+    6: 'Card or fingerprint',
+    7: 'Card or password',
+    8: 'Fingerprint + personnel ID',
+    9: 'Fingerprint + password',
+    10: 'Card + fingerprint',
+    11: 'Card + password',
+    12: 'Card + fingerprint + password',
+    13: 'Fingerprint + personnel ID + password',
+    14: 'Fingerprint + card or personnel ID',
     15: 'Face',
+    16: 'Face + fingerprint',
+    17: 'Face + password',
+    18: 'Face + card',
+    19: 'Face + fingerprint + card',
+    20: 'Face + fingerprint + password',
+    21: 'Finger vein',
+    22: 'Finger vein + password',
+    23: 'Finger vein + card',
+    24: 'Finger vein + card + password',
+    25: 'Palm',
+    26: 'Palm + card',
+    27: 'Palm + face',
+    28: 'Palm + fingerprint',
+    29: 'Palm + face + fingerprint',
+    // The vendor's word. On the C3 panels it marks events with no credential behind
+    // them — door sensor, exit button — not a person verifying.
+    200: 'Other',
 };
 
 export function verifyLabel(method) {
     if (method == null) return '—';
-    return VERIFY_METHODS[method] ?? String(method);
+    return VERIFY_METHODS[method] ?? `Unknown (${method})`;
 }
 
 export function formatPunch(iso) {
@@ -46,113 +81,4 @@ export function groupByDay(rows) {
         current.rows.push(row);
     }
     return groups;
-}
-
-// Shared pager driven by the API's meta.pagination block.
-export function Pager({ pagination, onPage, loading }) {
-    if (!pagination || (pagination.last_page ?? 1) <= 1) return null;
-
-    const { current_page: current, last_page: last, total } = pagination;
-
-    return (
-        <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-slate-500">
-                Page {current} of {last} · {(total ?? 0).toLocaleString()} punches
-            </span>
-            <div className="flex gap-2">
-                <Button variant="secondary" className="min-h-[36px] px-3 text-xs" disabled={loading || current <= 1} onClick={() => onPage(current - 1)}>
-                    Previous
-                </Button>
-                <Button variant="secondary" className="min-h-[36px] px-3 text-xs" disabled={loading || current >= last} onClick={() => onPage(current + 1)}>
-                    Next
-                </Button>
-            </div>
-        </div>
-    );
-}
-
-/*
-| National ID -> this person's punches.
-|
-| Lives here, not in either presentation file, so desktop and mobile cannot drift
-| apart (rule 5): one field, one keyboard behaviour, one set of rules about what
-| is kept.
-|
-| THE TYPED NUMBER IS HELD HERE AND NOWHERE ELSE. On a match it is wiped
-| immediately and the screen shows a name instead — a terminal left unattended in
-| an HR office then displays "Ali Jaafar", not somebody's government id. On a miss
-| it is deliberately LEFT in place: the likeliest cause is a mistyped digit, and
-| making somebody retype sixteen of them to fix one is its own failure.
-|
-| autoComplete="off" is not decoration. A browser that remembers this field offers
-| one employee's national id while an operator is looking up another's.
-*/
-export function NationalIdLookup({ onLookup, busy }) {
-    const [value, setValue] = useState('');
-
-    async function submit(event) {
-        event.preventDefault();
-        if (await onLookup(value)) setValue('');
-    }
-
-    return (
-        <div className="space-y-1.5">
-            <form onSubmit={submit} className="flex items-end gap-3">
-                <div className="min-w-[11rem] flex-1">
-                    <TextField
-                        label="National ID"
-                        className="font-mono"
-                        value={value}
-                        onChange={(e) => setValue(e.target.value)}
-                        placeholder="Whole number"
-                        autoComplete="off"
-                        spellCheck={false}
-                        disabled={busy}
-                    />
-                </div>
-                <Button type="submit" loading={busy} disabled={busy || !value.trim()}>
-                    Find
-                </Button>
-            </form>
-            {/*
-              | Says the one thing that surprises people: this is not the search box
-              | from the Employees screen. It matches the whole document or nothing,
-              | because the column it searches is a hash — there is no prefix to
-              | match on. Spacing and dashes are normalised away, so those are safe.
-            */}
-            <p className="text-xs text-slate-500">
-                Matches the whole number. Spaces and dashes do not matter; a partial number will not match.
-            </p>
-        </div>
-    );
-}
-
-/*
-| Persistent page STATE, not an event (rule 2): while this is on screen the punch
-| list below is one person's, and that stays true until it is dismissed. The toast
-| that announced the match is long gone by then.
-|
-| Rendered in the same place on both presentations — directly under the header,
-| never inside a collapsible filter panel. On mobile the filters collapse, and a
-| list silently narrowed to one employee with nothing on screen saying so is how
-| somebody concludes the terminal stopped recording punches.
-*/
-export function MatchedEmployee({ employee, onClear }) {
-    return (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-violet-50 px-4 py-3 ring-1 ring-violet-200">
-            <span className="text-sm text-violet-900">
-                Showing punches for <span className="font-semibold">{employee.name}</span>
-                {employee.employee_code && (
-                    <span className="font-mono text-xs text-violet-800"> · {employee.employee_code}</span>
-                )}
-            </span>
-            <button
-                type="button"
-                onClick={onClear}
-                className={`ml-auto rounded-lg px-2.5 py-1 text-xs font-semibold text-violet-800 hover:bg-violet-100 ${FOCUS}`}
-            >
-                Show everyone
-            </button>
-        </div>
-    );
 }

@@ -190,10 +190,13 @@ class EnrollmentOrchestratorService
             fn (ProtocolDevice $d) => $d->templates()->deleteSlot($this->identity->pinFor($device, $employee), $fingerSlot),
         );
 
+        // The terminal's slot marker goes; the system's stored copy of the finger
+        // (FingerprintVault) stays, as it does on a removal (2026-10-11).
         BiometricTemplate::query()
             ->where('device_id', $device->id)
             ->where('employee_id', $employee->id)
             ->where('finger_slot', $fingerSlot)
+            ->whereNull('template_sha1')
             ->delete();
 
         $this->syncMapSlots($device, $employee, $remaining);
@@ -252,7 +255,7 @@ class EnrollmentOrchestratorService
             ->update([
                 'status' => AccessCard::REVOKED,
                 'revoked_at' => now(),
-                'revoke_reason' => 'Cleared from the terminal',
+                'revoke_reason' => AccessCard::REASON_CLEARED,
             ]);
 
         EmployeeDeviceMap::query()

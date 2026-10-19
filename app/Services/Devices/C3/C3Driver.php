@@ -5,9 +5,11 @@ namespace App\Services\Devices\C3;
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\Device;
 use App\Support\DeviceProgress;
+use App\Support\Timezone;
 use Illuminate\Support\Facades\Log;
 use Promoseven\Biometric\C3\Capability\C3Capabilities;
 use Promoseven\Biometric\C3\Client\Panel;
+use Promoseven\Biometric\C3\Service\Personnel;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Capability\CapabilitySet;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
@@ -37,14 +39,20 @@ use Promoseven\Biometric\Value\Progress;
  *   - ping           GET_PARAM identity round-trip
  *   - info           serial, firmware, MAC, door and reader counts
  *   - attendance     the full `transaction` table, staged and CRC-verified
+ *   - roster/fingers `user` and `templatev10` reads
+ *   - people         add / rename / card / delete and fingerprint push
+ *                    (library C3\Service\Personnel, 2026-09-24), each gated by its
+ *                    capability and promoted per panel only after a hardware run
+ *   - ID moves       Panel::moveUser (user.renumber)
  *
  * WHAT IT DELIBERATELY CANNOT DO
  *   - run()/open()   there is no standalone protocol session to hand out.
- *   - every write    enrollment, user push, and the door relay are UNBUILT. We know
- *                    from the vendor SDK exactly which commands would do it; rule 16
- *                    requires the owner's explicit go-ahead and a terminal out of
- *                    service before any of it is probed. A door relay is not
- *                    something to discover by accident on a live entrance.
+ *   - enrollment     the panels have no remote-capture command (PullSDK documents
+ *                    none; ZKAccess enrolls on a USB reader or a standalone terminal).
+ *                    A finger is enrolled on an F18 and pushed here with
+ *                    uploadTemplates().
+ *   - door relay     CONTROL_DEVICE is unbuilt: not something to discover by accident
+ *                    on a live entrance (rule 16).
  *
  * KNOWN DEBT, same as CslHttpDriver: Capability, CapabilitySet and DeviceException
  * are the app's shared vendor-neutral vocabulary but live in the protocol package.
@@ -103,11 +111,17 @@ class C3Driver implements BiometricDeviceDriver
 
         $info = $this->attempt($device, fn (Panel $panel) => $panel->info());
 
+        // The clock: GET_PARAM "DateTime" (2026-10-11). Best effort — a panel that
+        // will not report it is still alive. Null means "not read", never midnight.
+        try {
+            $clock = $this->attempt($device, fn (Panel $panel) => $panel->readClock(Timezone::forDevice($device)));
+        } catch (\Throwable) {
+            $clock = null;
+        }
+
         return [
             'alive' => true,
-            // These panels expose no clock parameter we have found. Null means
-            // "not read", never midnight (rule 10).
-            'device_time' => null,
+            'device_time' => $clock,
             'latency_ms' => round((microtime(true) - $startedAt) * 1000, 2),
             'note' => trim(($info['~DeviceName'] ?? 'C3 panel').' '.($info['FirmVer'] ?? '')),
         ];
@@ -245,12 +259,17 @@ class C3Driver implements BiometricDeviceDriver
     }
 
     /**
-     * Not implemented for this family (rule 9: declared, not silently plausible).
+     * Adds a person to the panel, or renames one it already holds — guard first, in
+     * the same session as the write (the contract's reason for existing).
      *
-     * Writing a user record here would mean a different mechanism entirely, and an
-     * unguarded one would carry exactly the overwrite risk BiometricDeviceDriver::
-     * saveUser() exists to remove. Until that is written and confirmed against real
-     * hardware, this refuses rather than returning something that looks like success.
+     * NEW PERSON: `user` row, then door permissions copied from what most people on
+     * that panel have (Personnel::commonAuthorization — time zone 1 / door 1 on both
+     * panels here, 2026-09-24). Without a door row a C3 user opens nothing.
+     * EXISTING PERSON: the name is rewritten on the same UID; card, doors and
+     * fingerprints are verified unchanged (Personnel::update).
+     *
+     * EXPERIMENTAL: gated by `user.write`, promoted per panel only after an
+     * owner-approved run there (tools/zkprobe/c3-personnel.php).
      */
     public function saveUser(
         Device $device,
@@ -258,17 +277,40 @@ class C3Driver implements BiometricDeviceDriver
         string $name,
         ?\Closure $guard = null,
         bool $onlyIfMissing = false,
+        ?int $privilege = null,
+        ?string $password = null,
     ): DeviceUser {
-        throw new UnsupportedCommandException(
-            "{$device->name} (C3/PullSDK panel) does not support writing user records through this driver."
-        );
+        $pin = $this->pin($userId);
+
+        return $this->attempt($device, function (Panel $panel) use ($pin, $name, $guard, $onlyIfMissing, $password) {
+            $people = new Personnel($panel);
+            $row = $people->find($pin);
+            $occupant = $row === null ? null : $this->toUser($row, $people->fingerprints($pin));
+
+            // Throwing here abandons the write: nothing below runs.
+            if ($guard !== null) {
+                $guard($occupant);
+            }
+
+            if ($onlyIfMissing && $occupant !== null) {
+                return $occupant;
+            }
+
+            // A null password keeps the row's own on an edit, and adds none (2026-10-12).
+            $row = $row === null
+                ? $people->add($pin, $name, 0, null, $password ?? '')
+                : $people->update($pin, $name, null, $password);
+
+            return $this->toUser($row, $people->fingerprints($pin));
+        });
     }
 
+    /** Fingerprints, doors, then the user row, each read back (Personnel::delete). EXPERIMENTAL. */
     public function deleteUser(Device $device, string $userId): void
     {
-        throw new UnsupportedCommandException(
-            "{$device->name} (C3/PullSDK panel) does not support deleting user records through this driver."
-        );
+        $pin = $this->pin($userId);
+
+        $this->attempt($device, fn (Panel $panel) => (new Personnel($panel))->delete($pin));
     }
 
     /*
@@ -285,10 +327,28 @@ class C3Driver implements BiometricDeviceDriver
         }
 
         return $this->attempt($device, function (Panel $panel) use ($fromUserId, $toUserId) {
+            /*
+             * Already there: 41112750 IS 041112750 to a panel that stores Pins as
+             * numbers. Asking it to move a user onto itself is refused ("needs two
+             * different Pins", 2026-10-11, every save of Tariq after his move). Hand
+             * back the record as it stands; the caller sees the Pin did not change.
+             */
+            if (self::samePin($fromUserId, $toUserId)) {
+                foreach ($panel->readUsers(null, true) as $user) {
+                    if (self::samePin($user->userId, $fromUserId)) {
+                        return $user;
+                    }
+                }
+
+                throw new VerificationException("{$fromUserId} is not on the panel.");
+            }
+
             $panel->moveUser((int) $fromUserId, (int) $toUserId);
 
+            // Returned as the PANEL reports it, so the mapping records the number the
+            // panel will stamp on punches — 41112750, not the employee code 041112750.
             foreach ($panel->readUsers(null, true) as $user) {
-                if ($user->userId === $toUserId) {
+                if (self::samePin($user->userId, $toUserId)) {
                     return $user;
                 }
             }
@@ -297,11 +357,81 @@ class C3Driver implements BiometricDeviceDriver
         });
     }
 
+    /** GET_PARAM "DateTime" (library 2.12.0, Panel::readClock). */
+    public function readClock(Device $device): ?\DateTimeImmutable
+    {
+        return $this->attempt($device, fn (Panel $panel) => $panel->readClock(Timezone::forDevice($device)));
+    }
+
+    /**
+     * DATETIME (0x03) "DateTime=<packed>" to now in the panel's zone, read back
+     * (library 2.12.0, Panel::setClock — transcribed from vwout/zkaccess-c3-py).
+     * Gated by device.time.write in the model's own set.
+     */
+    public function setClock(Device $device): array
+    {
+        $this->capabilities($device)->require(Capability::SET_TIME);
+        $zone = Timezone::forDevice($device);
+
+        return $this->attempt($device, function (Panel $panel) use ($zone) {
+            $before = $panel->readClock($zone);
+            $after = $panel->setClock(new \DateTimeImmutable('now', new \DateTimeZone($zone)), $zone);
+
+            return ['before' => $before, 'after' => $after];
+        });
+    }
+
+    /**
+     * C3 panels have no terminal menu to grant (2026-10-18); the `user` table's
+     * Privilege field is read, never written. user.privilege is NOT_IMPLEMENTED.
+     */
+    public function setUserPrivilege(Device $device, string $userId, bool $admin): DeviceUser
+    {
+        throw new UnsupportedCommandException("{$device->name} is a C3 panel; this app does not change privileges on it.");
+    }
+
+    /*
+     * The C3 protocol has GET_DATA_COUNT (0x0A) for the `transaction` table, but nothing
+     * here has sent it to a panel yet, so the count is not known rather than guessed.
+     */
+    public function attendanceRecordCount(Device $device): ?int
+    {
+        return null;
+    }
+
+    public function clearAttendance(Device $device, int $expectedRecords): int
+    {
+        throw new UnsupportedCommandException("{$device->name} is a C3 panel; clearing its transaction log is not implemented.");
+    }
+
+    /**
+     * Writes a card onto a person the panel holds, keeping UID, doors and fingers,
+     * refusing a card another Pin already carries. 0 clears it. EXPERIMENTAL.
+     */
     public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser
     {
-        throw new UnsupportedCommandException(
-            "{$device->name} (C3/PullSDK panel) does not support writing cards through this driver."
-        );
+        $pin = $this->pin($userId);
+
+        return $this->attempt($device, function (Panel $panel) use ($pin, $cardNumber) {
+            $people = new Personnel($panel);
+
+            return $this->toUser($people->update($pin, null, $cardNumber), $people->fingerprints($pin));
+        });
+    }
+
+    /**
+     * Adds fingerprint templates to a person the panel holds (Personnel::addFingerprints):
+     * add-only, ZKFinger v10 only, under the person's UID, verified byte for byte, and
+     * the person's original fingers restored on any failure. EXPERIMENTAL.
+     */
+    public function uploadTemplates(Device $device, string $userId, array $templates): array
+    {
+        $pin = $this->pin($userId);
+
+        return $this->attempt($device, fn (Panel $panel) => (new Personnel($panel))->addFingerprints(
+            $pin,
+            array_map(fn (array $t) => ['fid' => (int) $t['slot'], 'template' => (string) $t['template'], 'valid' => (int) ($t['valid'] ?? 1)], $templates),
+        ));
     }
 
     /**
@@ -333,7 +463,13 @@ class C3Driver implements BiometricDeviceDriver
     {
         $this->guardProtocol($device);
 
-        $resolved = C3Capabilities::forModel($device->model);
+        /*
+         * Start from what the device ALREADY has, not the bare baseline: write levels
+         * cannot be probed (rule 9), and a per-panel promotion recorded after a
+         * hardware run (user.renumber on Glass Door, 2026-09-24) used to be wiped by
+         * every re-probe.
+         */
+        $resolved = $this->capabilities($device);
 
         try {
             $tables = $this->attempt($device, fn (Panel $panel) => $panel->catalogue()->tableNames());
@@ -387,9 +523,52 @@ class C3Driver implements BiometricDeviceDriver
                 port: $device->port ?: 4370,
                 commKey: (int) ($device->comm_key ?? 0),
                 timeout: (float) config('attendance.device_timeout', 10.0),
-                timezone: $device->timezone ?: config('attendance.device_timezone', '+03:00'),
+                timezone: Timezone::forDevice($device),
             ),
             $device->model,
+        );
+    }
+
+    /** A C3 Pin is a number; anything else would be written into an integer field as 0. */
+    /**
+     * Whether two user ids name the same C3 Pin.
+     *
+     * A C3 Pin is an INTEGER (the `user` table's Pin column), so a leading zero does
+     * not survive the write: employee code 041112750 is stored as 41112750. Comparing
+     * the strings reported a move that had succeeded as a failure (2026-10-11,
+     * Entrance and Glass Door) — and left our records on the old PIN while the panel
+     * had moved on. Compared as numbers instead, as the panel does.
+     */
+    public static function samePin(string $a, string $b): bool
+    {
+        return ctype_digit($a) && ctype_digit($b) && (int) $a === (int) $b;
+    }
+
+    private function pin(string $userId): int
+    {
+        if (! ctype_digit($userId) || (int) $userId <= 0) {
+            throw new UnsupportedCommandException("A C3 panel's user ids are positive numbers; '{$userId}' is not one.");
+        }
+
+        return (int) $userId;
+    }
+
+    /**
+     * @param  array<string,int|string>  $row  a `user` row
+     * @param  array<int,string>  $fingers  slot => sha1, read in the same session
+     */
+    private function toUser(array $row, array $fingers): DeviceUser
+    {
+        $card = (int) ($row['CardNo'] ?? 0);
+
+        return new DeviceUser(
+            uid: (int) ($row['UID'] ?? 0),
+            userId: (string) $row['Pin'],
+            name: (string) ($row['Name'] ?? ''),
+            privilege: (int) ($row['Privilege'] ?? 0),
+            cardNumber: $card > 0 ? $card : null,
+            fingerSlots: array_keys($fingers),
+            password: array_key_exists('Password', $row) ? (string) $row['Password'] : null,
         );
     }
 

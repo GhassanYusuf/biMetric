@@ -3,10 +3,11 @@
 Non-negotiable conventions for this codebase. Where a rule can be checked
 mechanically it is, by `tests/Unit/FrontendConventionsTest.php`,
 `tests/Unit/ProtocolLibraryBoundaryTest.php`, `tests/Unit/ProjectStateTest.php`,
-`tests/Unit/DeviceModelIsolationTest.php` and `tests/Unit/ProbeDisciplineTest.php`,
-all of which run with `php artisan test`.
+`tests/Unit/DeviceModelIsolationTest.php`, `tests/Unit/ProbeDisciplineTest.php`,
+`tests/Unit/CredentialPreservationTest.php`, `tests/Unit/DeviceCasebookTest.php` and
+`tests/Unit/DeviceModelMethodologyTest.php`, all of which run with `php artisan test`.
 
-Rules 1-7 govern the frontend. Rules 8-13 and 15-17 govern the biometric device
+Rules 1-7 govern the frontend. Rules 8-13, 15-17 and 19-21 govern the biometric device
 layer and apply to every future change that touches it. Rule 14 governs how the
 state of the work is handed to the next session, on this machine or any other.
 
@@ -276,6 +277,9 @@ file in `docs/`:
 | New exception or retry rule | `docs/error-handling.md` |
 | App-side integration | `docs/integration-laravel.md` |
 | Anything a reuser needs | `docs/library-installation.md`, `docs/integration-other-platforms.md` |
+| Anything that writes, removes or restores a card or fingerprint | `docs/credential-preservation.md` |
+| Any device problem investigated or fixed | `docs/device-casebook.md` — an entry (rule 20) |
+| How any model reads, writes, moves or removes a user ID, name, card or fingerprint | `docs/device-models.md` — that model's section (rule 21) |
 
 Also required:
 
@@ -652,3 +656,140 @@ is a bug, the same class as a wrong number.
 `tests/Feature/Api/LiveStampsTest.php` checks the stamps move with a company's own
 changes, deletes included, and never with another company's. It cannot check that
 a page subscribed. That part is discipline.
+
+---
+
+## 19. The system keeps every card and fingerprint, and puts them back
+
+Owner's rule, 2026-10-11: "not just fingerprint but also card number, you have to make
+a procedure and a rule." Akram was removed from IT Room and added back from the system;
+he came back with no fingerprint and no card, because the terminal had been the only
+place either existed and nothing took a copy or wrote one back.
+
+A fingerprint cannot be re-collected without the person at a terminal. A card number
+nobody recorded has to be found by tapping the card again. So **a terminal is never
+the only place a credential exists**, and removing someone never costs them one.
+
+### The rule
+
+1. **Capture continuously.** Every roster read stores everyone's fingers
+   (`FingerprintVault`) and cards (`access_cards`, and `employees.card_number` when
+   empty). A nightly roster read is scheduled for every terminal.
+2. **Save before you destroy, or refuse.** Nothing deletes a user, a finger or a card
+   on a terminal without first reading it into the system. If the read fails, the
+   delete does not happen. A user is deleted from a terminal ONLY through
+   `DeviceUserSyncService` — `removeEmployee()` (an employee), `releaseUnlinkedNumber()`
+   (a record linked to nobody) — which both do this. A record the owner says is the
+   SAME person as an employee has its fingerprints stored in that employee's account and
+   its punches credited to them BEFORE it is deleted; then the employee's data is pushed
+   from the system (owner, 2026-10-11).
+3. **The copy outlives the terminal.** A stored template is never deleted because a
+   terminal lost the finger — only with its employee or terminal. A terminal with no
+   card never clears the employee's card.
+4. **Restore on every add.** Putting a person on a terminal (`pushEmployee()`, every
+   path) writes back their card and fingers, each by that terminal's own method, and
+   gives them back their own former user ID there. Add-only, verified on read-back
+   (rule 10). A card an operator cleared on purpose or reported lost is not restored.
+5. **Say what happened.** What was put back, and what could not be, is in the result
+   the operator sees — never a silent success, never a failed push for a credential
+   the person can add later.
+
+The procedure, the per-family methods and the operator's playbook are in
+`docs/credential-preservation.md`. A new destructive path (a wipe, a bulk delete, a
+device reset, a new vendor's delete) follows that procedure, or it does not ship.
+
+`tests/Unit/CredentialPreservationTest.php` checks the mechanical half: only
+`removeEmployee()` deletes a terminal user, it saves card and fingers before the
+delete, `pushEmployee()` restores both, no code deletes a stored template outside the
+slot-marker scope, and a terminal without a card cannot clear the record card. It
+cannot check that a new destructive path takes the copy first. That part is discipline.
+
+---
+
+## 20. Every device problem goes in the casebook — read it first, write it as you go
+
+Owner's rule, 2026-10-11: "whenever we are working on a problem regarding the devices
+and its communications, and actions we want to do on it from software to device or from
+device to software, I want to log it all — what have you done, what was the problem and
+how you got it fixed. A memo for yourself, so next time we try to find a problem or fix
+it you have a history to read."
+
+`docs/device-casebook.md` is that history. It is a file in the repository, not
+assistant memory, for the reason rule 14 gives: memory stays on one machine; the
+repository goes everywhere.
+
+### The rule
+
+1. **Read it before investigating.** Any problem between the software and a terminal —
+   a read, a write, a decode, a refusal, a wrong value, a timeout — starts with a search
+   of the casebook for the device, the model, the IP, the command and the error text.
+   Most problems here have been met before in some form.
+2. **Open an entry when the investigation starts**, and add to it as you go — not
+   reconstructed at the end. An investigation that stops halfway is still an entry,
+   `Status: OPEN`, so the next person starts where it stopped.
+3. **Log every action on real hardware or production data** made while working on it:
+   reads, writes, deletes, manual database corrections, re-attributions — what was
+   saved first and how to undo it. A hand correction nobody wrote down is a trap.
+4. **Record the dead ends.** The wrong first diagnosis and the change that did nothing
+   are as valuable as the fix (rule 16).
+5. **Close it with proof.** Root cause, the fix (files, tests), and how it was verified
+   against the terminal. `FIXED` means verified on hardware, or the entry says why it
+   could not be.
+6. **Every entry carries:** Date, Devices (name, model, IP), Direction, Symptom, What
+   was done, Root cause, Fix, Verified, Evidence, Status, Keywords — in the template at
+   the top of the file. Newest first, `DC-NNN`, never renumbered, listed in the index.
+
+The casebook is the history; `docs/PROJECT-STATE.md` is the present (what is open, who
+owes what); `docs/device-capabilities.md` holds the settled facts a case produced.
+A case that teaches something about a model updates `device-capabilities.md` too.
+
+`tests/Unit/DeviceCasebookTest.php` checks the structure: the file exists and is dated,
+every entry has every field, IDs are unique and newest-first, dates are absolute, the
+status is one of the four, and the index lists every entry. It cannot check that a
+problem was logged at all. That part is discipline.
+
+---
+
+## 21. Every model has its own method for every action — know it, and never fix one model by breaking another
+
+Owner's rule, 2026-10-11: "this system is multi-device and multi-tenant, and each
+device of a different model has its own method of achieving the same required action.
+It is your job to know all models and how each operates, and when fixing a problem for
+one, don't break the others with the same solution. If it's a different model, see
+what it requires so you can make it work as requested. Build a methodology for each
+model. They all have a person's ID, name, card number and fingerprints."
+
+Rule 15 says where model-specific code goes. This rule says what has to be known and
+done per model so that every action WORKS on every model — each by its own route.
+
+### The rule
+
+1. **The action is common; the method is per model.** Every terminal holds a user ID,
+   a name, a card number and fingerprints, and the app asks for the same things:
+   read, add, change, move to a new ID, remove, restore. `docs/device-models.md` says
+   for each model how each one is done, at what level and on what evidence. Read it
+   before touching any of them.
+2. **The model on the device row selects the method**, in one place per family
+   (`TerminalModelFactory`, `C3Capabilities::forModel`). A device with no model gets
+   the cautious generic set: reads only, every write unknown. Identify it first —
+   `device.info` is read-only — and store the model.
+3. **A fix is for the model it was proven on.** It lives in that model's file or is
+   selected by that model's capabilities. Never edit the F18 set
+   (`CapabilitySet::defaults()`) or shared code so that another model behaves
+   differently. A model without its own file does not inherit another model's writes.
+4. **When a model cannot do an action the way another does, find its own way**, using
+   what that model has proven. For example, the F18 cannot move a user ID in place, so
+   its method is to re-add the person with their card and fingers put back (rule 19).
+   If no safe way exists yet, refuse **before** changing anything, say so in red, and
+   record what run would prove one.
+5. **Prove it on that model, then record it** — the level in the model's file, its row
+   in `docs/device-models.md`, and the casebook entry (rule 20). A first run on a model
+   is a write probe: a test user or the owner's go-ahead, state saved first (rule 16).
+6. **Check the others did not move.** `tests/Unit/DeviceModelMethodologyTest.php` pins
+   every model's level for every person-related action. A change meant for one model
+   that shifts another fails there. Changing a pinned level on purpose means updating
+   the pin, the methodology and the casebook together.
+
+The test cannot check that the methodology is TRUE for a model — only that every model
+has one and that no level moved silently. Keeping it true is discipline, with the
+casebook as the evidence.

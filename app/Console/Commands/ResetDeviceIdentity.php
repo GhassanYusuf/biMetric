@@ -49,7 +49,6 @@ class ResetDeviceIdentity extends Command
         'device_roster_entries',
         'attendance_waivers',
         'employees',
-        'person_national_ids',
         'people',
     ];
 
@@ -74,7 +73,6 @@ class ResetDeviceIdentity extends Command
         'employee_device_maps',
         'attendance_waivers',
         'employees',
-        'person_national_ids',
         'people',
     ];
 

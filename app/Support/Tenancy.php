@@ -29,13 +29,21 @@ class Tenancy
         self::$tenantId = $tenant instanceof Tenant ? $tenant->id : $tenant;
         self::$spanAllTenants = false;
 
-        // Keep spatie role/permission lookups scoped to the same tenant, and
-        // drop any permissions cached under a previous team so a persistent
-        // process (Octane, queue worker, or same-process tests) can never leak
-        // one tenant's permissions into another's checks.
+        // Keep spatie role/permission lookups scoped to the same tenant, and drop
+        // this PROCESS's loaded permission list so a persistent process (Octane,
+        // queue worker, same-process tests) re-reads it under the new team.
+        //
+        // In-memory only — clearPermissionsCollection(), NOT forgetCachedPermissions().
+        // The shared cache entry holds every permission with no team in it, so
+        // deleting it on a tenant switch protected nothing; and because this runs on
+        // EVERY request (ResolveTenant), it deleted the entry hundreds of times a
+        // day. Overlapping requests then all rebuilt it at once, and SQL Server
+        // rejected the duplicate key in the cache table — the 500 "cache_key_primary"
+        // that hit a live page refresh while Ali Mohamed Jaafar was being saved
+        // (2026-10-11; 28 that day, 130 since 2026-09-22).
         $registrar = app(\Spatie\Permission\PermissionRegistrar::class);
         $registrar->setPermissionsTeamId(self::$tenantId);
-        $registrar->forgetCachedPermissions();
+        $registrar->clearPermissionsCollection();
     }
 
     public static function id(): ?int

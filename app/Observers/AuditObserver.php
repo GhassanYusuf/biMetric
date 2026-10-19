@@ -14,7 +14,9 @@ use Illuminate\Support\Facades\Auth;
  */
 class AuditObserver
 {
-    private const REDACT = ['password', 'comm_key', 'web_password', 'remember_token'];
+    // device_password: the terminal keypad password (2026-10-12) — that it changed is
+    // audited, not even its ciphertext.
+    private const REDACT = ['password', 'comm_key', 'web_password', 'remember_token', 'device_password'];
 
     public function created(Model $model): void
     {

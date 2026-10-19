@@ -61,6 +61,7 @@ class DeviceAdoptionGateTest extends TestCase
             'ip_address' => '192.0.2.40',
             'port' => 4370,
             'protocol' => Device::PROTOCOL_BINARY,
+            'model' => 'F18', // rule 21: write levels come from the model
             'adoption_status' => Device::READ_ONLY,
             'roster_read_at' => now()->subHour(),
             'is_active' => true,
@@ -157,5 +158,28 @@ class DeviceAdoptionGateTest extends TestCase
         $this->asAdmin()->postJson("/api/devices/{$this->device->id}/adopt")->assertStatus(422);
 
         $this->assertSame(Device::READ_ONLY, $this->device->fresh()->adoption_status);
+    }
+
+    /**
+     * A refused write must reach the screen with its reason (2026-10-11). It used to
+     * fall through to a generic 500 "Server error.", so the Employees page could only
+     * say "could not be removed" with nothing the operator could act on.
+     */
+    public function test_a_write_to_an_unadopted_terminal_is_a_409_that_says_why(): void
+    {
+        $this->rosterEntry(DeviceRosterEntry::UNCLAIMED);
+
+        Tenancy::set($this->tenant->id);
+        $employee = \App\Models\Employee::where('employee_code', '1001')->firstOrFail();
+        Tenancy::clear();
+
+        $res = $this->asAdmin()
+            ->postJson("/api/employees/{$employee->id}/devices/{$this->device->id}/remove")
+            ->assertStatus(409);
+
+        // It names who is in the way, because that is what the operator must decide.
+        $this->assertStringContainsString('Main Gate holds 1 person nobody has matched', $res->json('message'));
+        $this->assertStringContainsString('Somebody', $res->json('message'));
+        $this->assertSame('not_adopted', $res->json('errors.reason'));
     }
 }

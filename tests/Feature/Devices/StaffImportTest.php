@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Devices;
 
+use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Person;
 use App\Models\Tenant;
@@ -10,12 +11,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * The staff import, and the one thing it has to get right.
- *
- * The same national id appearing twice is NOT a duplicate to reject — it is one human
- * employed by two sister companies. Collapsing those two rows onto one Person is the
- * entire reason the Person layer exists: when they punch at either company's terminal,
- * payroll must see one attendance account.
+ * The staff import. National ids were removed from the system on 2026-09-27, so a
+ * `national_id` column is ignored and the import no longer creates People.
  */
 class StaffImportTest extends TestCase
 {
@@ -40,27 +37,6 @@ class StaffImportTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_one_human_at_two_companies_becomes_one_person_with_two_employments(): void
-    {
-        $this->csv(<<<'CSV'
-        Name,Employee Code,National ID,Tenant
-        Ali Jaafar,E-001,860101123,acme
-        Ali Jaafar,B-114,860-101-123,globex
-        CSV);
-
-        $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
-
-        // The two documents differ only in punctuation. Normalising before hashing is
-        // what stops one human becoming two people because two clerks typed differently.
-        $this->assertSame(1, Person::count());
-        $this->assertSame(2, Employee::withoutGlobalScopes()->count());
-
-        $person = Person::firstOrFail();
-        $this->assertCount(2, $person->employments()->withoutGlobalScopes()->get());
-        $this->assertSame('860101123', $person->nationalId());
-        $this->assertTrue($person->isExportable());
-    }
-
     public function test_the_same_payroll_code_at_two_companies_is_two_different_people(): void
     {
         // Both companies number from 001. This collided outright while employee_code was
@@ -73,46 +49,107 @@ class StaffImportTest extends TestCase
 
         $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
 
-        $this->assertSame(2, Person::count());
         $this->assertSame(2, Employee::withoutGlobalScopes()->where('employee_code', '001')->count());
     }
 
-    public function test_a_row_without_a_national_id_is_imported_but_not_exportable(): void
+    public function test_company_and_department_build_the_department_tree(): void
     {
+        // "Finance" at two companies is two departments; "finance" in another row of
+        // the same company is the same one.
         $this->csv(<<<'CSV'
-        Name,Employee Code,National ID,Tenant
-        Tariq Omar,E-003,,acme
+        Name,Employee Code,Company,Department,Tenant
+        Ali Jaafar,E-001,PROMOSEVEN,Finance,acme
+        Nadia Hassan,E-002,PROMOSEVEN,finance,acme
+        Tariq Omar,E-003,AVANA,Finance,acme
+        Sara Ali,E-004,AVANA,,acme
         CSV);
 
         $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
 
-        // Attendance must still collect for them. Only the payroll export waits.
-        $employee = Employee::withoutGlobalScopes()->firstOrFail();
-        $this->assertNull($employee->person_id);
-        $this->assertSame(0, Person::count());
+        $departments = Department::withoutGlobalScopes()->get();
+        $promoseven = $departments->firstWhere('name', 'PROMOSEVEN');
+        $avana = $departments->firstWhere('name', 'AVANA');
+
+        $this->assertNull($promoseven->parent_id);
+        $this->assertNull($avana->parent_id);
+        $this->assertCount(4, $departments);
+
+        $employees = Employee::withoutGlobalScopes()->get()->keyBy('employee_code');
+        $this->assertSame($employees['E-001']->department_id, $employees['E-002']->department_id);
+        $this->assertSame($promoseven->id, Department::withoutGlobalScopes()->find($employees['E-001']->department_id)->parent_id);
+        $this->assertSame($avana->id, Department::withoutGlobalScopes()->find($employees['E-003']->department_id)->parent_id);
+        // A company with no department places the employee on the company itself.
+        $this->assertSame($avana->id, $employees['E-004']->department_id);
+        $this->assertSame('Finance', $employees['E-001']->department);
+        $this->assertSame('AVANA', $employees['E-004']->department);
     }
 
-    public function test_a_reimport_that_omits_the_national_id_does_not_detach_the_person(): void
+    public function test_a_row_without_company_or_department_keeps_its_department(): void
     {
         $this->csv(<<<'CSV'
-        Name,Employee Code,National ID,Tenant
-        Ali Jaafar,E-001,860101123,acme
+        Name,Employee Code,Company,Tenant
+        Ali Jaafar,E-001,PROMOSEVEN,acme
         CSV);
         $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
+        $assigned = Employee::withoutGlobalScopes()->firstOrFail()->department_id;
 
-        $personId = Employee::withoutGlobalScopes()->firstOrFail()->person_id;
-        $this->assertNotNull($personId);
-
-        // A later file from HR that simply does not carry the column must not silently
-        // un-identify somebody — that would block their payroll export with no symptom.
         $this->csv(<<<'CSV'
         Name,Employee Code,Tenant
         Ali Jaafar,E-001,acme
         CSV);
         $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
 
+        $this->assertNotNull($assigned);
+        $this->assertSame($assigned, Employee::withoutGlobalScopes()->firstOrFail()->department_id);
+    }
+
+    public function test_last_name_is_imported_and_an_empty_cell_keeps_it(): void
+    {
+        $this->csv(<<<'CSV'
+        Name,Last Name,Employee Code,Tenant
+        Ali,Mohamed Jaafar,E-001,acme
+        CSV);
+        $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
+        $this->assertSame('Mohamed Jaafar', Employee::withoutGlobalScopes()->firstOrFail()->last_name);
+
+        $this->csv(<<<'CSV'
+        Name,Last Name,Employee Code,Tenant
+        Ali,,E-001,acme
+        CSV);
+        $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
+        $this->assertSame('Mohamed Jaafar', Employee::withoutGlobalScopes()->firstOrFail()->last_name);
+    }
+
+    public function test_a_national_id_column_is_ignored(): void
+    {
+        $this->csv(<<<'CSV'
+        Name,Employee Code,National ID,Tenant
+        Tariq Omar,E-003,860101123,acme
+        CSV);
+
+        $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
+
+        $employee = Employee::withoutGlobalScopes()->firstOrFail();
+        $this->assertSame('Tariq Omar', $employee->name);
+        $this->assertNull($employee->person_id);
+        $this->assertSame(0, Person::count());
+    }
+
+    public function test_a_reimport_does_not_detach_an_existing_person(): void
+    {
+        $this->csv(<<<'CSV'
+        Name,Employee Code,Tenant
+        Ali Jaafar,E-001,acme
+        CSV);
+        $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
+
+        $person = Person::create(['full_name' => 'Ali Jaafar', 'status' => Person::UNVERIFIED]);
+        Employee::withoutGlobalScopes()->firstOrFail()->forceFill(['person_id' => $person->id])->save();
+
+        $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
+
         $this->assertSame(1, Employee::withoutGlobalScopes()->count());
-        $this->assertSame($personId, Employee::withoutGlobalScopes()->firstOrFail()->person_id);
+        $this->assertSame($person->id, Employee::withoutGlobalScopes()->firstOrFail()->person_id);
     }
 
     public function test_a_dry_run_writes_nothing(): void

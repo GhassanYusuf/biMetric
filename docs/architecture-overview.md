@@ -147,6 +147,7 @@ endpoint first failed with "Too few arguments".
 | Wire it into Laravel | [integration-laravel.md](integration-laravel.md) |
 | Wire it into Node/CLI/other | [integration-other-platforms.md](integration-other-platforms.md) |
 | Call the HTTP API | [api-endpoints.md](api-endpoints.md) |
+| Integrate another system (tokens, webhooks, punch feed) | [integration-api.md](integration-api.md) |
 | Test any of it | [testing-strategy.md](testing-strategy.md) |
 | Fix something broken | [troubleshooting.md](troubleshooting.md) |
 | Know what changed and what is next | [change-log-or-roadmap.md](change-log-or-roadmap.md) |

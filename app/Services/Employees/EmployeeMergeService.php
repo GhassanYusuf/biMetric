@@ -56,6 +56,83 @@ class EmployeeMergeService
     ];
 
     /**
+     * Every column a fold is allowed to fill in on the survivor.
+     *
+     * THE POINT OF THIS LIST: nothing is lost when two records become one. The
+     * keeper keeps whatever it already holds and everything the folded records
+     * knew that it did not comes across with them. Before this list existed only
+     * six fields were inherited, so a merge silently discarded the phone number,
+     * address, job title and everything else on the losing row — and since the
+     * losing row is deleted, discarded permanently.
+     *
+     * Deliberately EXCLUDED:
+     *  - id, tenant_id: identity, never inherited.
+     *  - is_active, employee_code, name: not nullable, so there is no gap to fill.
+     *  - device_password: a credential for the terminals, not profile data.
+     *  - fingerprint_count, fingerprint_slots, enrollment_synced_at, card_number's
+     *    live twin in employee_device_maps: these are a snapshot of whichever
+     *    terminal was read last and the per-device mapping is the honest answer.
+     *    card_number IS filled, matching the six fields this replaced — the roster
+     *    column shows it and a fold that dropped it would lose a visible value.
+     */
+    public const MERGEABLE_FIELDS = [
+        'person_id',
+        'email',
+        'department',
+        'department_id',
+        'photo_path',
+        'card_number',
+        'last_name',
+        'gender',
+        'mobile_phone',
+        'hired_date',
+        'birthday',
+        'job_title',
+        'office',
+        'education',
+        'country',
+        'city',
+        'postal_code',
+        'home_phone',
+        'political_status',
+        'race',
+        'home_address',
+        'work_address',
+        'multi_card_group_id',
+        'access_valid_from',
+        'access_valid_to',
+    ];
+
+    /** Column => how it reads on screen, for the preview and the audit entry. */
+    public const FIELD_LABELS = [
+        'person_id' => 'Person ID',
+        'email' => 'Email',
+        'department' => 'Department',
+        'department_id' => 'Department',
+        'photo_path' => 'Photo',
+        'card_number' => 'Card number',
+        'last_name' => 'Last name',
+        'gender' => 'Gender',
+        'mobile_phone' => 'Mobile phone',
+        'hired_date' => 'Hired date',
+        'birthday' => 'Birthday',
+        'job_title' => 'Job title',
+        'office' => 'Office',
+        'education' => 'Education',
+        'country' => 'Country',
+        'city' => 'City',
+        'postal_code' => 'Postal code',
+        'home_phone' => 'Home phone',
+        'political_status' => 'Political status',
+        'race' => 'Race',
+        'home_address' => 'Home address',
+        'work_address' => 'Work address',
+        'multi_card_group_id' => 'Multi-card group',
+        'access_valid_from' => 'Access valid from',
+        'access_valid_to' => 'Access valid to',
+    ];
+
+    /**
      * @param  list<int>  $mergeIds
      * @return array{keep:int, merged:int, rows:array<string,int>}
      */
@@ -79,8 +156,7 @@ class EmployeeMergeService
                 // Two companies employing one human is the Person layer's job, not this
                 // one. Merging the EMPLOYMENTS would erase the fact that they hold two.
                 throw new \RuntimeException(
-                    "Refusing to merge #{$f->id} into #{$keeper->id}: they belong to different companies. "
-                    .'Link them through a shared national ID instead.'
+                    "Refusing to merge #{$f->id} into #{$keeper->id}: they belong to different companies."
                 );
             }
         }
@@ -103,7 +179,8 @@ class EmployeeMergeService
                 ->whereIn('claimed_employee_id', $mergeIds)
                 ->update(['claimed_employee_id' => $keeper->id]);
 
-            $this->inheritMissingFields($keeper, $folded);
+            $plan = $this->plan($keeper, $folded);
+            $this->applyPlan($keeper, $plan);
 
             AuditLog::create([
                 'tenant_id' => $keeper->tenant_id,
@@ -117,6 +194,12 @@ class EmployeeMergeService
                         'id' => $e->id, 'name' => $e->name, 'code' => $e->employee_code,
                     ])->all(),
                     'rows_moved' => $rows,
+                    // What came across, and what did not because the survivor
+                    // already held something different. The second list is the one
+                    // that matters: without it a differing phone number on the
+                    // folded record would vanish with no trace of ever existing.
+                    'fields_filled' => $plan['filled'],
+                    'field_conflicts' => $plan['conflicts'],
                 ],
             ]);
 
@@ -185,30 +268,119 @@ class EmployeeMergeService
     }
 
     /**
-     * Fills gaps on the keeper from the records being folded in.
+     * What a fold would change on the survivor, without changing anything.
      *
-     * Only ever fills what is NULL. A keeper that already holds a value keeps it —
-     * overwriting would mean choosing between two device snapshots with no basis, and
-     * the per-device mappings are the honest answer either way.
+     * Used by the scan screen to show the operator what a merge brings across
+     * BEFORE they commit to something that cannot be undone from inside the app.
+     *
+     * @param  list<int>  $mergeIds
+     * @return array{fill: array<string,mixed>, filled: list<array>, conflicts: list<array>}
      */
-    private function inheritMissingFields(Employee $keeper, $folded): void
+    public function preview(int $keepId, array $mergeIds): array
+    {
+        $mergeIds = array_values(array_filter($mergeIds, fn ($id) => $id !== $keepId));
+
+        if ($mergeIds === []) {
+            return ['fill' => [], 'filled' => [], 'conflicts' => []];
+        }
+
+        // Scoped lookups, so a foreign tenant's employee id cannot be named here
+        // and another company's data cannot be previewed for a merge.
+        $keeper = Employee::findOrFail($keepId);
+        $folded = Employee::whereIn('id', $mergeIds)->get();
+
+        return $this->plan($keeper, $folded);
+    }
+
+    /**
+     * Splits every mergeable column into what would be filled and what would be
+     * left alone because the survivor already holds a DIFFERENT value.
+     *
+     * @param  \Illuminate\Support\Collection<int, Employee>  $folded
+     * @return array{fill: array<string,mixed>, filled: list<array>, conflicts: list<array>}
+     */
+    private function plan(Employee $keeper, $folded): array
     {
         $fill = [];
+        $filled = [];
+        $conflicts = [];
 
-        foreach (['person_id', 'email', 'department', 'department_id', 'photo_path', 'card_number'] as $field) {
-            if ($keeper->{$field} !== null) {
+        foreach (self::MERGEABLE_FIELDS as $field) {
+            $label = self::FIELD_LABELS[$field] ?? $field;
+
+            if (! $this->missing($keeper->{$field})) {
+                /*
+                 * The survivor already has a value. Anything the folded records
+                 * hold for this column that differs is a LOSS when the rows are
+                 * deleted, so it is named rather than dropped silently. The
+                 * operator chose which record to keep, and this is the price of
+                 * that choice, stated up front.
+                 */
+                foreach ($folded as $e) {
+                    if ($this->missing($e->{$field}) || (string) $e->{$field} === (string) $keeper->{$field}) {
+                        continue;
+                    }
+
+                    $conflicts[] = [
+                        'field' => $field,
+                        'label' => $label,
+                        'keep' => $this->presentable($keeper->{$field}),
+                        'other' => $this->presentable($e->{$field}),
+                        'other_id' => $e->id,
+                        'other_name' => $e->name,
+                    ];
+                }
+
                 continue;
             }
 
-            $donor = $folded->first(fn (Employee $e) => $e->{$field} !== null);
+            $donor = $folded->first(fn (Employee $e) => ! $this->missing($e->{$field}));
 
-            if ($donor !== null) {
-                $fill[$field] = $donor->{$field};
+            if ($donor === null) {
+                continue;
             }
+
+            $fill[$field] = $donor->{$field};
+            $filled[] = [
+                'field' => $field,
+                'label' => $label,
+                'value' => $this->presentable($donor->{$field}),
+                'from_id' => $donor->id,
+                'from_name' => $donor->name,
+            ];
         }
 
-        if ($fill !== []) {
-            $keeper->forceFill($fill)->save();
+        return ['fill' => $fill, 'filled' => $filled, 'conflicts' => $conflicts];
+    }
+
+    /** Nothing to inherit where there is nothing there — an empty string counts. */
+    private function missing(mixed $value): bool
+    {
+        return $value === null || $value === '';
+    }
+
+    /**
+     * Dates come back from the model as objects; the scan screen and the audit
+     * log both want the string an operator would recognise.
+     */
+    private function presentable(mixed $value): mixed
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'yes' : 'no';
+        }
+
+        return $value;
+    }
+
+    /** @param  \Illuminate\Support\Collection<int, Employee>  $folded */
+    private function applyPlan(Employee $keeper, array $plan): void
+    {
+        if ($plan['fill'] !== []) {
+            $keeper->forceFill($plan['fill'])->save();
         }
     }
 }

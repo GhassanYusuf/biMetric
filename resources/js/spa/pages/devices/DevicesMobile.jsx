@@ -6,9 +6,9 @@ import { SyncProgressRow } from './DevicesDesktop';
 // Mobile devices: stacked cards, actions as a full-width row of large tap
 // targets rather than a cramped table.
 export default function DevicesMobile({
-    rows, busy, syncingId, syncProgress, syncStalled,
+    rows, busy, resultOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches,
 }) {
     return (
         <div className="space-y-4">
@@ -75,16 +75,16 @@ export default function DevicesMobile({
                                         {/* Same capability gate as the desktop menu — rule 5
                                             says the two presentations behave identically, and
                                             rule 9 says an impossible action is hidden. */}
-                                        <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'test-connection'} onClick={() => onTest(d)}>
+                                        <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'test-connection'} result={resultOf(`${d.id}:test-connection`)} onClick={() => onTest(d)}>
                                             Test
                                         </Button>
                                         {can(d, 'attendance.read') && (
-                                            <Button variant="soft" className="px-1 text-xs" disabled={!!running} loading={running === 'sync-attendance'} onClick={() => onSync(d)}>
+                                            <Button variant="soft" className="px-1 text-xs" disabled={!!running} loading={running === 'sync-attendance'} result={resultOf(`${d.id}:sync-attendance`)} onClick={() => onSync(d)}>
                                                 Sync
                                             </Button>
                                         )}
                                         {can(d, 'user.read') && (
-                                            <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'import-employees'} onClick={() => onImport(d)}>
+                                            <Button variant="secondary" className="px-1 text-xs" disabled={!!running} loading={running === 'import-employees'} result={resultOf(`${d.id}:import-employees`)} onClick={() => onImport(d)}>
                                                 Import
                                             </Button>
                                         )}
@@ -94,7 +94,7 @@ export default function DevicesMobile({
                                           | uses, and the label does not survive truncation.
                                         */}
                                         {can(d, 'attendance.read') && (
-                                            <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'full-resync'} onClick={() => onFullResync(d)}>
+                                            <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'full-resync'} result={resultOf(`${d.id}:full-resync`)} onClick={() => onFullResync(d)}>
                                                 Full re-read
                                             </Button>
                                         )}
@@ -102,14 +102,20 @@ export default function DevicesMobile({
                                             menu item — rule 5 says the two presentations behave
                                             identically, and the dialog it opens is one file. */}
                                         {can(d, 'attendance.read') && (
-                                            <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'range-read'} onClick={() => onRangeSync(d)}>
+                                            <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'range-read'} result={resultOf(`${d.id}:range-read`)} onClick={() => onRangeSync(d)}>
                                                 Read a date range…
                                             </Button>
                                         )}
                                         {/* Same gate and same words as the desktop menu item
                                             — rule 5, and rule 9 for when it appears at all. */}
+                                        {/* Same gate and words as the desktop menu item (rules 5 and 9). */}
+                                        {canUpdate && can(d, 'attendance.clear') && (
+                                            <Button variant="secondary" className="col-span-3 text-xs text-rose-600" disabled={!!running} loading={running === 'clear-attendance'} result={resultOf(`${d.id}:clear-attendance`)} onClick={() => onClearPunches(d)}>
+                                                Clear punches from terminal…
+                                            </Button>
+                                        )}
                                         {canUpdate && !d.is_writable && (d.unclaimed_roster_entries ?? 0) === 0 && d.is_active && (
-                                            <Button className="col-span-3 text-xs" disabled={!!running} loading={running === 'adopt'} onClick={() => onAdopt(d)}>
+                                            <Button className="col-span-3 text-xs" disabled={!!running} loading={running === 'adopt'} result={resultOf(`${d.id}:adopt`)} onClick={() => onAdopt(d)}>
                                                 Allow writes
                                             </Button>
                                         )}

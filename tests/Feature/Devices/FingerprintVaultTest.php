@@ -127,16 +127,21 @@ class FingerprintVaultTest extends TestCase
         $this->assertStringNotContainsString('SECRET', json_encode($audit->changes));
     }
 
-    public function test_a_finger_gone_from_a_decoded_table_is_dropped_but_a_failed_read_keeps_everything(): void
+    /*
+     * Owner's rule, 2026-10-11: the system's copy outlives the terminal's. It used to
+     * be dropped when the finger left the terminal — which is the one moment it is
+     * needed (Akram, removed from IT Room and re-added with nothing to put back).
+     */
+    public function test_a_finger_gone_from_the_terminal_keeps_its_stored_copy(): void
     {
         $vault = app(FingerprintVault::class);
         $this->driver->templates = [$this->rec('501', 5, 'A'), $this->rec('501', 6, 'B')];
         $vault->captureDevice($this->f18);
 
-        // The table decoded and slot 6 is no longer there: a real removal.
+        // The table decoded and slot 6 is no longer there: the copy stays.
         $this->driver->templates = [$this->rec('501', 5, 'A')];
-        $this->assertSame(1, $vault->captureDevice($this->f18)['dropped']);
-        $this->assertSame([5], $vault->storedSlots($this->employee->id));
+        $this->assertSame(0, $vault->captureDevice($this->f18)['dropped']);
+        $this->assertSame([5, 6], $vault->storedSlots($this->employee->id));
 
         // Unsupported / failed read: nothing captured, nothing deleted.
         $this->driver->templatesUnsupported = true;
@@ -144,7 +149,7 @@ class FingerprintVaultTest extends TestCase
             $vault->captureDevice($this->f18);
         } catch (\Throwable) {
         }
-        $this->assertSame([5], $vault->storedSlots($this->employee->id));
+        $this->assertSame([5, 6], $vault->storedSlots($this->employee->id));
     }
 
     public function test_a_re_enrolled_finger_is_refreshed_and_copies_per_terminal_stay_apart(): void

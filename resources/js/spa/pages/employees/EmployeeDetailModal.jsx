@@ -6,6 +6,8 @@ import { CardIcon, syncedAgo } from './enrollmentCells';
 import { useEscapeKey } from '../../shared/useEscapeKey';
 import { useConfirm } from '../../shared/confirm';
 import { useToast } from '../../shared/toast';
+import { useActionResult } from '../../shared/useActionResult';
+import { EmploymentBadges, orgOf } from './employeeLabels';
 
 /*
 | What the terminal holds for one employee: which finger slots have a template,
@@ -42,7 +44,9 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
     const [deviceId, setDeviceId] = useState(eligible[0]?.id ?? '');
     const [reading, setReading] = useState(false);
     const [deletingSlot, setDeletingSlot] = useState(null);
-    const [busy, setBusy] = useState(null); // 'push' | 'remove' | 'card'
+    const [busy, setBusy] = useState(null); // 'push' | 'remove' | 'card' | 'privilege-admin' | 'privilege-user'
+    // The outcome on the button that was pressed (2026-10-18), alongside the toast.
+    const { flash, resultOf } = useActionResult();
     // Only set once a device read has happened in this dialog; otherwise the
     // stored columns are the source of truth.
     const [live, setLive] = useState(null);
@@ -58,10 +62,12 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
         try {
             const res = await api.get(`/employees/${employee.id}/devices/${deviceId}/enrollment`);
             setLive(res.data);
+            flash('read', 'success');
             // The read was persisted server-side; pull the roster back in step.
             onRefreshed?.();
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : 'Could not read from the terminal.');
+            flash('read', 'error');
         } finally {
             setReading(false);
         }
@@ -81,10 +87,12 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
         try {
             const res = await api.post(`/employees/${employee.id}/devices/${deviceId}/push`);
             toast.success(res.message);
+            flash('push', 'success');
             onRefreshed?.();
             await readFromDevice(); // now we can state on_device for certain
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : 'Could not add them to the terminal.');
+            flash('push', 'error');
         } finally {
             setBusy(null);
         }
@@ -124,9 +132,11 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
             // enrollment that no longer exists.
             setLive({ on_device: false, fingerprint_slots: null, fingerprint_count: null, card_number: null, card_count: 0 });
             toast.success(res.message);
+            flash('remove', 'success');
             onRefreshed?.();
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : 'Could not remove them from the terminal.');
+            flash('remove', 'error');
         } finally {
             setBusy(null);
         }
@@ -159,6 +169,7 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
             onRefreshed?.();
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : 'Could not remove the card.');
+            flash('card', 'error');
         } finally {
             setBusy(null);
         }
@@ -192,8 +203,47 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
             onRefreshed?.();
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : 'Could not delete that fingerprint.');
+            flash(`slot-${slot}`, 'error');
         } finally {
             setDeletingSlot(null);
+        }
+    }
+
+    /**
+     * Administrator (may open the terminal's menu) or normal user, on THIS terminal
+     * only (2026-10-18). The server reads the record back and stores only a
+     * confirmed value, so what is shown afterwards is what the terminal holds.
+     */
+    async function setPrivilege(admin) {
+        if (!deviceId || busy) return;
+
+        const ok = await confirm({
+            title: admin
+                ? `Make ${employee.name} an administrator on ${device?.name ?? 'the terminal'}?`
+                : `Make ${employee.name} a normal user on ${device?.name ?? 'the terminal'}?`,
+            body: [
+                admin
+                    ? 'An administrator can open the terminal menu: add and delete users, change settings and erase data at the device itself.'
+                    : 'They will no longer be able to open the terminal menu. Their punches, card and fingerprints are not affected.',
+                ...(privilegeProven ? [] : ['This has not yet been run on this model of terminal. The change is read back from the terminal before it is shown as done.']),
+            ],
+            confirmLabel: admin ? 'Make administrator' : 'Make normal user',
+        });
+        if (!ok) return;
+
+        const key = admin ? 'privilege-admin' : 'privilege-user';
+        setBusy(key);
+        try {
+            const res = await api.put(`/employees/${employee.id}/devices/${deviceId}/privilege`, { admin });
+            setLive({ ...(live ?? {}), on_device: true, device_privilege: res.data.device_privilege });
+            toast.success(res.message);
+            flash(key, 'success');
+            onRefreshed?.();
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : 'Could not change their access on the terminal.');
+            flash(key, 'error');
+        } finally {
+            setBusy(null);
         }
     }
 
@@ -241,6 +291,15 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
     const cardIsMarker = rawCard === CARD_EMPTY_MARKER;
     const cardNumber = cardIsMarker ? null : rawCard;
     const neverRead = !live && stored.syncedAt == null;
+    /*
+     * Privilege on this terminal: 0 normal user, above 0 may open its menu. Null =
+     * never read — shown as such, never as "normal user" (rule 10). Offered only where
+     * the model can change it (rule 9) and only for someone the terminal holds.
+     */
+    const privilege = live && 'device_privilege' in live ? live.device_privilege : (mine?.device_privilege ?? null);
+    const privilegeCap = device?.capabilities?.['user.privilege'];
+    const privilegeProven = privilegeCap?.confirmed === true;
+    const canChangePrivilege = canEnroll && privilegeCap?.usable === true && live?.on_device !== false && !!mine;
     // Freshness is this terminal's read, not the roster's newest across all of them.
     const freshness = live ? 'just now' : syncedAgo([{ enrollment_synced_at: stored.syncedAt }]);
 
@@ -266,13 +325,17 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                             </h2>
                             <p className="mt-0.5 text-sm text-slate-500">
                                 <span className="font-mono text-xs">{employee.employee_code}</span>
-                                {employee.department ? ` · ${employee.department}` : ''}
+                                {[orgOf(employee).company, orgOf(employee).department].filter(Boolean).map((part) => ` · ${part}`).join('')}
+                                {employee.job_title ? ` · ${employee.job_title}` : ''}
                                 {employee.attendance_logs_count != null
                                     ? ` · ${employee.attendance_logs_count.toLocaleString()} punches`
                                     : ''}
                             </p>
                         </div>
-                        {!employee.is_active && <Badge tone="amber">Inactive</Badge>}
+                        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                            <EmploymentBadges employee={employee} />
+                            {!employee.is_active && !employee.resigned_at && <Badge tone="amber">Inactive</Badge>}
+                        </div>
                     </div>
 
                     {live?.on_device === false && (
@@ -382,6 +445,7 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                                         variant="ghost"
                                                         className="ml-auto min-h-[30px] px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                                                         loading={deletingSlot === slot}
+                                                        result={resultOf(`slot-${slot}`)}
                                                         disabled={deletingSlot != null || !!busy}
                                                         onClick={() => deleteSlot(slot)}
                                                     >
@@ -424,6 +488,7 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                                 variant="ghost"
                                                 className="min-h-[38px] px-2.5 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                                                 loading={busy === 'card'}
+                                                result={resultOf('card')}
                                                 disabled={!!busy || reading}
                                                 onClick={deleteCard}
                                             >
@@ -486,6 +551,7 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                         variant={live?.on_device === true ? 'secondary' : 'primary'}
                                         disabled={!!busy || reading}
                                         loading={busy === 'push'}
+                                        result={resultOf('push')}
                                         onClick={pushToDevice}
                                         title="Writes their name and code to the terminal, keeping card, privilege and fingerprints"
                                     >
@@ -498,11 +564,54 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                         variant="danger"
                                         disabled={!!busy || reading || live?.on_device === false}
                                         loading={busy === 'remove'}
+                                        result={resultOf('remove')}
                                         onClick={removeFromDevice}
                                         title="Deletes their record, fingerprints and card from the terminal"
                                     >
                                         {busy === 'remove' ? 'Removing…' : 'Remove from terminal'}
                                     </Button>
+                                </div>
+                            )}
+
+                            {canChangePrivilege && (
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                                    <div className="min-w-0 text-sm">
+                                        <span className="font-medium text-slate-800">Terminal access: </span>
+                                        <span className="text-slate-600">
+                                            {privilege == null ? 'not read yet' : privilege > 0 ? 'Administrator' : 'Normal user'}
+                                        </span>
+                                        {!privilegeProven && (
+                                            <span className="ml-1.5 text-xs text-amber-700">(unproven on this model)</span>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {/* The way to the OTHER level, never a no-op button — except when
+                                            it has never been read, where both are offered. */}
+                                        {privilege !== 0 && (
+                                            <Button
+                                                variant="secondary"
+                                                className="min-h-[34px] px-3 text-xs"
+                                                disabled={!!busy || reading}
+                                                loading={busy === 'privilege-user'}
+                                                result={resultOf('privilege-user')}
+                                                onClick={() => setPrivilege(false)}
+                                            >
+                                                Make normal user
+                                            </Button>
+                                        )}
+                                        {!(privilege > 0) && (
+                                            <Button
+                                                variant="secondary"
+                                                className="min-h-[34px] px-3 text-xs"
+                                                disabled={!!busy || reading}
+                                                loading={busy === 'privilege-admin'}
+                                                result={resultOf('privilege-admin')}
+                                                onClick={() => setPrivilege(true)}
+                                            >
+                                                Make administrator
+                                            </Button>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -517,6 +626,7 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                                     className="min-h-[32px] px-2.5 text-xs"
                                     disabled={!!busy}
                                     loading={reading}
+                                    result={resultOf('read')}
                                     onClick={readFromDevice}
                                 >
                                     {reading ? 'Reading terminal…' : 'Read from device'}

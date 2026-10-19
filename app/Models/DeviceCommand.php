@@ -39,6 +39,18 @@ class DeviceCommand extends Model
     public const SYNC_TIME = 'sync_time';
     public const RECONCILE_USERS = 'reconcile_users';
 
+    // "Rebuild from system" (2026-10-11, DeviceRebuildService): backup + plan + fan-out,
+    // then one command per person to change and per unlinked record to remove.
+    public const REBUILD_DEVICE = 'rebuild_device';
+
+    public const REBUILD_PERSON = 'rebuild_person';
+
+    public const REBUILD_REMOVE = 'rebuild_remove';
+
+    // Erase the terminal's punch log after storing every punch (AttendanceClearService,
+    // 2026-10-18). Users, cards and fingerprints stay.
+    public const CLEAR_ATTENDANCE = 'clear_attendance';
+
     protected $fillable = [
         'tenant_id', 'device_id', 'command', 'payload', 'status',
         'attempts', 'max_attempts', 'available_at', 'started_at', 'finished_at',

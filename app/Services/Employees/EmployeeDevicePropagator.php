@@ -71,7 +71,7 @@ class EmployeeDevicePropagator
      * a half-done push (new name, old ID) is harder to reason about than none.
      *
      * @param  Collection<int, Device>|iterable<Device>  $devices
-     * @return array{written:list<array{device_id:int,device_name:string,pin:string,message:string}>, skipped:list<array{device_id:int,device_name:string,reason:string}>, failed:list<array{device_id:int,device_name:string,error:string}>}
+     * @return array{written:list<array{device_id:int,device_name:string,pin:string,message:string,restored:list<string>}>, skipped:list<array{device_id:int,device_name:string,reason:string}>, failed:list<array{device_id:int,device_name:string,error:string}>}
      */
     public function push(Employee $employee, iterable $devices, bool $toEmployeeCode = false): array
     {
@@ -119,6 +119,8 @@ class EmployeeDevicePropagator
                 $code = (string) $employee->employee_code;
                 $wantCode = $toEmployeeCode && preg_match('/^\d{1,9}$/', $code) === 1;
                 $notes = [];
+                // Set when the terminal ends up under an ID other than the code asked for.
+                $idProblem = null;
 
                 if ($this->identity->activeMap($device, $employee) === null && $wantCode) {
                     try {
@@ -138,11 +140,30 @@ class EmployeeDevicePropagator
                      * asked for both, and refusing the half that works helps nobody.
                      * Stale browser tabs still send this flag, which is how it came up.
                      */
+                    /*
+                     * Each model moves a user ID by ITS OWN method (CLAUDE.md rule 21,
+                     * docs/device-models.md): in place where the model can (C3 panels),
+                     * otherwise by re-adding the person with their card and fingers put
+                     * back (the F18, which refuses an in-place move). The re-add refuses
+                     * BEFORE deleting anything if this model cannot put back what they have.
+                     */
                     if ($device->canRenumberUsers()) {
                         $notes[] = $this->users->renumberEmployee($device, $employee, $code)['message'];
                         $map = $this->identity->activeMap($device, $employee);
+                    } elseif ($device->canMoveUsersByReadding()) {
+                        $moved = $this->users->moveByReadding($device, $employee, $code);
+                        $notes[] = $moved['message'];
+                        $movedRestored = $moved['restored'];
+                        $map = $this->identity->activeMap($device, $employee);
                     } else {
-                        $notes[] = "User ID kept at {$map->device_user_id}: {$device->name} cannot change a user ID.";
+                        /*
+                         * NOT a success (owner, 2026-10-11, casebook DC-014): every save
+                         * must leave the employee code on every terminal. The name is still
+                         * written, but the terminal is reported as FAILED so the result
+                         * row is red and offers Retry, instead of a green row with a note
+                         * nobody reads.
+                         */
+                        $idProblem = "the user ID is still {$map->device_user_id}, not {$code}: {$device->name} cannot change a user ID from this app yet.";
                     }
                 }
 
@@ -151,8 +172,12 @@ class EmployeeDevicePropagator
                  * not_implemented) can still have had the ID moved above. Report that,
                  * rather than failing the terminal on the name write it cannot take.
                  */
+                $restored = $movedRestored ?? [];
+                unset($movedRestored);
                 if ($device->canWriteUsers()) {
-                    $notes[] = $this->users->pushEmployee($device, $employee)['message'];
+                    $pushed = $this->users->pushEmployee($device, $employee);
+                    $notes[] = $pushed['message'];
+                    $restored = array_merge($restored, $pushed['restored'] ?? []);
                 } elseif ($notes === []) {
                     // Nothing to move and names cannot be written here: a skip, not a failure.
                     $skipped[] = [
@@ -166,11 +191,23 @@ class EmployeeDevicePropagator
                     $notes[] = 'Name not written: this panel\'s names are managed in ZKAccess.';
                 }
 
+                if ($idProblem !== null) {
+                    $failed[] = [
+                        'device_id' => $device->id,
+                        'device_name' => $device->name,
+                        'error' => 'Name written, but '.$idProblem,
+                    ];
+
+                    continue;
+                }
+
                 $written[] = [
                     'device_id' => $device->id,
                     'device_name' => $device->name,
                     'pin' => $map->device_user_id,
                     'message' => implode(' ', $notes),
+                    // Card / fingerprints written back from the system's copy (2026-10-11).
+                    'restored' => $restored,
                 ];
             } catch (\Throwable $e) {
                 /*
@@ -183,6 +220,10 @@ class EmployeeDevicePropagator
                     'device_id' => $device->id,
                     'device_name' => $device->name,
                     'error' => $e->getMessage(),
+                    // What the operator can press to resolve it, when there is such a
+                    // thing (2026-10-11): free a number held by an unlinked record, or
+                    // test fingerprint writing on a model that never did it.
+                    'action' => method_exists($e, 'action') ? $e->action() : null,
                 ];
             }
         }

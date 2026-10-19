@@ -3,9 +3,17 @@
 namespace App\Services\Devices;
 
 use Illuminate\Support\Facades\Log;
+use App\Services\Employees\FingerprintPusher;
 use App\Services\Employees\FingerprintVault;
 use App\Contracts\BiometricDeviceDriver;
+use App\Exceptions\FingerprintWriteUnprovenException;
+use App\Exceptions\PinInUseException;
 use App\Models\AccessCard;
+use App\Models\AttendanceLog;
+use App\Models\AuditLog;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Storage;
 use App\Models\BiometricTemplate;
 use App\Models\Device;
 use App\Models\DeviceRosterEntry;
@@ -13,6 +21,7 @@ use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
 use Illuminate\Support\Facades\DB;
 use Promoseven\Biometric\Capability\Capability;
+use Promoseven\Biometric\Exception\VerificationException;
 use Promoseven\Biometric\Value\DeviceUser;
 
 /**
@@ -92,10 +101,39 @@ class DeviceUserSyncService
             $this->recordCard($device, $employeeId, $user);
             $this->recordTemplates($device, $employeeId, $user);
 
+            // Rule 19: a card only the terminal knew about goes on the employee record
+            // too. Never overwrites a card the record already has — that is the
+            // system's own record, and per-terminal cards stay in access_cards.
+            if ($user->hasCard() && ! $user->cardLooksLikeSentinel()) {
+                // Through the model so the change is audited.
+                Employee::query()->whereKey($employeeId)->whereNull('card_number')->first()
+                    ?->update(['card_number' => $user->cardNumber]);
+            }
+
+            $this->capturePassword($device, $employeeId, $user);
+
             $matched++;
         }
 
         $this->markMissingOnDevice($device, $deviceUsers);
+
+        /*
+         * Everyone's fingers into the system on every roster read (2026-10-11), not
+         * only when somebody opens a person and presses "read": the copy has to exist
+         * BEFORE the day a terminal loses the finger. Same best-effort rule as
+         * readEnrollment() — only when the table decoded, and a failure here never
+         * fails the roster read.
+         */
+        $copies = null;
+        if ($fingerprintsKnown && $capabilities->supports(Capability::TEMPLATE_BLOB_READ)) {
+            try {
+                $copies = app(FingerprintVault::class)->capture($device, $this->driver->readTemplates($device));
+            } catch (\Throwable $e) {
+                Log::channel('device')->warning('Fingerprint copies not refreshed after the roster read.', [
+                    'device_id' => $device->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         $message = sprintf(
             'Read %d record(s) from %s: %d mapped to employees%s%s.',
@@ -115,6 +153,7 @@ class DeviceUserSyncService
                 'matched' => $matched,
                 'unmatched' => $unmatched,
                 'fingerprints_known' => $fingerprintsKnown,
+                'fingerprint_copies' => $copies,
             ],
         ];
     }
@@ -195,10 +234,17 @@ class DeviceUserSyncService
         $slots = $canReadTemplates ? $match->fingerSlots : null;
         $cardNumber = $match->hasCard() ? $match->cardNumber : null;
 
-        $attributes = [
-            'card_number' => $cardNumber,
-            'enrollment_synced_at' => now(),
-        ];
+        /*
+         * The employee's card is the SYSTEM's record of it, so a terminal that holds no
+         * card does not erase it — only a card the terminal does hold replaces it. On
+         * 2026-10-11 Akram was re-added to IT Room without his card, and this read
+         * wiped card 7553651 from his record as well. The per-terminal row below still
+         * says exactly what this terminal holds.
+         */
+        $attributes = ['enrollment_synced_at' => now()];
+        if ($cardNumber !== null) {
+            $attributes['card_number'] = $cardNumber;
+        }
 
         if ($slots !== null) {
             $attributes['fingerprint_slots'] = $slots;
@@ -213,7 +259,9 @@ class DeviceUserSyncService
          * "Read from device" changes nothing on screen. Same rule as above: slots only
          * when they decoded.
          */
-        $mapAttributes = ['card_number' => $cardNumber, 'synced_at' => now()];
+        // The privilege as the terminal holds it (2026-10-18) — what the admin / normal
+        // user control on the dialog shows.
+        $mapAttributes = ['card_number' => $cardNumber, 'device_privilege' => $match->privilege, 'synced_at' => now()];
         if ($slots !== null) {
             $mapAttributes['fingerprint_slots'] = $slots;
         }
@@ -244,6 +292,7 @@ class DeviceUserSyncService
             // The device's user record holds exactly one card field, so this is
             // structurally 0 or 1 — not a limit this application imposes.
             'card_count' => $cardNumber === null ? 0 : 1,
+            'device_privilege' => $match->privilege,
             'stored' => $stored,
             'synced_at' => $employee->fresh()->enrollment_synced_at?->toIso8601String(),
         ];
@@ -405,8 +454,7 @@ class DeviceUserSyncService
         }
 
         return [
-            'message' => "Imported {$created} device user(s) from {$device->name} as new employees. "
-                .'Each needs a national id before payroll can export their attendance.',
+            'message' => "Imported {$created} device user(s) from {$device->name} as new employees.",
             'raw' => ['created' => $created, 'device_id' => $device->id],
         ];
     }
@@ -468,14 +516,134 @@ class DeviceUserSyncService
             $pin,
             $employee->name,
             $this->identity->slotGuard($device, $employee, $pin),
+            privilege: $this->privilegeToRestore($device, $employee),
+            password: $this->passwordToWrite($device, $employee),
         );
 
         $this->upsertMap($device, $employee->id, $user);
 
+        $notes = $this->restoreCredentials($device, $employee, $user);
+
         return [
-            'message' => "{$employee->name} written to {$device->name} as PIN {$pin} (uid {$user->uid}).",
+            'message' => trim("{$employee->name} written to {$device->name} as PIN {$pin} (uid {$user->uid}). ".implode(' ', $notes)),
             'raw' => $user->toArray(),
+            // What was put back from the system's copy, sentence per credential.
+            'restored' => $notes,
         ];
+    }
+
+    /**
+     * The keypad password a push writes (2026-10-12, owner: "push the passwords to the
+     * terminals too"). Null means "keep what the terminal has" — never "clear it".
+     *
+     * HELD BACK until the model's `password.write` is CONFIRMED, i.e. until a write has
+     * been read back on that model with a test user (rule 16, rule 21). Until then a
+     * push keeps the terminal's password instead of erasing it, which is what library
+     * releases before 2.13.0 did on every standalone write.
+     *
+     * A password cleared in this system is not cleared on the terminal: the column
+     * cannot tell "never set" from "removed". Recorded as a known gap.
+     */
+    private function passwordToWrite(Device $device, Employee $employee): ?string
+    {
+        $password = (string) ($employee->device_password ?? '');
+
+        if ($password === '' || $this->driver->capabilities($device)->level(Capability::PASSWORD_WRITE) !== Capability::CONFIRMED) {
+            return null;
+        }
+
+        return $password;
+    }
+
+    /**
+     * Rule 19 for the keypad password: a password only the terminal knew goes on the
+     * employee record, so it can be put back after a removal. Never overwrites one the
+     * record already has — that is the system's own, and a push will write it.
+     * Only what the record can hold is taken (1 to 8 digits, the form's rule); the read
+     * must be one the model's `password.read` vouches for.
+     */
+    private function capturePassword(Device $device, int $employeeId, DeviceUser $user): void
+    {
+        $password = $user->password;
+
+        if ($password === null || ! preg_match('/^\d{1,8}$/', $password)
+            || ! $this->driver->capabilities($device)->supports(Capability::PASSWORD_READ)) {
+            return;
+        }
+
+        $employee = Employee::query()->whereKey($employeeId)->first();
+        if ($employee !== null && (string) ($employee->device_password ?? '') === '') {
+            // Through the model so it is audited (the value itself is redacted).
+            $employee->update(['device_password' => $password]);
+        }
+    }
+
+    /**
+     * The terminal privilege (admin = 14 on the ZKTeco family) to put back when this
+     * person's record on $device is being CREATED again — their live mapping has never
+     * been seen on the terminal, and an earlier mapping there recorded one. Null keeps
+     * whatever the terminal has. Rule 19: Ali is an admin on IT ROOM and On The Road
+     * (2026-10-11); re-adding him as a normal user would demote him silently.
+     */
+    private function privilegeToRestore(Device $device, Employee $employee): ?int
+    {
+        $live = $this->identity->activeMap($device, $employee);
+        if ($live === null || $live->device_uid !== null) {
+            return null;
+        }
+
+        $previous = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->where('employee_id', $employee->id)
+            ->whereNotNull('valid_to')
+            // Their own previous record decides; a merged duplicate's privilege counts
+            // only when it is the only record they had here (Good Wheels' "ali-it").
+            ->orderByRaw("case when closed_reason like 'Duplicate record%' then 1 else 0 end")
+            ->orderByDesc('valid_to')
+            ->orderByDesc('id')
+            ->value('device_privilege');
+
+        return $previous !== null && (int) $previous > 0 ? (int) $previous : null;
+    }
+
+    /**
+     * Puts the system's copy of their card and fingerprints onto the record just
+     * written, where the terminal lacks them (owner's rule, 2026-10-11: "read the
+     * fingerprint, store it in the webapp, and whenever needed write it to a device
+     * using each device's own method"). Akram was removed from IT Room and added
+     * back with no finger and no card — the copy existed and nothing wrote it.
+     *
+     * Every path that adds a person to a terminal — the push dialog, the single-device
+     * push and the queued PUSH_USER — comes through pushEmployee(), so this is here
+     * rather than in one of them.
+     *
+     * BEST EFFORT, AND SAID SO. The person is on the terminal already; a card or a
+     * finger that could not be written is a sentence in the result, not a failed push.
+     * Both writes are add-only and verified on read-back by the services they call
+     * (rule 10): an existing card or finger on the terminal is never replaced.
+     *
+     * @return list<string>
+     */
+    private function restoreCredentials(Device $device, Employee $employee, DeviceUser $user): array
+    {
+        $notes = [];
+
+        $card = (int) ($this->cardToRestore($device, $employee) ?? 0);
+        if ($card > 0 && ! $user->hasCard() && $this->driver->capabilities($device)->supports(Capability::CARD_WRITE)) {
+            try {
+                app(EnrollmentOrchestratorService::class)->assignCard($device, $employee, $card);
+                $notes[] = "Card #{$card} written.";
+            } catch (\Throwable $e) {
+                $notes[] = "Card #{$card} not written: {$e->getMessage()}";
+            }
+        }
+
+        $fingers = app(FingerprintPusher::class)->restoreOnto($employee, $device);
+        if ($fingers !== null) {
+            $notes[] = $fingers;
+        }
+
+        return $notes;
     }
 
     /**
@@ -510,9 +678,38 @@ class DeviceUserSyncService
 
         $user = $this->driver->renumberUser($device, $oldPin, $newPin);
 
+        /*
+         * The driver can find the person already on the requested ID — a C3 stores
+         * 041112750 as 41112750, so the two name one Pin there (2026-10-11). Nothing
+         * moved, so nothing is re-recorded: closing and reopening the same mapping on
+         * every save would only bury the real history.
+         */
+        if ($user->userId === $oldPin) {
+            return [
+                'message' => "{$employee->name} is already user ID {$oldPin} on {$device->name}.",
+                'from' => $oldPin,
+                'to' => $oldPin,
+            ];
+        }
+
         DB::transaction(function () use ($device, $employee, $oldPin, $user) {
             $previous = $this->identity->activeMap($device, $employee);
             $previous?->close("Renumbered to {$user->userId}");
+
+            /*
+             * A leftover entry already at the new number, claimed by this same person
+             * (assertPinFreeFor() refused anybody else's), is an older sighting of them
+             * there. It makes way: the unique (device, PIN) index otherwise fails this
+             * transaction AFTER the hardware has moved — which is what happened to
+             * Ghassan on Entrance and Glass Door, 2026-10-11, leaving our records
+             * behind the panels.
+             */
+            DeviceRosterEntry::query()
+                ->where('device_id', $device->id)
+                ->where('device_user_id', $user->userId)
+                ->where('device_user_id', '!=', $oldPin)
+                ->where('claimed_employee_id', $employee->id)
+                ->delete();
 
             // The roster mirrors the device, and on the device it is the same record
             // (same uid) under a new number — so the entry moves with it.
@@ -542,6 +739,318 @@ class DeviceUserSyncService
     }
 
     /**
+     * Moves a person to a new user ID on a model that cannot change one in place, by
+     * re-adding them (2026-10-11, owner: "every save must put the employee code on
+     * every terminal"; casebook DC-014, CLAUDE.md rule 21). The F18's method: it
+     * answers ACK_ERROR to an in-place move (DC-006).
+     *
+     *   1. Refuse BEFORE anything is deleted if the new ID is someone else's, or if
+     *      this model cannot put back what the person has here — fingers without
+     *      template.upload, a card without card.write.
+     *   2. removeEmployee(): card and fingers saved to the system first (rule 19),
+     *      or nothing is deleted.
+     *   3. Claim the new ID, pushEmployee(): name written, card and fingers restored.
+     *   4. Read the terminal back: the person must be at the new ID with the same card
+     *      and at least the fingers they had. Anything missing is an exception naming
+     *      it; the system copies are kept, so "Push fingerprints" / Retry can finish it.
+     *
+     * @return array{message:string, restored:list<string>}
+     */
+    public function moveByReadding(Device $device, Employee $employee, string $newPin): array
+    {
+        $device->assertWritable();
+        $capabilities = $this->driver->capabilities($device);
+        $capabilities->require(Capability::USER_DELETE);
+        $capabilities->require(Capability::USER_WRITE);
+
+        $map = $this->identity->activeMap($device, $employee);
+        if ($map === null) {
+            throw new \DomainException("{$employee->name} is not on {$device->name}.");
+        }
+        $oldPin = (string) $map->device_user_id;
+        if ($oldPin === $newPin) {
+            return ['message' => "{$employee->name} is already user ID {$newPin} on {$device->name}.", 'restored' => []];
+        }
+
+        $this->identity->assertPinFreeFor($device, $employee, $newPin);
+
+        // What they hold on THIS terminal now, read from the terminal itself.
+        $before = null;
+        foreach ($this->driver->readUsers($device, $capabilities->supports(Capability::TEMPLATE_TABLE_READ)) as $u) {
+            if ($u->userId === $oldPin) {
+                $before = $u;
+            }
+        }
+        if ($before === null) {
+            throw new \DomainException("{$employee->name} (user ID {$oldPin}) was not found on {$device->name}; read the terminal's users first.");
+        }
+        if ($before->fingerSlots === null) {
+            throw new \DomainException("{$device->name}'s fingerprint table would not decode, so {$employee->name}'s fingers could not be checked after a move. Nothing was changed.");
+        }
+        if ($before->fingerSlots !== [] && ! $capabilities->supports(Capability::TEMPLATE_UPLOAD)) {
+            $message = "{$device->name} ({$device->model}) cannot take fingerprints from this app yet, so moving {$employee->name} would lose their fingerprints there. Nothing was changed.";
+            // Never tried on this model: the terminal's fingerprint-write test can prove it.
+            throw $capabilities->level(Capability::TEMPLATE_UPLOAD) === Capability::UNKNOWN
+                ? new FingerprintWriteUnprovenException($message)
+                : new \DomainException($message);
+        }
+        $card = $before->hasCard() && ! $before->cardLooksLikeSentinel() ? $before->cardNumber : null;
+        if ($card !== null && ! $capabilities->supports(Capability::CARD_WRITE)) {
+            throw new \DomainException("{$device->name} ({$device->model}) cannot take a card number from this app, so moving {$employee->name} would lose card #{$card} there. Nothing was changed.");
+        }
+
+        $this->removeEmployee($device, $employee);
+        $this->identity->claim($device, $employee->fresh(), $newPin);
+        $pushed = $this->pushEmployee($device, $employee->fresh());
+
+        $after = null;
+        foreach ($this->driver->readUsers($device, true) as $u) {
+            if ($u->userId === $newPin) {
+                $after = $u;
+            }
+        }
+        $missing = [];
+        if ($after === null) {
+            $missing[] = "no record under {$newPin}";
+        } else {
+            if ($card !== null && $after->cardNumber !== $card) {
+                $missing[] = "card #{$card}";
+            }
+            $lost = array_diff($before->fingerSlots, $after->fingerSlots ?? []);
+            if ($lost !== []) {
+                $missing[] = 'finger(s) '.implode(', ', $lost);
+            }
+        }
+        if ($missing !== []) {
+            throw new \RuntimeException("{$employee->name} was moved from {$oldPin} to {$newPin} on {$device->name}, but the read-back is missing: ".implode('; ', $missing).'. Their copies are kept in the system — press Retry or "Push fingerprints".');
+        }
+
+        return [
+            'message' => "{$employee->name} moved from user ID {$oldPin} to {$newPin} on {$device->name} by re-adding them; card and ".count($before->fingerSlots).' finger(s) read back.',
+            'restored' => $pushed['restored'] ?? [],
+        ];
+    }
+
+    /**
+     * Frees a user ID held on a terminal by a record NO employee is linked to — a
+     * leftover test record, say — and gives the number to $giveTo. The operator's
+     * button on a red "already in use" push row (2026-10-11; casebook DC-014: "ali-it"
+     * held Ali's code on IT ROOM).
+     *
+     * Rule 19 applies to records nobody claimed too: the record and every fingerprint
+     * on it are read off the terminal and kept, encrypted, in
+     * storage/app/private/removed-records/ BEFORE the delete — or nothing is deleted.
+     * Then the delete, a read-back, and the roster entry becomes $giveTo's claim.
+     * Punches already recorded under the number are left exactly as they are.
+     *
+     * Refused when any employee was ever mapped to the number on this terminal: a real
+     * person's number is never handed to another (PinInUseException::$releasable).
+     *
+     * $samePerson (owner, 2026-10-11: "ali-it and Ali Mohamed are the same person"):
+     * the record is a DUPLICATE of $giveTo, not a stranger. Then, before the delete,
+     * its fingerprints become $giveTo's stored copies (FingerprintVault::adoptCopies),
+     * the punches under the number are credited to them through a closed mapping that
+     * also keeps the record's privilege (so a re-add restores an admin), and only then
+     * is it removed. The next push gives them one record with everything on it.
+     *
+     * @return array{message:string, snapshot:string}
+     */
+    public function releaseUnlinkedNumber(Device $device, string $pin, ?Employee $giveTo, bool $samePerson = false): array
+    {
+        $device->assertWritable();
+        $capabilities = $this->driver->capabilities($device);
+        $capabilities->require(Capability::USER_DELETE);
+
+        if (EmployeeDeviceMap::query()->where('device_id', $device->id)->where('device_user_id', $pin)->live()->exists()) {
+            throw new \DomainException("User ID {$pin} on {$device->name} is linked to an employee; remove them from the terminal through their own record instead.");
+        }
+        if ($samePerson && $giveTo === null) {
+            throw new \InvalidArgumentException('A same-person merge needs the employee.');
+        }
+
+        if ($giveTo !== null) {
+            try {
+                $this->identity->assertPinFreeFor($device, $giveTo, $pin);
+
+                if (! $samePerson) {
+                    return ['message' => "User ID {$pin} is already free for {$giveTo->name} on {$device->name}.", 'snapshot' => ''];
+                }
+            } catch (PinInUseException $e) {
+                if (! $e->releasable) {
+                    throw new \DomainException($e->getMessage());
+                }
+            }
+        } elseif (EmployeeDeviceMap::query()->where('device_id', $device->id)->where('device_user_id', $pin)->exists()) {
+            // Removing with nobody to give the number to (the device rebuild): never a
+            // number an employee ever held here — their history is recorded under it.
+            throw new \DomainException("User ID {$pin} on {$device->name} belonged to an employee; it is not removed as an unlinked record.");
+        }
+
+        $record = null;
+        foreach ($this->driver->readUsers($device, false) as $u) {
+            if ($u->userId === $pin) {
+                $record = $u;
+            }
+        }
+
+        $templates = [];
+        if ($record !== null && $capabilities->supports(Capability::TEMPLATE_BLOB_READ)) {
+            try {
+                $templates = array_values(array_filter(
+                    $this->driver->readTemplates($device),
+                    fn (array $t) => (string) ($t['user_id'] ?? '') === $pin,
+                ));
+            } catch (\Throwable $e) {
+                throw new \DomainException("Nothing was removed from {$device->name}: the fingerprints on user ID {$pin} could not be saved first ({$e->getMessage()}).");
+            }
+        }
+
+        $snapshot = sprintf('removed-records/device-%d-%s-%s.json.enc', $device->id, $pin, now()->format('Ymd-His'));
+        Storage::disk('local')->put($snapshot, Crypt::encryptString(json_encode([
+            'device_id' => $device->id,
+            'device_user_id' => $pin,
+            'record' => $record?->toArray(),
+            'templates' => array_map(fn (array $t) => [
+                'slot' => (int) $t['slot'], 'sha1' => (string) $t['sha1'], 'template' => base64_encode((string) $t['template']),
+            ], $templates),
+            'released_to_employee_id' => $giveTo?->id,
+            'same_person' => $samePerson,
+            'taken_at' => now()->toIso8601String(),
+        ], JSON_THROW_ON_ERROR)));
+
+        $adopted = 0;
+        $credited = 0;
+        if ($samePerson) {
+            // Their fingers on the duplicate are theirs: into the system's copies.
+            $adopted = app(FingerprintVault::class)->adoptCopies($device, $giveTo->id, $templates);
+
+            // Their punches under the duplicate's number are theirs too. A CLOSED
+            // mapping records it (so history resolves and the number is "only ever
+            // theirs" for the move that follows) and keeps the record's privilege.
+            if (! EmployeeDeviceMap::query()->where('device_id', $device->id)->where('device_user_id', $pin)->exists()) {
+                EmployeeDeviceMap::create([
+                    'tenant_id' => $device->tenant_id,
+                    'employee_id' => $giveTo->id,
+                    'device_id' => $device->id,
+                    'device_user_id' => $pin,
+                    'device_uid' => $record?->uid,
+                    'device_name' => $record?->name,
+                    // NOT NULL column; a record already gone from the terminal (deleted
+                    // at the keypad, as IT ROOM's "ali-it" was on 2026-10-11) has none.
+                    'device_privilege' => $record?->privilege ?? 0,
+                    'card_number' => $record?->cardNumber,
+                    'valid_from' => null,
+                    'valid_to' => now(),
+                    'closed_reason' => "Duplicate record of {$giveTo->name}, merged into them",
+                ]);
+            }
+            $credited = AttendanceLog::query()
+                ->where('device_id', $device->id)
+                ->where('device_user_id', $pin)
+                ->whereNull('employee_id')
+                ->update(['employee_id' => $giveTo->id]);
+        }
+
+        if ($record !== null) {
+            $this->driver->deleteUser($device, $pin);
+
+            foreach ($this->driver->readUsers($device, false) as $u) {
+                if ($u->userId === $pin) {
+                    throw new \RuntimeException("{$device->name} still holds user ID {$pin} after the delete. Nothing else was changed; the saved copy is {$snapshot}.");
+                }
+            }
+        }
+
+        DeviceRosterEntry::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $pin)
+            ->update($giveTo !== null ? [
+                'claim_status' => DeviceRosterEntry::CLAIMED,
+                'claimed_employee_id' => $giveTo->id,
+                'ignore_reason' => null,
+            ] : [
+                // Nobody gets the number; it stays reserved so it is never reissued.
+                'claim_status' => DeviceRosterEntry::IGNORED,
+                'claimed_employee_id' => null,
+                'ignore_reason' => "Removed by a device rebuild; record saved in {$snapshot}",
+            ]);
+
+        AuditLog::create([
+            'tenant_id' => $device->tenant_id,
+            'user_id' => Auth::id(),
+            'action' => $samePerson ? 'device.duplicate_merged' : ($giveTo !== null ? 'device.number_released' : 'device.unlinked_record_removed'),
+            'auditable_type' => $giveTo !== null ? Employee::class : Device::class,
+            'auditable_id' => $giveTo?->id ?? $device->id,
+            // Never template bytes: counts and where the saved copy is.
+            'changes' => [
+                'device_id' => $device->id, 'device' => $device->name, 'device_user_id' => $pin,
+                'removed_record' => $record?->name, 'card' => $record?->cardNumber,
+                'fingerprints_saved' => count($templates), 'snapshot' => $snapshot,
+                'same_person' => $samePerson, 'fingerprints_adopted' => $adopted, 'punches_credited' => $credited,
+            ],
+            'ip_address' => app()->runningInConsole() ? null : request()->ip(),
+            'user_agent' => app()->runningInConsole() ? null : substr((string) request()->userAgent(), 0, 255),
+        ]);
+
+        $message = $samePerson
+            ? ($record !== null
+                ? "\"{$record->name}\" (user ID {$pin}) on {$device->name} merged into {$giveTo->name}: {$adopted} fingerprint(s) now stored as theirs, {$credited} punch(es) credited to them, then the duplicate was removed."
+                : "User ID {$pin} was no longer on {$device->name}; {$credited} punch(es) under it credited to {$giveTo->name}.")
+            : ($record !== null
+                ? "Removed \"{$record->name}\" (user ID {$pin}) from {$device->name} after saving its record and ".count($templates).' fingerprint(s). '
+                : "User ID {$pin} was no longer on {$device->name}. ")
+                .($giveTo !== null ? "The number is now {$giveTo->name}'s there." : 'The number stays reserved.');
+
+        return ['message' => $message, 'snapshot' => $snapshot];
+    }
+
+    /**
+     * Runs $use with a TEMPORARY user on the terminal, then deletes it and checks it is
+     * gone (2026-10-11: the fingerprint-write test on a terminal where no real person
+     * could safely receive a test finger). The user is created at a number free both on
+     * the terminal and in this system's records, named "zkt-test", and is never mapped
+     * to anyone. Nothing to save before its delete (rule 19): this system made it.
+     *
+     * @template T
+     * @param  \Closure(string $pin): T  $use
+     * @return T
+     */
+    public function withTemporaryUser(Device $device, \Closure $use): mixed
+    {
+        $device->assertWritable();
+        $capabilities = $this->driver->capabilities($device);
+        $capabilities->require(Capability::USER_WRITE);
+        $capabilities->require(Capability::USER_DELETE);
+
+        $onTerminal = [];
+        foreach ($this->driver->readUsers($device, false) as $u) {
+            $onTerminal[$u->userId] = true;
+        }
+        $pin = $this->identity->nextFreePin($device);
+        while (isset($onTerminal[$pin])) {
+            $pin = (string) ((int) $pin + 1);
+        }
+
+        // The guard refuses any occupant: the slot must be empty on the hardware too.
+        $this->driver->saveUser($device, $pin, 'zkt-test', function (?DeviceUser $occupant) use ($pin) {
+            if ($occupant !== null) {
+                throw new \RuntimeException("User ID {$pin} turned out to be taken on the terminal; the test was not run.");
+            }
+        });
+
+        try {
+            return $use($pin);
+        } finally {
+            $this->driver->deleteUser($device, $pin);
+            foreach ($this->driver->readUsers($device, false) as $u) {
+                if ($u->userId === $pin) {
+                    Log::channel('device')->critical('Temporary test user still on the terminal after delete.', ['device_id' => $device->id, 'pin' => $pin]);
+                }
+            }
+        }
+    }
+
+    /**
      * Removes an employee's record from the device — templates and card with it.
      *
      * @return array{message:string, raw:array<string,mixed>}
@@ -553,6 +1062,14 @@ class DeviceUserSyncService
         $this->driver->capabilities($device)->require(Capability::USER_DELETE);
 
         $pin = $this->identity->pinFor($device, $employee);
+
+        /*
+         * Rule 19: their card and fingers go into the system BEFORE the record goes.
+         * The delete takes both with it, and the terminal was often the only place
+         * they existed — Akram's finger 6 and card on IT Room were lost exactly that
+         * way (2026-10-11). If either cannot be read, nothing is deleted.
+         */
+        $this->saveCredentialsBeforeRemoval($device, $employee, $pin);
 
         $this->driver->deleteUser($device, $pin);
 
@@ -577,21 +1094,166 @@ class DeviceUserSyncService
                 'ignore_reason' => 'Deleted from the device; PIN kept reserved so it is never reissued',
             ]);
 
+        // Slot markers only. Rows that carry a template are the system's copy
+        // (FingerprintVault) and outlive the terminal's record — that is their purpose.
         BiometricTemplate::query()
             ->where('device_id', $device->id)
             ->where('employee_id', $employee->id)
+            ->whereNull('template_sha1')
             ->delete();
 
         AccessCard::query()
             ->where('device_id', $device->id)
             ->where('employee_id', $employee->id)
             ->where('status', AccessCard::ACTIVE)
-            ->update(['status' => AccessCard::REVOKED, 'revoked_at' => now(), 'revoke_reason' => 'Removed from device']);
+            ->update(['status' => AccessCard::REVOKED, 'revoked_at' => now(), 'revoke_reason' => AccessCard::REASON_REMOVED_WITH_USER]);
 
         return [
             'message' => "{$employee->name} removed from {$device->name}.",
             'raw' => ['employee_id' => $employee->id, 'device_id' => $device->id],
         ];
+    }
+
+    /**
+     * Rule 19, step 1: copies the person's card and fingers off this terminal into
+     * the system, or refuses the removal. A credential the terminal cannot read at all
+     * (a capability, not a failure) is skipped — there was never anything to copy.
+     *
+     * Card: read off the terminal's own record (the stored mapping may be stale), put
+     * in the card history (access_cards — the system's copy of cards per terminal) and
+     * onto the employee record if that has none. Fingers: FingerprintVault.
+     */
+    private function saveCredentialsBeforeRemoval(Device $device, Employee $employee, string $pin): void
+    {
+        $capabilities = $this->driver->capabilities($device);
+
+        try {
+            if ($capabilities->supports(Capability::USER_READ)) {
+                foreach ($this->driver->readUsers($device, false) as $user) {
+                    if ($user->userId === $pin) {
+                        // Their privilege goes with the record too; kept on the mapping so
+                        // a re-add can put an admin back as an admin (privilegeToRestore).
+                        $this->identity->activeMap($device, $employee)?->update(['device_privilege' => $user->privilege]);
+                    }
+                    if ($user->userId === $pin) {
+                        $this->capturePassword($device, $employee->id, $user);
+                    }
+                    if ($user->userId === $pin && $user->hasCard() && ! $user->cardLooksLikeSentinel()) {
+                        $this->recordCard($device, $employee->id, $user);
+                        if (empty($employee->card_number)) {
+                            $employee->update(['card_number' => $user->cardNumber]);
+                        }
+                    }
+                }
+            }
+
+            if ($capabilities->supports(Capability::TEMPLATE_BLOB_READ)) {
+                $vault = app(FingerprintVault::class);
+                $vault->assertReady();
+                $vault->capture($device, $this->driver->readTemplates($device), $employee->id);
+            }
+        } catch (\Throwable $e) {
+            // DomainException: a refusal with an operator-readable reason, which the
+            // controller returns as a 409 rather than letting it become "Server error.".
+            throw new \DomainException(
+                "{$employee->name} was not removed from {$device->name}: their card and fingerprints could not be saved to the system first ({$e->getMessage()}). Try again when the terminal answers."
+            );
+        }
+    }
+
+    /**
+     * Makes this employee an administrator of the terminal (may open its menu) or a
+     * normal user (owner, 2026-10-18: "be able to change the access on the device").
+     * Name, card, keypad password and fingerprints are kept by the driver; the
+     * privilege is read back and only a confirmed value is stored (rule 10).
+     *
+     * Gated by user.privilege: IMPLEMENTED on the F18, UNKNOWN on the F22 and generic
+     * terminals, NOT_IMPLEMENTED on C3 and CSL (docs/device-models.md).
+     *
+     * @return array{message:string, raw:array<string,mixed>}
+     */
+    public function setPrivilege(Device $device, Employee $employee, bool $admin): array
+    {
+        $this->driver->capabilities($device)->require(Capability::USER_PRIVILEGE);
+
+        $map = $this->identity->activeMap($device, $employee);
+
+        if ($map === null || $map->device_user_id === null) {
+            throw new \DomainException("{$employee->name} is not on {$device->name}. Add them to the terminal first.");
+        }
+
+        $before = $map->device_privilege;
+        $user = $this->driver->setUserPrivilege($device, $map->device_user_id, $admin);
+
+        if (($user->privilege > 0) !== $admin) {
+            throw new VerificationException(
+                "{$device->name} accepted the change but reads {$employee->name} back as "
+                .($user->privilege > 0 ? 'an administrator' : 'a normal user').'.'
+            );
+        }
+
+        $map->update(['device_privilege' => $user->privilege, 'synced_at' => now()]);
+        $this->recordRosterEntry($device, $user);
+
+        AuditLog::create([
+            'tenant_id' => $device->tenant_id,
+            'user_id' => Auth::id(),
+            'action' => 'device.privilege_changed',
+            'auditable_type' => Employee::class,
+            'auditable_id' => $employee->id,
+            'changes' => [
+                'device_id' => $device->id, 'device' => $device->name, 'device_user_id' => $map->device_user_id,
+                'privilege_before' => $before, 'privilege_after' => $user->privilege,
+            ],
+            'ip_address' => app()->runningInConsole() ? null : request()->ip(),
+            'user_agent' => app()->runningInConsole() ? null : substr((string) request()->userAgent(), 0, 255),
+        ]);
+
+        return [
+            'message' => $admin
+                ? "{$employee->name} is now an administrator on {$device->name}."
+                : "{$employee->name} is now a normal user on {$device->name}.",
+            'raw' => ['device_privilege' => $user->privilege, 'is_admin' => $user->privilege > 0],
+        ];
+    }
+
+    /**
+     * Rule 19, step 3: which card goes back on this terminal for this person, or null.
+     *
+     *   1. The card this terminal last held for them, if it left WITH their record
+     *      (a removal) or is still recorded active — what they badge with at THIS
+     *      terminal, which can differ from other terminals (Ghassan's Camelot card).
+     *   2. If this terminal has no card history for them: the employee record's card.
+     *   Never: a card an operator cleared on purpose, one reported lost, or a value
+     *   that looks like the firmware's "no card" marker.
+     */
+    public function cardToRestore(Device $device, Employee $employee): ?int
+    {
+        $last = AccessCard::query()
+            ->where('device_id', $device->id)
+            ->where('employee_id', $employee->id)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($last !== null) {
+            $keepable = $last->status === AccessCard::ACTIVE
+                || ($last->status === AccessCard::REVOKED && $last->revoke_reason === AccessCard::REASON_REMOVED_WITH_USER);
+            $card = $keepable && ! $last->is_suspect ? (int) $last->card_number : 0;
+        } else {
+            $card = (int) ($employee->card_number ?? 0);
+        }
+
+        if ($card < 1 || $card >= AccessCard::SENTINEL) {
+            return null;
+        }
+
+        $lost = AccessCard::query()
+            ->where('employee_id', $employee->id)
+            ->where('card_number', $card)
+            ->where('status', AccessCard::LOST)
+            ->exists();
+
+        return $lost ? null : $card;
     }
 
     // ------------------------------------------------------------------ internals
@@ -754,10 +1416,13 @@ class DeviceUserSyncService
             return; // unknown — do not delete what we cannot verify
         }
 
+        // Markers only: a row carrying a template is the system's copy of that finger
+        // (FingerprintVault), kept after the terminal loses it so it can be put back.
         BiometricTemplate::query()
             ->where('device_id', $device->id)
             ->where('employee_id', $employeeId)
             ->whereNotIn('finger_slot', $user->fingerSlots ?: [-1])
+            ->whereNull('template_sha1')
             ->delete();
 
         foreach ($user->fingerSlots as $slot) {

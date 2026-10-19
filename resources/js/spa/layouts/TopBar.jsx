@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { api } from '../shared/api';
+import { api, ApiError } from '../shared/api';
+import { useToast } from '../shared/toast';
 import { useAuth } from '../shared/auth';
 import { useLastSync, shortAgo } from '../shared/useLastSync';
 import { TopBarSlot } from '../shared/topbar';
@@ -130,12 +131,31 @@ function LastSyncPill({ sync }) {
 }
 
 /**
- * Runs a sync across every active device, sequentially so a rack of terminals
- * isn't hit in parallel. Reports how many succeeded and how many punches came
- * in — never a bare "done".
+ * Syncs every active device and waits for the real outcome (fixed 2026-10-11).
+ *
+ * The sync endpoint QUEUES a command (rule 11) and returns at once. This button used
+ * to treat that reply as the finished sync — reading an `imported` count the reply
+ * never carries — so it announced "0 punches imported" before any terminal had been
+ * read. Now it queues one command per device, then follows each command until it
+ * is finished, and reports what the sync runs actually wrote, from each command's
+ * own result (`raw_response.counts`).
+ *
+ * The worker runs the commands one after another, so the bar follows whichever is
+ * running. The database is written by the worker either way; this button only
+ * decides what to tell the operator, and live pages refresh themselves (rule 18).
  */
+const POLL_MS = 2000;
+// Nothing has started after this long: the worker is busy with other queued work,
+// or not running. Said as such, because "still syncing" would be untrue and
+// "failed" unproven.
+const NOT_STARTED_MS = 90_000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 function SyncNowButton({ onDone }) {
-    const [state, setState] = useState({ running: false, message: null, tone: 'info' });
+    const toast = useToast();
+    const [running, setRunning] = useState(false);
+    const [waitingForWorker, setWaitingForWorker] = useState(false);
 
     /*
      * Which terminal is being read RIGHT NOW, and how far through the list we are.
@@ -147,63 +167,85 @@ function SyncNowButton({ onDone }) {
     const { progress, stalled } = useSyncProgress(current?.id ?? null, !!current);
 
     async function run() {
-        setState({ running: true, message: null, tone: 'info' });
+        setRunning(true);
         setCurrent(null);
+        setWaitingForWorker(false);
         try {
             const { data: devices } = await api.get('/devices');
             const active = (devices ?? []).filter((d) => d.is_active);
 
             if (active.length === 0) {
-                setState({ running: false, message: 'No active devices to sync.', tone: 'info' });
+                toast.info('No active devices to sync.');
                 return;
             }
 
-            let imported = 0;
-            let failed = 0;
-            for (const [index, device] of active.entries()) {
-                setCurrent({ id: device.id, name: device.name, index: index + 1, of: active.length });
+            // Queue them all first; the worker takes them in turn.
+            const jobs = [];
+            for (const device of active) {
                 try {
                     const res = await api.post(`/devices/${device.id}/sync-attendance`);
-                    imported += res.data?.imported ?? 0;
-                } catch {
-                    failed += 1;
+                    jobs.push({ device, command: res.data });
+                } catch (err) {
+                    jobs.push({ device, command: null, error: err instanceof ApiError ? err.message : 'could not be queued' });
                 }
             }
-            setCurrent(null);
 
-            setState({
-                running: false,
-                tone: failed ? 'error' : 'success',
-                message: failed
-                    ? `${imported} punch(es) imported · ${failed} of ${active.length} device(s) unreachable`
-                    : `${imported} punch(es) imported from ${active.length} device(s)`,
-            });
+            const started = Date.now();
+            let pending = jobs.filter((j) => j.command && !j.command.is_finished);
+            while (pending.length > 0) {
+                await sleep(POLL_MS);
+                for (const job of pending) {
+                    try {
+                        const res = await api.get(`/device-commands/${job.command.id}`);
+                        job.command = res.data;
+                    } catch {
+                        // One missed poll is not an outcome; ask again next round.
+                    }
+                }
+                pending = jobs.filter((j) => j.command && !j.command.is_finished);
+
+                const runningJob = pending.find((j) => j.command.status === 'running');
+                const done = jobs.length - pending.length;
+                setCurrent(runningJob
+                    ? { id: runningJob.device.id, name: runningJob.device.name, index: done + 1, of: jobs.length }
+                    : null);
+                setWaitingForWorker(!runningJob && pending.length > 0 && Date.now() - started > NOT_STARTED_MS
+                    && pending.every((j) => !j.command.started_at));
+            }
+            setCurrent(null);
+            setWaitingForWorker(false);
+
+            const ok = jobs.filter((j) => j.command?.status === 'succeeded');
+            const failed = jobs.filter((j) => j.command?.status !== 'succeeded');
+            const imported = ok.reduce((sum, j) => sum + (j.command.raw_response?.counts?.imported ?? 0), 0);
+            const summary = `${imported.toLocaleString()} new punch${imported === 1 ? '' : 'es'} saved from ${ok.length} of ${jobs.length} device${jobs.length === 1 ? '' : 's'}.`;
+
+            if (failed.length === 0) {
+                toast.success(summary);
+            } else {
+                const why = failed.map((j) => `${j.device.name}: ${j.error ?? j.command?.message ?? j.command?.status ?? 'failed'}`).join(' · ');
+                toast.error(`${summary} Not synced — ${why}`);
+            }
             onDone?.();
         } catch {
             setCurrent(null);
-            setState({ running: false, message: 'Could not read the device list.', tone: 'error' });
+            toast.error('Could not read the device list.');
+        } finally {
+            setRunning(false);
+            setWaitingForWorker(false);
         }
     }
-
-    // Auto-clear the readout so the chrome doesn't hold a stale message.
-    useEffect(() => {
-        if (!state.message) return undefined;
-        const id = setTimeout(() => setState((s) => ({ ...s, message: null })), 6000);
-        return () => clearTimeout(id);
-    }, [state.message]);
-
-    const toneClass = state.tone === 'error' ? 'text-rose-700' : state.tone === 'success' ? 'text-emerald-700' : 'text-slate-600';
 
     return (
         <div className="relative">
             <button
                 onClick={run}
-                disabled={state.running}
+                disabled={running}
                 aria-label="Sync all active devices now"
                 className={`inline-flex h-10 items-center gap-2 rounded-full bg-white px-3.5 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:text-violet-700 disabled:opacity-60 ${ELEVATION.card} ${FOCUS}`}
             >
-                {state.running ? <Spinner className="h-4 w-4 text-violet-600" /> : <Icon name="bolt" className="h-[18px] w-[18px] text-violet-600" />}
-                <span className="hidden xl:inline">{state.running ? 'Syncing…' : 'Sync now'}</span>
+                {running ? <Spinner className="h-4 w-4 text-violet-600" /> : <Icon name="bolt" className="h-[18px] w-[18px] text-violet-600" />}
+                <span className="hidden xl:inline">{running ? 'Syncing…' : 'Sync now'}</span>
             </button>
 
             {/*
@@ -227,12 +269,14 @@ function SyncNowButton({ onDone }) {
                 </div>
             )}
 
-            {state.message && !current && (
+            {running && !current && (
                 <div
                     role="status"
-                    className={`absolute right-0 top-12 z-30 w-72 rounded-xl bg-white p-3 text-xs ${toneClass} ${ELEVATION.raised}`}
+                    className={`absolute right-0 top-12 z-30 w-72 rounded-xl bg-white p-3 text-xs text-slate-600 ${ELEVATION.raised}`}
                 >
-                    {state.message}
+                    {waitingForWorker
+                        ? 'Queued, but no device has started yet — the background worker is busy with other work, or not running.'
+                        : 'Queued — waiting for the next device to start…'}
                 </div>
             )}
         </div>

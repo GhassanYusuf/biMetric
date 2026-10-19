@@ -24,6 +24,8 @@ class AttendanceRawLog extends Model
     public const SKIP_UNDECODABLE = 'undecodable';
     public const SKIP_BELOW_WATERMARK = 'below_watermark';
     public const SKIP_UNMATCHED = 'unmatched';
+    /** Decoded, but stamped more than a day ahead of now — not a usable punch (DC-020). */
+    public const SKIP_FUTURE = 'future_timestamp';
 
     protected $fillable = [
         'tenant_id', 'device_id', 'attendance_sync_run_id', 'raw',

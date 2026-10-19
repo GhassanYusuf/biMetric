@@ -227,6 +227,75 @@ class DeviceController extends Controller
     }
 
     /**
+     * The first fingerprint write on a terminal whose model never did one from this
+     * app (FingerprintPusher::trialWrite, 2026-10-11). Add-only: one finger the system
+     * holds goes to a person on the terminal who is missing it; nobody is deleted.
+     * Offered on a red "cannot take fingerprints yet" push row. 409 when it did not
+     * pass — the terminal is fine, the test is the answer.
+     */
+    public function fingerprintWriteTest(Device $device, \App\Services\Employees\FingerprintPusher $pusher): JsonResponse
+    {
+        $this->authorize('update', $device);
+
+        set_time_limit(120);
+
+        try {
+            $result = $pusher->trialWrite($device);
+        } catch (DeviceException $e) {
+            return ApiResponse::error("The test could not reach {$device->name}: {$e->getMessage()}", [], 502);
+        } catch (\DomainException $e) {
+            return ApiResponse::error($e->getMessage(), [], 409);
+        }
+
+        return $result['ok']
+            ? ApiResponse::success($result, $result['message'])
+            : ApiResponse::error($result['message'], $result, 409);
+    }
+
+    /**
+     * "Rebuild from system" preview (DeviceRebuildService::plan): what would change on
+     * this terminal, read-only. One read of its users; can take ~30 s on a door panel.
+     */
+    public function rebuildPlan(Device $device, \App\Services\Devices\DeviceRebuildService $rebuild): JsonResponse
+    {
+        $this->authorize('update', $device);
+
+        set_time_limit(120);
+
+        try {
+            return ApiResponse::success($rebuild->plan($device));
+        } catch (DeviceException $e) {
+            return ApiResponse::error("Could not read {$device->name}: {$e->getMessage()}", [], 502);
+        }
+    }
+
+    /**
+     * Starts the rebuild: queues the punch download and the backup-plan-fan-out chain.
+     * Returns at once; progress is the terminal's command list (rule 11).
+     */
+    public function rebuild(Request $request, Device $device, \App\Services\Devices\DeviceRebuildService $rebuild): JsonResponse
+    {
+        $this->authorize('update', $device);
+
+        $data = $request->validate(['remove_unlinked' => ['sometimes', 'boolean']]);
+
+        set_time_limit(120);
+
+        try {
+            $commands = $rebuild->start($device, (bool) ($data['remove_unlinked'] ?? false));
+        } catch (DeviceException $e) {
+            return ApiResponse::error("Could not read {$device->name}: {$e->getMessage()}", [], 502);
+        } catch (\DomainException $e) {
+            return ApiResponse::error($e->getMessage(), [], 409);
+        }
+
+        return ApiResponse::success(
+            ['command_ids' => array_map(fn ($c) => $c->id, $commands)],
+            "Rebuild of {$device->name} queued: punches download first, then a full backup, then the changes, one person at a time.",
+        );
+    }
+
+    /**
      * Refreshes fingerprint counts and card numbers for the WHOLE roster from this
      * terminal in ONE device conversation. That is what makes the employee list
      * device-sourced without opening a connection per row.

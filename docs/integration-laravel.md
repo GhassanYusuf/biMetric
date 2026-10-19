@@ -94,6 +94,15 @@ hides (rule 9). That is deliberate and not an oversight: we know from the vendor
 SDK exactly which commands would write, and rule 16 requires the owner's go-ahead
 and a terminal out of service before any of them is probed.
 
+**Three contract methods added 2026-10-18:** `setUserPrivilege()` (admin / normal user,
+read back), `attendanceRecordCount()` (the terminal's own count, null when the family
+cannot say — C3 and CSL return null) and `clearAttendance($device, $expectedRecords)`
+(ZKTeco only; call it through `AttendanceClearService`, which stores every punch first).
+C3 and CSL throw `UnsupportedCommandException` for the two writes. Endpoints:
+`PUT /api/employees/{employee}/devices/{device}/privilege` `{admin: bool}` (synchronous,
+like the other per-terminal writes on the employee dialog) and
+`POST /api/devices/{device}/clear-attendance` (queued, `devices.update`).
+
 **There is no cursor on a C3 panel.** `readAttendance()` returns the whole table
 every time, so `AttendanceSyncService` owns the watermark and the dedupe — the same
 way it already does for the CSL driver's overlapping date windows.

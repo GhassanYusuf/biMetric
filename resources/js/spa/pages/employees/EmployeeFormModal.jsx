@@ -8,6 +8,9 @@ import TransferPicker from './TransferPicker';
 import { slotName } from './FingerPicker';
 import { formatDeviceError } from '../devices/statusParts';
 import { can as canDevice } from '../devices/parts';
+import { FixButton, useTerminalFix } from './TerminalFixes';
+import Combobox from '../../shared/Combobox';
+import { CountrySelect, PhoneField, phoneError } from '../../shared/CountryFields';
 
 /*
 | Which tab each server-side field lives on, so a 422 can open the tab holding the
@@ -24,9 +27,45 @@ const DETAIL_FIELDS = [
 ];
 const ACCESS_FIELDS = ['multi_card_group_id', 'valid_period_enabled', 'access_valid_from', 'access_valid_to'];
 
+const EMPLOYMENT_TYPES = [
+    { value: 'full_time', label: 'Full-time' },
+    { value: 'part_time', label: 'Part-time' },
+];
+
+/*
+| COMPANY › DEPARTMENT (2026-10-12). The tree is one table (`departments.parent_id`):
+| a company is a node with no parent, its departments sit beneath it. The employee
+| holds ONE `department_id` — the department when one is chosen, else the company.
+*/
+function rootOf(id, byId) {
+    let node = byId.get(id);
+    const seen = new Set();
+    while (node && node.parent_id != null && byId.has(node.parent_id) && !seen.has(node.id)) {
+        seen.add(node.id);
+        node = byId.get(node.parent_id);
+    }
+    return node ?? null;
+}
+
+/** Every department beneath a company, deeper levels labelled by their path. */
+function departmentsUnder(companyId, list) {
+    const out = [];
+    const walk = (parentId, prefix) => {
+        list.filter((d) => d.parent_id === parentId)
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .forEach((d) => {
+                const label = prefix ? `${prefix} › ${d.name}` : d.name;
+                out.push({ value: d.id, label });
+                if (out.length < 1000) walk(d.id, label);
+            });
+    };
+    if (companyId != null) walk(companyId, '');
+    return out;
+}
+
 function tabOf(field) {
     const base = field.split('.')[0];
-    if (DETAIL_FIELDS.includes(base) || base === 'national_id') return 'details';
+    if (DETAIL_FIELDS.includes(base)) return 'details';
     if (ACCESS_FIELDS.includes(base)) return 'access';
     return 'profile';
 }
@@ -90,14 +129,35 @@ export default function EmployeeFormModal({
     onReadFingerprints = null,
     // Company setting: saves push without the "Push now" question.
     autoPush = false,
+    // The Company › Department tree, as GET /departments returns it.
+    departments = [],
+    // (name, parentId|null) → the created department, or null. Null hides "Add".
+    onCreateDepartment = null,
 }) {
     const isEdit = !!employee;
+
+    // Departments created from this form are used at once, before the page reloads the tree.
+    const [createdDepartments, setCreatedDepartments] = useState([]);
+    const allDepartments = [...departments, ...createdDepartments]
+        .map((d) => ({ ...d, id: Number(d.id), parent_id: d.parent_id == null ? null : Number(d.parent_id) }))
+        .filter((d, i, list) => list.findIndex((x) => x.id === d.id) === i);
+    const departmentById = new Map(allDepartments.map((d) => [d.id, d]));
+    // Numbers throughout: SQL Server hands some ids back as strings ("4"), and a strict
+    // comparison of "4" with 4 left the Department box empty (2026-10-12).
+    const employeeDeptId = employee?.department_id != null ? Number(employee.department_id) : null;
+    const initialCompany = (employee?.company?.id != null ? Number(employee.company.id) : null)
+        ?? (employeeDeptId ? rootOf(employeeDeptId, departmentById)?.id : null)
+        ?? null;
 
     const [form, setForm] = useState({
         name: employee?.name ?? '',
         employee_code: employee?.employee_code ?? '',
         email: employee?.email ?? '',
-        department: employee?.department ?? '',
+        company_id: initialCompany ?? '',
+        // The node itself when it is a department; empty when they sit on the company.
+        unit_id: employeeDeptId && employeeDeptId !== initialCompany ? employeeDeptId : '',
+        employment_type: employee?.employment_type ?? 'full_time',
+        resigned_at: employee?.resigned_at ?? '',
         card_number: employee?.card_number && employee.card_number !== CARD_EMPTY_MARKER ? String(employee.card_number) : '',
         is_active: employee?.is_active ?? true,
         // Profile additions
@@ -114,7 +174,6 @@ export default function EmployeeFormModal({
         ...Object.fromEntries(DETAIL_FIELDS.map((k) => [k, employee?.[k] ?? ''])),
         // WRITE-ONLY: the stored number never reaches the browser (only a masked
         // tail does), so the box starts empty and typing replaces it.
-        national_id: '',
         // Access levels
         multi_card_group_id: employee?.multi_card_group_id ?? '',
         valid_period_enabled: employee?.valid_period_enabled ?? false,
@@ -137,6 +196,7 @@ export default function EmployeeFormModal({
     // { employee, result: {written, skipped, failed} } once a save has pushed.
     const [outcome, setOutcome] = useState(null);
     const [retrying, setRetrying] = useState([]); // device ids being retried
+    const fixTerminal = useTerminalFix();
     const [readingFingers, setReadingFingers] = useState(false);
 
     /*
@@ -173,7 +233,9 @@ export default function EmployeeFormModal({
     ];
     const lockedIds = enrolledIds.filter((id) => !writableIds.includes(id));
 
-    const [onTerminals, setOnTerminals] = useState(() => enrolledIds);
+    // A resigned person still on a terminal (the removal was declined, or failed) opens
+    // with those terminals already moved off, so the next save offers it again.
+    const [onTerminals, setOnTerminals] = useState(() => (employee?.resigned_at ? lockedIds : enrolledIds));
     /*
      * A panel that takes no names (a C3) but can move a user to a new ID is pushed to
      * when the Personnel ID differs from its user ID there — the server then does only
@@ -184,7 +246,63 @@ export default function EmployeeFormModal({
         .filter((t) => !writableIds.includes(t.id) && t.pin != null && String(t.pin) !== codeNow && /^\d{1,9}$/.test(codeNow))
         .filter((t) => canDevice(devices.find((d) => d.id === t.id), 'user.renumber'))
         .map((t) => t.id);
-    const pushTo = onTerminals.filter((id) => writableIds.includes(id) || renumberOnly.includes(id));
+    /*
+     * RESIGNED (2026-10-12, owner: "take them off the system"). A newly entered
+     * resignation date moves every terminal they are on off the right-hand list — see
+     * set() — so the save removes them through the normal removal, which keeps their
+     * card and fingers in the system first (rule 19). Nothing is pushed to a resigned
+     * person.
+     */
+    const resigned = form.resigned_at !== '';
+    const wanted = resigned ? [] : onTerminals.filter((id) => writableIds.includes(id) || renumberOnly.includes(id));
+    /*
+     * PUSH ONLY WHAT IS OUT OF DATE (2026-10-12, owner: "if nothing changed you don't
+     * need to push"). A push is a session, a write and a read-back per terminal —
+     * 20 to 40 seconds a save — and a terminal holds only the name, the user ID, the
+     * card and the fingerprints. Editing a job title, a phone or a company changes
+     * none of those, so those saves no longer touch a terminal.
+     *
+     * A terminal IS written when: it is newly added; the name, ID or card changed in
+     * this form; or what it held at its last read differs from the system — another
+     * name, another ID it can be moved off, no card where the system has one, or
+     * missing a finger the system keeps a copy of. Unknown (never read) counts as out
+     * of date for the name, and as up to date for fingers: an explicit Push still
+     * writes everything.
+     *
+     * The keypad password counts only where the model's password.write is CONFIRMED
+     * (2026-10-12); the server holds the write back everywhere else. The device role
+     * is not sent to terminals, so it cannot make one out of date.
+     */
+    const initialCard = employee?.card_number && employee.card_number !== CARD_EMPTY_MARKER ? String(employee.card_number) : '';
+    const cardChanged = form.card_number.trim() !== initialCard;
+    const nameChanged = isEdit && form.name.trim() !== (employee.name ?? '');
+    const systemCard = employee?.card_number && employee.card_number !== CARD_EMPTY_MARKER ? String(employee.card_number) : null;
+    const storedFingers = (employee?.stored_fingerprint_slots ?? []).map(Number);
+    // A terminal keeps at most 24 characters of a name (seen on the F18, TF1700 and
+    // inBIO460, 2026-10-12): its first 24 IS the name, not a difference to push.
+    const sameName = (held, name) => held != null && (held === name || (held.length >= 24 && name.startsWith(held)));
+    const passwordChanged = passwordTouched.current && form.device_password !== '';
+    const passwordWritable = (id) => devices.find((d) => d.id === id)?.capabilities?.['password.write']?.confirmed === true;
+    function outOfDate(id) {
+        const t = enrolled.find((e) => e.id === id);
+        if (!t || nameChanged || cardChanged) return true; // newly added, or edited here
+        // A new keypad password, where this terminal's model has had a password write
+        // read back (password.write CONFIRMED). Elsewhere a push would not write it.
+        if (passwordChanged && passwordWritable(id)) return true;
+        if (renumberOnly.includes(id)) return true;          // its user ID moves to the new code
+        if (writableIds.includes(id)) {
+            if (!sameName(t.held, form.name.trim())) return true;
+            const code = String(form.employee_code).trim();
+            if (t.pin != null && String(t.pin) !== code && /^\d{1,9}$/.test(code)
+                && canDevice(devices.find((d) => d.id === id), 'user.renumber')) return true;
+            if (systemCard && String(t.card ?? '') !== systemCard) return true;
+            if (t.fingers && storedFingers.some((slot) => !t.fingers.includes(slot))) return true;
+        }
+        return false;
+    }
+    const pushTo = wanted.filter(outOfDate);
+    // On the list and staying, but nothing to write — said in the footer, not hidden.
+    const upToDate = wanted.filter((id) => !pushTo.includes(id));
     const removeFrom = enrolledIds.filter((id) => writableIds.includes(id) && !onTerminals.includes(id));
     const addedTo = pushTo.filter((id) => !enrolledIds.includes(id));
     const terminalName = (id) => terminalItems.find((t) => t.id === id)?.name ?? `Terminal ${id}`;
@@ -193,8 +311,6 @@ export default function EmployeeFormModal({
     const codeTouched = useRef(false);
 
     const busy = submitting || retrying.length > 0;
-    const initialCard = employee?.card_number && employee.card_number !== CARD_EMPTY_MARKER ? String(employee.card_number) : '';
-    const cardChanged = form.card_number.trim() !== initialCard;
     const close = outcome ? onDone : onClose;
 
     useEscapeKey(close, !busy);
@@ -237,7 +353,24 @@ export default function EmployeeFormModal({
     function set(key, value) {
         if (key === 'employee_code') codeTouched.current = true;
         if (key === 'device_password') passwordTouched.current = true;
-        setForm((f) => ({ ...f, [key]: value }));
+        if (key === 'resigned_at') {
+            // Entered: off every terminal this app can write to. Cleared again: back as they were.
+            if (value !== '' && form.resigned_at === '') setOnTerminals(lockedIds);
+            if (value === '' && form.resigned_at !== '') setOnTerminals(enrolledIds);
+        }
+        // A new company empties the department: it belonged to the old one.
+        if (key === 'company_id') {
+            setForm((f) => ({ ...f, company_id: value, unit_id: '' }));
+            return;
+        }
+        setForm((f) => ({ ...f, [key]: value, ...(key === 'resigned_at' && value !== '' ? { is_active: false } : {}) }));
+    }
+
+    async function createDepartment(name, parentId) {
+        const made = await onCreateDepartment(name, parentId);
+        if (!made) return null;
+        setCreatedDepartments((list) => [...list, made]);
+        return { value: Number(made.id), label: made.name };
     }
 
     function pickPhoto(file) {
@@ -289,6 +422,10 @@ export default function EmployeeFormModal({
             else if (card !== '' && (Number(card) < 1 || Number(card) >= CARD_EMPTY_MARKER)) found.card_number = ['A card number must be between 1 and 4294967294.'];
             else if (pushTo.length === 0) found.card_number = ['Add a terminal on the Access levels tab to write the card to. Cards are stored on the terminals.'];
         }
+        for (const key of ['mobile_phone', 'home_phone']) {
+            const problem = phoneError(form[key]);
+            if (problem) found[key] = [problem];
+        }
         if (passwordTouched.current && form.device_password !== '' && !/^\d{1,8}$/.test(form.device_password)) {
             found.device_password = ['The device password must be 1 to 8 digits.'];
         }
@@ -327,10 +464,13 @@ export default function EmployeeFormModal({
                     name: form.name,
                     employee_code: form.employee_code,
                     email: form.email || null,
-                    department: form.department || null,
+                    // The department when chosen, else the company. The server keeps the
+                    // old free-text `department` in step with it.
+                    department_id: Number(form.unit_id || form.company_id) || null,
+                    employment_type: form.employment_type,
                     // Only the update endpoint accepts it; sending it on create
                     // would be a silently ignored field.
-                    ...(isEdit ? { is_active: form.is_active } : {}),
+                    ...(isEdit ? { is_active: form.is_active, resigned_at: form.resigned_at || null } : {}),
                     // Personnel-tab fields: stored only, never pushed to a terminal.
                     last_name: form.last_name || null,
                     gender: form.gender || null,
@@ -340,8 +480,6 @@ export default function EmployeeFormModal({
                     privilege: form.privilege || null,
                     ...(passwordTouched.current ? { device_password: form.device_password || null } : {}),
                     ...Object.fromEntries(DETAIL_FIELDS.map((k) => [k, form[k] || null])),
-                    // Omitted when blank: an untouched box must not clear the stored ID.
-                    ...(form.national_id.trim() ? { national_id: form.national_id.trim() } : {}),
                     multi_card_group_id: form.multi_card_group_id ? Number(form.multi_card_group_id) : null,
                     valid_period_enabled: form.valid_period_enabled,
                     access_valid_from: form.valid_period_enabled ? form.access_valid_from || null : null,
@@ -372,6 +510,23 @@ export default function EmployeeFormModal({
         } finally {
             setSubmitting(false);
         }
+    }
+
+    /*
+     * The fix a red terminal row names (2026-10-11, casebook DC-014), pressed by the
+     * operator — every write here is theirs to approve:
+     *   release_number          the code is held there by a record linked to no
+     *                           employee: save it and its fingerprints, remove it,
+     *                           give the number to this employee;
+     *   test_fingerprint_write  the model never took a fingerprint from this app:
+     *                           add one finger the system holds to someone missing it.
+     * Then that terminal is pushed again.
+     */
+    async function resolveFailure(failure, mode) {
+        setRetrying([failure.device_id]);
+        const fixed = await fixTerminal(outcome.employee, failure, mode);
+        setRetrying([]);
+        if (fixed) await retry([failure.device_id]);
     }
 
     async function retry(deviceIds) {
@@ -411,6 +566,15 @@ export default function EmployeeFormModal({
 
     const codeHint = isEdit ? 'Digits only, up to 9.' : null;
 
+    const companyOptions = allDepartments
+        .filter((d) => d.parent_id == null || !departmentById.has(d.parent_id))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((d) => ({ value: d.id, label: d.name }));
+    const companyId = form.company_id === '' ? null : Number(form.company_id);
+    const unitOptions = departmentsUnder(companyId, allDepartments);
+    // Terminals the resignation takes them off — what the save will do, said beside the date.
+    const resignRemoves = resigned ? removeFrom.map(terminalName) : [];
+
     // Which terminals a changed Personnel ID would move on, and which keep the old one.
     const newCode = String(form.employee_code).trim();
     const idPlan = isEdit && /^\d{1,9}$/.test(newCode) && newCode !== String(employee.employee_code)
@@ -436,7 +600,7 @@ export default function EmployeeFormModal({
               | makes the dialog jump; the panel scrolls, the footer stays put.
             */}
             <Card
-                className="flex h-[92vh] w-full max-w-[60rem] flex-col rounded-b-none sm:h-[min(92vh,700px)] sm:rounded-2xl"
+                className="flex h-[92vh] w-full max-w-[64rem] flex-col rounded-b-none sm:h-[min(92vh,700px)] sm:rounded-2xl"
                 onClick={(e) => e.stopPropagation()}
             >
                 <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col" noValidate>
@@ -469,7 +633,10 @@ export default function EmployeeFormModal({
                         */}
                         <div role="tabpanel" id="employee-tab-profile" aria-labelledby="employee-tabtrigger-profile" hidden={tab !== 'profile'} className="space-y-5">
                             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_13rem]">
-                                <div className="grid grid-cols-1 gap-x-8 gap-y-3 md:grid-flow-col md:grid-cols-2 md:grid-rows-[repeat(6,auto)]">
+                                {/* Fills down then across, so the row count must hold every field:
+                                    15 when editing (Resigned on is edit-only), 14 when adding. Too few
+                                    rows spills the rest into a third, squashed column (2026-10-12). */}
+                                <div className={`grid grid-cols-1 gap-x-8 gap-y-3 md:grid-flow-col md:grid-cols-2 ${isEdit ? 'md:grid-rows-[repeat(8,auto)]' : 'md:grid-rows-[repeat(7,auto)]'}`}>
                                     <Row label="Personnel ID" htmlFor="employee-code" required>
                                         <TextField
                                             id="employee-code"
@@ -557,8 +724,34 @@ export default function EmployeeFormModal({
                                         <TextField id="employee-email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} error={errors.email?.[0]} />
                                     </Row>
 
-                                    <Row label="Department" htmlFor="employee-department">
-                                        <TextField id="employee-department" value={form.department} onChange={(e) => set('department', e.target.value)} error={errors.department?.[0]} />
+                                    <Row label="Company" htmlFor="employee-company">
+                                        <Combobox
+                                            id="employee-company"
+                                            options={companyOptions}
+                                            value={companyId}
+                                            onChange={(v) => set('company_id', v ?? '')}
+                                            placeholder="Search…"
+                                            emptyText="No company matches."
+                                            onCreate={onCreateDepartment ? (name) => createDepartment(name, null) : null}
+                                            createLabel={(q) => `Add company “${q}”`}
+                                            allowClear
+                                            error={!form.unit_id ? err('department_id') : undefined}
+                                        />
+                                    </Row>
+                                    <Row label="Department" htmlFor="employee-unit">
+                                        <Combobox
+                                            id="employee-unit"
+                                            options={unitOptions}
+                                            value={form.unit_id === '' ? null : Number(form.unit_id)}
+                                            onChange={(v) => set('unit_id', v ?? '')}
+                                            disabled={companyId === null}
+                                            placeholder={companyId === null ? 'Company first' : 'Search…'}
+                                            emptyText={unitOptions.length === 0 ? 'This company has no departments yet.' : 'No department matches.'}
+                                            onCreate={onCreateDepartment && companyId !== null ? (name) => createDepartment(name, companyId) : null}
+                                            createLabel={(q) => `Add department “${q}”`}
+                                            allowClear
+                                            error={form.unit_id ? err('department_id') : undefined}
+                                        />
                                     </Row>
                                     {/*
                                       | EDITABLE, as in ZKAccess — but never stored here as
@@ -586,11 +779,31 @@ export default function EmployeeFormModal({
                                         />
                                     </Row>
                                     <Row label="Mobile phone" htmlFor="employee-mobile">
-                                        <TextField id="employee-mobile" type="tel" value={form.mobile_phone} onChange={(e) => set('mobile_phone', e.target.value)} error={err('mobile_phone')} />
+                                        <PhoneField id="employee-mobile" value={form.mobile_phone} onChange={(v) => set('mobile_phone', v)} fallback={form.country} error={err('mobile_phone')} />
+                                    </Row>
+                                    <Row label="Employment" htmlFor="employee-employment-type">
+                                        <SelectField id="employee-employment-type" value={form.employment_type} onChange={(e) => set('employment_type', e.target.value)} error={err('employment_type')}>
+                                            {EMPLOYMENT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                        </SelectField>
                                     </Row>
                                     <Row label="Hired date" htmlFor="employee-hired">
                                         <TextField id="employee-hired" type="date" value={form.hired_date} onChange={(e) => set('hired_date', e.target.value)} error={err('hired_date')} />
                                     </Row>
+                                    {isEdit && (
+                                        <Row label="Resigned on" htmlFor="employee-resigned">
+                                            <TextField
+                                                id="employee-resigned"
+                                                type="date"
+                                                max={new Date().toLocaleDateString('en-CA')}
+                                                value={form.resigned_at}
+                                                onChange={(e) => set('resigned_at', e.target.value)}
+                                                error={err('resigned_at')}
+                                                hint={resignRemoves.length > 0
+                                                    ? `Saving takes them off ${resignRemoves.join(', ')}. Their card and fingerprints are kept here and put back if they are added again.`
+                                                    : resigned ? 'Inactive, and kept off every terminal. Clear the date to bring them back.' : 'Leave empty while they work here.'}
+                                            />
+                                        </Row>
+                                    )}
                                     <Row label="Birthday" htmlFor="employee-birthday">
                                         <TextField id="employee-birthday" type="date" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} error={err('birthday')} />
                                     </Row>
@@ -652,14 +865,20 @@ export default function EmployeeFormModal({
                                     <label className="flex items-center gap-2.5">
                                         <input
                                             type="checkbox"
-                                            checked={form.is_active}
+                                            checked={form.is_active && !resigned}
+                                            disabled={resigned}
+                                            title={resigned ? 'A resigned employee is always inactive.' : undefined}
                                             onChange={(e) => set('is_active', e.target.checked)}
                                             className={`h-4 w-4 rounded border-slate-300 text-violet-600 ${FOCUS}`}
                                         />
                                         <span className="text-sm text-slate-700">Active</span>
                                     </label>
                                 ) : <span />}
-                                <p className="text-xs text-slate-500">Device role and password are saved here only, not sent to any terminal yet.</p>
+                                <p className="text-xs text-slate-500">
+                                    {pushTo.some(passwordWritable) || writableIds.some(passwordWritable)
+                                        ? 'The password is written to terminals that can take it. Device role is saved here only.'
+                                        : 'Device role and password are saved here. Terminals keep their own password until writing it is proven on their model.'}
+                                </p>
                             </div>
                         </div>
 
@@ -680,38 +899,18 @@ export default function EmployeeFormModal({
                                         <TextField id="employee-postal" value={form.postal_code} onChange={(e) => set('postal_code', e.target.value)} error={err('postal_code')} />
                                     </Row>
                                     <Row label="Job title" htmlFor="employee-job-title">
-                                        <TextArea id="employee-job-title" value={form.job_title} onChange={(e) => set('job_title', e.target.value)} error={err('job_title')} />
+                                        <TextField id="employee-job-title" maxLength={255} placeholder="e.g. Accountant" value={form.job_title} onChange={(e) => set('job_title', e.target.value)} error={err('job_title')} />
                                     </Row>
                                 </div>
                                 <div className="space-y-3">
                                     <Row label="Country" htmlFor="employee-country">
-                                        <TextField id="employee-country" value={form.country} onChange={(e) => set('country', e.target.value)} error={err('country')} />
+                                        <CountrySelect id="employee-country" value={form.country} onChange={(v) => set('country', v)} error={err('country')} />
                                     </Row>
                                     <Row label="City" htmlFor="employee-city">
                                         <TextField id="employee-city" value={form.city} onChange={(e) => set('city', e.target.value)} error={err('city')} />
                                     </Row>
                                     <Row label="Home phone" htmlFor="employee-home-phone">
-                                        <TextField id="employee-home-phone" type="tel" value={form.home_phone} onChange={(e) => set('home_phone', e.target.value)} error={err('home_phone')} />
-                                    </Row>
-                                    {/*
-                                      | Always shown, and an ordinary box like every other field
-                                      | (owner, 2026-09-24). Saved with the rest of the form in
-                                      | the same request; a clash with another employee in this
-                                      | company comes back as this field's error and rolls the
-                                      | whole save back (EmployeeController::assignNationalId).
-                                    */}
-                                    <Row label="National ID" htmlFor="employee-national-id">
-                                        <TextField
-                                            id="employee-national-id"
-                                            autoComplete="off"
-                                            maxLength={64}
-                                            value={form.national_id}
-                                            onChange={(e) => set('national_id', e.target.value)}
-                                            placeholder={employee?.has_national_id
-                                                ? `Set${employee.national_id_masked ? ` · ${employee.national_id_masked}` : ''} — type to replace`
-                                                : 'Not set'}
-                                            error={err('national_id')}
-                                        />
+                                        <PhoneField id="employee-home-phone" value={form.home_phone} onChange={(v) => set('home_phone', v)} fallback={form.country} error={err('home_phone')} />
                                     </Row>
                                     <Row label="Race" htmlFor="employee-race">
                                         <TextField id="employee-race" value={form.race} onChange={(e) => set('race', e.target.value)} error={err('race')} />
@@ -735,7 +934,8 @@ export default function EmployeeFormModal({
                                     selected={onTerminals}
                                     onChange={setOnTerminals}
                                     locked={lockedIds}
-                                    disabled={submitting}
+                                    // A resigned person is kept off the terminals; clear the date to change that.
+                                    disabled={submitting || resigned}
                                     titles={{ left: 'Terminals', right: 'On these terminals' }}
                                     columns={{ name: 'Terminal', detail: 'Status' }}
                                     empty={{
@@ -746,6 +946,7 @@ export default function EmployeeFormModal({
                                 <p className="mt-2 text-xs text-slate-500">
                                     Moving a terminal to the right puts them on it when you save, then reads their fingerprints and card back.
                                     Moving one to the left removes them from it, after a confirmation.
+                                    {resigned && ' They have resigned, so they are kept off every terminal — clear the resignation date to change that.'}
                                 </p>
                             </div>
 
@@ -799,7 +1000,7 @@ export default function EmployeeFormModal({
                     <div className="px-5 pb-4 pt-3">
                         {outcome && (
                             <div className="mb-3">
-                                <TerminalResults outcome={outcome} retrying={retrying} onRetry={onRetry ? retry : null} />
+                                <TerminalResults outcome={outcome} retrying={retrying} onRetry={onRetry ? retry : null} onResolve={onRetry ? resolveFailure : null} />
                             </div>
                         )}
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -810,6 +1011,7 @@ export default function EmployeeFormModal({
                                         autoPush={autoPush}
                                         name={terminalName}
                                         push={pushTo}
+                                        current={upToDate}
                                         added={addedTo}
                                         removed={removeFrom}
                                         onOpen={() => setTab('access')}
@@ -868,7 +1070,7 @@ function StoredCopies({ slots }) {
 function Row({ label, htmlFor, required = false, children }) {
     const Label = htmlFor ? 'label' : 'span';
     return (
-        <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:items-start">
+        <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-[6.75rem_minmax(0,1fr)] sm:items-start">
             <Label htmlFor={htmlFor} className="text-sm text-slate-700 sm:pt-[11px] sm:leading-5">
                 {label}{required && <> <Req /></>}
             </Label>
@@ -965,7 +1167,7 @@ function TextArea({ label, error, id, ...props }) {
 | because a skip is a refusal made before any write (read-only, not adopted) and
 | retrying it would only repeat the refusal.
 */
-function TerminalResults({ outcome, retrying, onRetry }) {
+function TerminalResults({ outcome, retrying, onRetry, onResolve }) {
     const { written, skipped, failed, cards = [], reads = [], removals = [] } = outcome.result;
     const total = written.length + skipped.length + failed.length;
 
@@ -974,10 +1176,16 @@ function TerminalResults({ outcome, retrying, onRetry }) {
             <span className="text-sm font-medium text-slate-700">Terminals</span>
             <ul className="mt-2 max-h-36 space-y-1.5 overflow-y-auto">
                 {written.map((w) => (
-                    <li key={`w${w.device_id}`} className="flex items-center gap-2 text-sm text-slate-700">
+                    <li key={`w${w.device_id}`} className="flex items-start gap-2 text-sm text-slate-700">
                         <span className="text-emerald-600" aria-hidden="true">✓</span>
                         <span className="sr-only">Written:</span>
-                        {w.device_name} · PIN {w.pin} written
+                        <span className="min-w-0">
+                            {w.device_name} · PIN {w.pin} written
+                            {/* Card and fingers put back from the system's copy (2026-10-11). */}
+                            {(w.restored ?? []).map((note) => (
+                                <span key={note} className="block text-xs text-slate-500">{note}</span>
+                            ))}
+                        </span>
                     </li>
                 ))}
                 {failed.map((f) => (
@@ -985,9 +1193,13 @@ function TerminalResults({ outcome, retrying, onRetry }) {
                         <span className="flex min-w-0 items-center gap-2">
                             <span className="text-rose-600" aria-hidden="true">✕</span>
                             <span className="sr-only">Failed:</span>
-                            <span className="truncate">{f.device_name} · {formatDeviceError(f.error)}</span>
+                            <span className="truncate" title={f.error}>{f.device_name} · {formatDeviceError(f.error)}</span>
                         </span>
-                        {onRetry && (
+                        {/* The fix this failure names, when there is one (DC-014). */}
+                        {onResolve && f.action && (
+                            <FixButton failure={f} onClick={(mode) => onResolve(f, mode)} busy={retrying.includes(f.device_id)} disabled={retrying.length > 0} />
+                        )}
+                        {onRetry && !f.action && (
                             <Button type="button" variant="secondary" className="min-h-[30px] shrink-0 px-2.5 text-xs" onClick={() => onRetry([f.device_id])} loading={retrying.includes(f.device_id)} disabled={retrying.length > 0}>
                                 Retry
                             </Button>
@@ -1042,7 +1254,7 @@ function StepRows({ rows, prefix, retrying, onRetry }) {
 | on every tab, because a save that removes somebody from a terminal must never be a
 | surprise to an operator who was only fixing a phone number on the first tab.
 */
-function PendingTerminals({ isEdit, autoPush = false, name, push, added, removed, onOpen }) {
+function PendingTerminals({ isEdit, autoPush = false, name, push, current = [], added, removed, onOpen }) {
     const list = (ids) => ids.map(name).join(', ');
     const updated = push.filter((id) => !added.includes(id));
 
@@ -1056,12 +1268,15 @@ function PendingTerminals({ isEdit, autoPush = false, name, push, added, removed
             </div>
             {push.length === 0 && removed.length === 0 ? (
                 <p className="mt-1 text-xs text-slate-500">
-                    {isEdit ? 'Saved here only. No terminal is changed.' : 'Saved here only. Add terminals on the Access levels tab to put them on one.'}
+                    {current.length > 0
+                        ? `Saved here only — ${list(current)} already ${current.length === 1 ? 'has' : 'have'} their name, ID, card and fingerprints.`
+                        : isEdit ? 'Saved here only. No terminal is changed.' : 'Saved here only. Add terminals on the Access levels tab to put them on one.'}
                 </p>
             ) : (
                 <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
                     {added.length > 0 && <li>Added to {list(added)}, then read back.</li>}
                     {updated.length > 0 && <li>Updated on {list(updated)}, then read back{isEdit && !autoPush ? ' — you are asked first' : ' — as soon as you save'}.</li>}
+                    {current.length > 0 && <li>Already up to date on {list(current)} — not written.</li>}
                     {removed.length > 0 && <li className="font-medium text-rose-700">Removed from {list(removed)} — their fingerprints and card there are deleted. You are asked first.</li>}
                 </ul>
             )}

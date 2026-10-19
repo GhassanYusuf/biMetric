@@ -8,9 +8,15 @@ use App\Models\Device;
 use App\Models\Employee;
 use App\Models\Holiday;
 use App\Models\User;
+use App\Models\DeviceCommand;
+use App\Models\EnrollmentSession;
 use App\Observers\AuditObserver;
+use App\Observers\IntegrationEventObserver;
 use App\Services\Devices\DeviceDriverManager;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -53,6 +59,17 @@ class AppServiceProvider extends ServiceProvider
         Device::observe(AuditObserver::class);
         Department::observe(AuditObserver::class);
         Holiday::observe(AuditObserver::class);
+
+        // Outbound webhooks (integration API). Model observers, so the device code paths
+        // that change these rows stay untouched (rule 15).
+        foreach ([Employee::class, Device::class, DeviceCommand::class, EnrollmentSession::class] as $model) {
+            $model::observe(IntegrationEventObserver::class);
+        }
+
+        // Per TOKEN, not per IP: several integrations behind one gateway must not
+        // starve each other, and one runaway script must not starve the rest.
+        RateLimiter::for('integration', fn (Request $request) => Limit::perMinute((int) config('attendance.integration_rate_limit', 120))
+            ->by('integration:'.($request->user()?->currentAccessToken()?->id ?? $request->ip())));
 
         // App\Listeners\PublishPunchToMqtt is wired to App\Events\PunchRecorded
         // automatically by Laravel's event auto-discovery (its handle() method

@@ -6,6 +6,7 @@ use App\Models\AttendanceLog;
 use App\Models\AttendanceWaiver;
 use App\Models\Employee;
 use App\Models\Holiday;
+use App\Support\AttendanceRules;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Collection;
@@ -55,6 +56,7 @@ final class SummaryBatch
         private readonly array $waiversByEmployee,
         public readonly array $days,
         public readonly float $shiftLengthHours,
+        public readonly AttendanceRules $rules,
     ) {}
 
     /**
@@ -101,9 +103,11 @@ final class SummaryBatch
             ->map(fn (Collection $rows) => $rows->keyBy(fn (AttendanceWaiver $w) => $w->date->format('Y-m-d')))
             ->all();
 
-        [$days, $shiftLengthHours] = self::calendar($fromDate, $toDate);
+        // Read once: every day and every employee in this batch is judged by the same rules.
+        $rules = AttendanceRules::current();
+        [$days, $shiftLengthHours] = self::calendar($fromDate, $toDate, $rules);
 
-        return new self($logsByEmployee, $holidays, $waiversByEmployee, $days, $shiftLengthHours);
+        return new self($logsByEmployee, $holidays, $waiversByEmployee, $days, $shiftLengthHours, $rules);
     }
 
     /**
@@ -115,13 +119,12 @@ final class SummaryBatch
      *
      * @return array{0:list<array{key:string, expectedStart:Carbon, expectedEnd:Carbon, windowStart:Carbon, windowEnd:Carbon}>, 1:float}
      */
-    private static function calendar(Carbon $fromDate, Carbon $toDate): array
+    private static function calendar(Carbon $fromDate, Carbon $toDate, AttendanceRules $rules): array
     {
         $tz = config('attendance.timezone');
-        $shiftStart = config('attendance.shift_start');
-        $shiftEnd = config('attendance.shift_end');
-        $grace = config('attendance.grace_minutes');
-        $workDays = config('attendance.work_days');
+        $shiftStart = $rules->shiftStart;
+        $shiftEnd = $rules->shiftEnd;
+        $workDays = $rules->workDays;
 
         $days = [];
 
@@ -134,11 +137,10 @@ final class SummaryBatch
 
             $days[] = [
                 'key' => $key,
-                // The grace period is part of "were they late", not part of the
-                // payroll window — keep the two pairs distinct exactly as the
-                // original per-day code had them.
-                'expectedStart' => Carbon::parse("{$key} {$shiftStart}", $tz)->addMinutes($grace),
-                'expectedEnd' => Carbon::parse("{$key} {$shiftEnd}", $tz)->addMinutes($grace),
+                // The thresholds are part of "were they late / did they stay late",
+                // not part of the payroll window — keep the two pairs distinct.
+                'expectedStart' => Carbon::parse("{$key} {$shiftStart}", $tz)->addMinutes($rules->lateGrace),
+                'expectedEnd' => Carbon::parse("{$key} {$shiftEnd}", $tz)->addMinutes($rules->leaveLateAfter),
                 'windowStart' => Carbon::parse("{$key} {$shiftStart}", $tz),
                 'windowEnd' => Carbon::parse("{$key} {$shiftEnd}", $tz),
             ];

@@ -24,7 +24,8 @@ class Device extends Model
      * cannot be restored from any backup — the employee must re-enrol in person.
      *
      * This is a GATE, not a label. assertWritable() is called before every device
-     * write, and nothing may bypass it.
+     * write, and nothing may bypass it. Since 2026-10-11 it adopts a device itself
+     * when nobody on it is unmatched, rather than waiting for an operator to.
      */
 
     /** Just added. Nothing read yet — no writes, no attendance. */
@@ -161,20 +162,49 @@ class Device extends Model
             return;
         }
 
-        $why = $this->adoption_status === self::UNADOPTED
-            ? 'its user roster has never been read'
-            : 'its roster still has entries nobody has claimed or ignored';
+        /*
+         * Since 2026-10-11 the system takes the adoption step itself when it safely
+         * can, instead of refusing and sending the operator off to do it by hand —
+         * see DeviceAdoptionService::adoptIfClear(). It still refuses when the
+         * terminal holds people nobody has matched, because only a person can say
+         * who they are.
+         */
+        try {
+            if (app(\App\Services\Devices\DeviceAdoptionService::class)->adoptIfClear($this, auth()->id())) {
+                return;
+            }
+        } catch (\Throwable $e) {
+            throw new \App\Exceptions\DeviceNotAdoptedException(
+                $this,
+                "{$this->name} could not be prepared for writing: reading its user list failed "
+                ."({$e->getMessage()}). Nothing was written."
+            );
+        }
+
+        $pending = $this->unclaimedRosterEntries()->orderBy('device_user_id')->get(['device_user_id', 'device_name']);
+        $names = $pending->take(5)->map(fn ($e) => ($e->device_name ?: 'no name').' (PIN '.$e->device_user_id.')')->implode(', ')
+            .($pending->count() > 5 ? ', …' : '');
 
         throw new \App\Exceptions\DeviceNotAdoptedException(
             $this,
-            "{$this->name} is read-only because {$why}. Writing now could overwrite a person "
-            ."already enrolled on the hardware. Read the roster and decide every entry first."
+            "{$this->name} holds {$pending->count()} ".($pending->count() === 1 ? 'person' : 'people')
+            ." nobody has matched to an employee: {$names}. A write could overwrite one of them, so "
+            .'nothing was written. Match or ignore them on the Devices page, then try again.'
         );
     }
 
+    /**
+     * Whether a write will be accepted — adopted, or adoptable on the spot because
+     * nobody on it is known to be unmatched (assertWritable() then adopts it itself).
+     * Uses a `withCount('unclaimedRosterEntries')` when the caller loaded one.
+     */
     public function isWritable(): bool
     {
-        return $this->adoption_status === self::ADOPTED;
+        if ($this->adoption_status === self::ADOPTED) {
+            return true;
+        }
+
+        return ($this->unclaimed_roster_entries_count ?? $this->unclaimedRosterEntries()->count()) === 0;
     }
 
     /**
@@ -194,14 +224,14 @@ class Device extends Model
         }
 
         /*
-         * The one that matters. A terminal whose existing roster has not been read
-         * and decided is read-only ON PURPOSE: a write addresses a slot, and writing
+         * The one that matters. A terminal holding people nobody has matched is
+         * read-only ON PURPOSE: a write addresses a slot, and writing
          * a slot somebody already occupies replaces them — fingerprints included,
          * with no error, and no way back short of that person standing at the
          * terminal again.
          */
         if (! $this->isWritable()) {
-            return 'its roster has not been read and claimed yet, so it is read-only';
+            return 'it holds people nobody has matched to an employee yet, so it is read-only';
         }
 
         if (! $this->supports(Capability::USER_WRITE)) {
@@ -247,6 +277,18 @@ class Device extends Model
     public function canRenumberUsers(): bool
     {
         return $this->supports(Capability::USER_RENUMBER);
+    }
+
+    /**
+     * Whether this model can move a user to a new ID by re-adding them — delete, add
+     * under the new ID, put card and fingers back (DeviceUserSyncService::moveByReadding,
+     * 2026-10-11). The F18's method, since it refuses an in-place move. Whether THIS
+     * person's card and fingers can be put back is checked per person before anything
+     * is deleted.
+     */
+    public function canMoveUsersByReadding(): bool
+    {
+        return $this->supports(Capability::USER_DELETE) && $this->supports(Capability::USER_WRITE);
     }
 
     /** Whether a name/card can be written to a user here (a C3 panel: no, 2026-09-24). */

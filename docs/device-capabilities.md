@@ -27,6 +27,11 @@ asked. Reporting it as "not supported" would be inventing a limitation.
 `CapabilitySet::defaults()` is the honest baseline. Every level below reflects
 what was observed on the reference F18, not a datasheet.
 
+> **Per model since 2026-10-11 (library 2.11.0):** the standalone family no longer
+> shares one set. `Model\F18` is `defaults()`, `Model\F22` has its own levels, and a
+> model with no file gets `GenericTerminal` (reads only). The per-model methods are in
+> `docs/device-models.md` (CLAUDE.md rule 21).
+>
 > **The F22 is not the F18.** A second device (192.168.7.63, app device 6) behaves
 > differently on bulk reads, and the difference is per *table* rather than per
 > device — see [Windowed bulk reads](#windowed-bulk-reads-not-a-capability-flag)
@@ -98,9 +103,38 @@ flag that should drop**, not a new one.
 | `device.time.write` | Never fired. The reference device's clock is ~6.4 minutes fast, but writing a wrong clock would misstamp every future punch, so this waits for a deliberate decision. |
 | `template.delete` | `CMD_DELETE_USERTEMP` payload is inferred, not documented. |
 | `attendance.realtime` | `REG_EVENT` subscription implemented; a live punch has not been observed arriving this way. |
-| `attendance.clear` | Destructive. Deliberately never called to verify it. |
+| `attendance.clear` | Destructive. Never run on hardware. Since 2.14.0 (2026-10-18) guarded on both sides by the terminal's own record count — see below. UNKNOWN on the F22 and generic terminals. |
+| `user.privilege` | Added 2.14.0 (2026-10-18): admin (14) / normal user (0) on an existing record, read back. The F18 keeps a privilege through every write (C); setting one on purpose has not been run. UNKNOWN on the F22, NOT_IMPLEMENTED on C3 and CSL. |
 | `device.restart` | Deliberately never called. |
 | `user.disable` | Approximated by clearing the card — the protocol has no suspend flag. |
+
+### The terminal's own record count — `GET_FREE_SIZES` (50), CONFIRMED 2026-10-18 (F18, F22)
+
+The reply was fetched by `getDeviceInfo()` for months and never decoded. Layout
+transcribed from fananimi/pyzk `zk/base.py` `read_sizes()`: little-endian int32s,
+users [4], fingers [6], records [8], cards [12], capacities [14]–[16]. Read-only probe
+`tools/zkprobe/free-sizes.php`, traces `tools/zkprobe/traces-2026-10-18/free-sizes-*.json`.
+All four replies were 92 bytes.
+
+| Terminal | Model | `records` | full read the same day |
+|---|---|---|---|
+| IT ROOM `192.168.7.62` | F18 | 11,332 | 11,329, ~2 h earlier (3 punches since) |
+| Camelot `87.237.196.60` | F18 | 42,352 | 42,352 — but 17,203 of them misaligned (DC-020) |
+| Good Wheels | F18/ID | 11,938 | 11,938 |
+| On The Road `192.168.7.63` | F22/ID | 8,430 | 8,430 |
+
+**What it proves and what it does not.** A read that returns fewer records than this
+lost some. A read that returns exactly this many is not thereby clean: Camelot's had
+the right number of 40-byte chunks with a third of them out of alignment. The clear
+(`attendance.clear`) therefore needs the count to match AND every record to decode.
+
+### A record with no user id is not a record (2.14.0, 2026-10-18)
+
+`AttendanceCodec` (40-byte layout) now returns a chunk with an empty user id as
+undecodable. Camelot had 2,876 such "punches" stored, dated 1999-12-31 to 2030-01-30
+(DC-020); none has ever been read from the LAN F18s or the F22. The app also refuses to
+import a punch dated more than a day ahead of now (`AttendanceRawLog::SKIP_FUTURE`) on
+every family, so it can never become the watermark.
 
 ### `card.enroll` — IMPLEMENTED, behind a safety net (F18, IT Room `192.168.7.62`, 2026-09-23)
 
@@ -251,10 +285,30 @@ The fixture is **synthetic** — `tests/Fixtures/c3-templatev10-synthetic.bin`. 
 capture is 238 people's fingerprints and is not committed (rule 16); the framing is
 what matters and it is reproduced exactly.
 
-### Not implemented (2)
+### `template.upload` — IMPLEMENTED on the F18 (2026-10-11)
 
-`template.download`, `template.upload` — and the distinction from
-`template.blob.read` above matters:
+`TemplateService::addTemplates()` (library 2.10.0) adds stored templates to a user
+the terminal already holds: it re-sends the device's OWN 72-byte record with the
+user's existing templates plus the new slots in one `SAVE_USERTEMPS` commit, never
+overwrites a filled slot, and reports only slots that read back byte-identical.
+If an existing finger changed it writes the original back and throws.
+
+**Run, 2026-10-11, IT Room (F18, `192.168.7.62`):** AKRAM, user id `440105943`, uid
+20, no fingers and no card (he had been removed and re-added — the bug below). Sent
+slot 6, a 1,132-byte ZKFinger v10 template read off the inBIO460 (Glass Door).
+Result `[6]`; the table then held slot 6 for uid 20 with sha1 `d507071a…`, identical
+to the panel's copy; the other 17 users and all 15 other templates unchanged
+(full before/after diff). This is the second time the F18 accepted `SAVE_USERTEMPS`
+(the first: the renumber run of 2026-09-24 above) and the first time with a
+template from ANOTHER protocol family. **Not yet checked: that the finger matches at
+the terminal.** Until Akram scans, the level is `implemented` in
+`CapabilitySet::defaults()` — offered, with the warning. Never run on the F22 or on
+Camelot; the F22 inherits the default, which is `unknown` in fact (rule 15).
+
+### Not implemented (1)
+
+`template.download` — and the distinction from `template.blob.read` above
+matters:
 
 - `template.download` is the **separate per-slot command** (`USERTEMP_RRQ` with a
   uid/slot payload). The device answers it — a per-slot probe returned 1,304 bytes
@@ -273,7 +327,7 @@ what matters and it is reproduced exactly.
   as a general upload. Still EXPERIMENTAL: whether the F18 accepts it, stores the
   bytes identically, keeps the `valid` byte (pyzk sends `0x10 + slot` and drops it)
   and — the real test — still verifies the finger, is exactly what the first run
-  must record.
+  must record. (Superseded 2026-10-11: see `template.upload` above.)
 
 Neither ever blocked reading.
 
@@ -871,4 +925,61 @@ and field ids FROM THE PANEL'S DATATABLE_CFG, per table, never from constants.
   **First real move, 2026-09-24:** Ghassan 656 → 830108246 on both panels from the
   Push dialog; the owner confirmed it works at **Glass Door** → `confirmed` on the
   inBIO460. The TF1700 (Entrance) stays `implemented` until tried at that door.
+
+
+## TF1700: an edit can re-insert a user under a NEW UID — fingerprints must follow (2026-10-11)
+
+OBSERVED on the TF1700 (Entrance, `192.168.7.60`), 2026-10-11: writing Pin 781054761's
+`user` row without its UID (the ZKAccess edit) left it at **UID 51**, not 318 — 51 had
+been freed moments earlier by deleting Pin 21. Its `templatev10` rows stayed on UID 318,
+and every template row carries its owner's UID, so the finger stopped belonging to the
+person. The inBIO460 (Glass Door) kept UID 318 for the same edit. A scan found one older
+case (Pin 20200269, finger on 297, record 295) with no punches since its ID change.
+Library 2.11.1: `Personnel::update()` re-links a person's fingerprints to their current
+UID before every edit and after any edit that moved the UID (`relinkFingerprints()`,
+verified, restored on failure). Casebook DC-018.
+
+## C3 panels store the user ID (Pin) as a NUMBER — leading zeros are dropped (2026-10-11)
+
+CONFIRMED on the TF1700 (Entrance, `192.168.7.60`) and the inBIO460 (Glass Door,
+`192.168.7.61`), 2026-10-11. Moving employee 1739 (Tariq) from Pin 940 to his employee
+code `041112750` succeeded on both panels; reading them back showed him at **`41112750`**
+— same UID 319, card 1739519 and finger 6 carried across. The `user` table's Pin is an
+integer, so a leading zero cannot be stored.
+
+`C3Driver::renumberUser()` compared the read-back as strings and reported the successful
+move as "written but is not on the panel when read back", which also left the app's
+mapping on the old Pin. It now compares Pins as numbers (`C3Driver::samePin()`) and
+records the Pin as the panel reports it — the number the panel stamps on punches. The
+two mappings were corrected by hand the same day; no punches had arrived in between.
+
+The next save then tried to move him from 41112750 to 041112750 — the same Pin — and
+the panel refused ("Moving a user needs two different Pins"). `C3Driver::renumberUser()`
+now returns the record unchanged when the two are the same number, and
+`DeviceUserSyncService::renumberEmployee()` reports "already user ID …" without closing
+and reopening the mapping.
+
+Consequence for anyone mapping employee codes to C3 Pins: a code with a leading zero
+appears on the panel, and in its punch records, without it. The ZKTeco standalone
+terminals (F18, F22) keep user IDs as strings and are not affected.
+
+## Keypad password — read on every model, write pending a test (2026-10-12)
+
+Read-only probe `tools/zkprobe/user-passwords.php`, all six terminals, IT ROOM as control
+(trace `traces-2026-10-12/user-passwords-02.json`). Passwords in use: Good Wheels 1/18,
+On The Road 1/10, Camelot 2/24, Glass Door 4/316, Entrance 4/316, IT ROOM 1/7 — all
+digits, 4 to 6 long. Compared in memory with the host app's stored copies: **equal 11,
+differs 0** across F18, F22, inBIO460 and TF1700, so the decode is right on each model →
+`password.read` CONFIRMED there. IT ROOM had one password the app held and the terminal
+did not — consistent with the bug below.
+
+**Finding: every standalone user write erased the password.** `buildUserRecord()` wrote
+zeros at offset 3 and `save()` rebuilt the record, so name pushes and card writes on the
+F18/F22 cleared it. Fixed in library 2.13.0 (null keeps the device's). C3 edits never
+did: `Personnel::update()` carries the row over; only `add()` sent `''`.
+
+`password.write`: IMPLEMENTED on all four models, not yet read back after a write. The
+host app writes passwords only where the level is CONFIRMED, so until
+`tools/zkprobe/user-password-write.php` (test user, owner's go-ahead) has run on a model,
+pushes there KEEP the terminal's password instead of writing the system's.
 

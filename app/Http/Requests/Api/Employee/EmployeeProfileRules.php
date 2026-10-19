@@ -13,6 +13,8 @@ use Illuminate\Validation\Rule;
  */
 trait EmployeeProfileRules
 {
+    private const PHONE = 'regex:/^\+?[0-9 ()\-]+$/';
+
     protected function profileRules(): array
     {
         $tenant = Tenancy::id();
@@ -20,7 +22,9 @@ trait EmployeeProfileRules
         return [
             'last_name' => ['nullable', 'string', 'max:255'],
             'gender' => ['nullable', Rule::in(['male', 'female'])],
-            'mobile_phone' => ['nullable', 'string', 'max:32'],
+            // "+973 33445566" from the form's code picker (2026-10-12); a leading + is optional
+            // so an integration's local numbers still save.
+            'mobile_phone' => ['nullable', 'string', 'max:32', self::PHONE],
             'hired_date' => ['nullable', 'date'],
             'birthday' => ['nullable', 'date', 'before:today'],
             /*
@@ -32,8 +36,13 @@ trait EmployeeProfileRules
             'device_password' => ['nullable', 'string', 'regex:/^\d{1,8}$/'],
             'privilege' => ['nullable', Rule::in(Employee::PRIVILEGES)],
 
-            // Write-only, like the roster editor: blank or omitted leaves it as it is.
-            'national_id' => ['nullable', 'string', 'min:4', 'max:64'],
+            /*
+             * Employment (2026-10-12). Resignation is a date already reached: saving it
+             * takes the person off every terminal NOW, so a future date would remove
+             * them during their notice period. Nothing runs later to do it on the day.
+             */
+            'employment_type' => ['sometimes', Rule::in(Employee::EMPLOYMENT_TYPES)],
+            'resigned_at' => ['nullable', 'date', 'before_or_equal:today'],
 
             'job_title' => ['nullable', 'string', 'max:255'],
             'office' => ['nullable', 'string', 'max:255'],
@@ -41,7 +50,7 @@ trait EmployeeProfileRules
             'country' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
             'postal_code' => ['nullable', 'string', 'max:32'],
-            'home_phone' => ['nullable', 'string', 'max:32'],
+            'home_phone' => ['nullable', 'string', 'max:32', self::PHONE],
             'political_status' => ['nullable', 'string', 'max:255'],
             'race' => ['nullable', 'string', 'max:255'],
             'home_address' => ['nullable', 'string', 'max:500'],
@@ -80,6 +89,10 @@ trait EmployeeProfileRules
             'employee_code.regex' => 'The employee code must be digits only, up to 9.',
             'device_password.regex' => 'The device password must be 1 to 8 digits.',
             'access_valid_to.after' => 'The end date must be after the start date.',
+            'resigned_at.before_or_equal' => 'Enter the resignation date once it has been reached — saving it takes them off the terminals straight away.',
+            'employment_type.in' => 'Choose full-time or part-time.',
+            'mobile_phone.regex' => 'Use digits only, after the country code.',
+            'home_phone.regex' => 'Use digits only, after the country code.',
             'access_valid_from.required_if_accepted' => 'Give a start date, or turn the valid period off.',
             'access_valid_to.required_if_accepted' => 'Give an end date, or turn the valid period off.',
         ];

@@ -7,11 +7,16 @@ use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
+use App\Services\Attendance\EmployeeReportService;
 use App\Services\Attendance\PunchLogQuery;
+use App\Services\Reports\AttendanceReport;
+use App\Services\Reports\MonthlyStatement;
+use App\Services\Reports\MonthlyStatementWorkbook;
+use App\Services\Reports\PdfRenderer;
+use App\Services\Reports\PersonalReport;
 use App\Services\Reports\PayrollReport;
 use App\Support\ApiResponse;
 use App\Support\VerifyMethod;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -56,7 +61,24 @@ class ExportController extends Controller
     public function __construct(
         private readonly AttendanceSummaryService $summaries,
         private readonly PayrollReport $payroll,
+        private readonly AttendanceReport $attendanceReport,
+        private readonly PersonalReport $personal,
+        private readonly PdfRenderer $pdf,
+        private readonly MonthlyStatement $statement,
     ) {}
+
+    /**
+     * Longest range the company report renders in a request. A year of a 235-person
+     * roster (two years read, for the comparison) measured ~4 s on 2026-10-18.
+     */
+    private const MAX_REPORT_DAYS = 366;
+
+    /**
+     * Most people one Monthly Statement renders in a request: a page each, and dompdf
+     * took 18.6 s for 40 of them on 2026-10-19 (the data itself is 0.3 s for all 235).
+     * Beyond this the caller is asked for a department rather than left waiting.
+     */
+    private const MAX_STATEMENT_EMPLOYEES = 60;
 
     /** The punch log, honouring the screen's device/date/employee filters. */
     public function attendanceLog(Request $request): Response
@@ -70,6 +92,8 @@ class ExportController extends Controller
         $filters = $request->validate([
             'employee_id' => ['nullable', 'integer'],
             'device_id' => ['nullable', 'integer'],
+            'department_id' => ['nullable', 'regex:/^(none|\d+)$/'],
+            'search' => ['nullable', 'string', 'max:100'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
         ]);
@@ -79,7 +103,7 @@ class ExportController extends Controller
 
         $total = (clone $query)->count();
 
-        $logs = $query->with(['employee:id,name', 'device:id,name'])
+        $logs = $query->with(['employee:id,name,last_name', 'device:id,name'])
             ->limit(self::MAX_ROWS)
             ->get();
 
@@ -91,7 +115,7 @@ class ExportController extends Controller
             $local = $log->punched_at?->copy()->setTimezone($tz);
 
             return [
-                'name' => $log->employee?->name,
+                'name' => $log->employee?->fullName(),
                 'code' => $log->device_user_id,
                 'device' => $log->device?->name,
                 'method' => VerifyMethod::label($log->verify_method),
@@ -104,10 +128,19 @@ class ExportController extends Controller
         if ($selfOnly) {
             $filterLines[] = 'Your own punches only';
         } elseif (! empty($filters['employee_id'])) {
-            $filterLines[] = 'Employee: '.(Employee::find($filters['employee_id'])?->name ?? "#{$filters['employee_id']}");
+            $filterLines[] = 'Employee: '.(Employee::find($filters['employee_id'])?->fullName() ?? "#{$filters['employee_id']}");
         }
         if (! empty($filters['device_id'])) {
             $filterLines[] = 'Device: '.(Device::find($filters['device_id'])?->name ?? "#{$filters['device_id']}");
+        }
+        if (! empty($filters['search'])) {
+            $filterLines[] = 'Search: “'.$filters['search'].'”';
+        }
+        if (($filters['department_id'] ?? null) === 'none') {
+            $filterLines[] = 'Department: unassigned';
+        } elseif (! empty($filters['department_id'])) {
+            // The full path, so a PDF says which company's "Finance" it is.
+            $filterLines[] = 'Department: '.(Department::find($filters['department_id'])?->path() ?? "#{$filters['department_id']}").' (and below)';
         }
 
         return $this->render('pdf.attendance-log', [
@@ -186,21 +219,190 @@ class ExportController extends Controller
     }
 
     /**
-     * Shared rendering: every PDF gets the tenant, the timezone it is stated in,
-     * and when it was produced.
+     * The company attendance report: headline figures against the previous period,
+     * the period day by day, departments, arrival times, who needs attention, and
+     * everyone as an appendix. Same permission as the Reports screen.
      */
+    public function attendanceReport(Request $request): Response
+    {
+        if (! $request->user()->can('reports.view')) {
+            return ApiResponse::error('This action is unauthorized.', [], 403);
+        }
+
+        $validated = $request->validate([
+            ...$this->periodRules(),
+            'department_id' => ['nullable', 'integer'],
+        ]);
+
+        if ($error = $this->rangeTooLong($validated)) {
+            return $error;
+        }
+
+        $report = $this->attendanceReport->build(
+            $validated['from'] ?? null,
+            $validated['to'] ?? null,
+            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
+        );
+
+        return $this->render('pdf.report.attendance', [
+            'title' => 'Attendance report',
+            'rangeLabel' => $this->rangeLabel($report['from'], $report['to']),
+            'r' => $report,
+        ], $this->filename('attendance-report', ['from' => $report['from'], 'to' => $report['to']]));
+    }
+
+    /**
+     * One person's attendance report for any period: `from`/`to`, or `period` (30, 90
+     * or 365 days ending today, the Employee Report screen's choices). The same
+     * PersonalReport and the same page as each person gets in the bulk export.
+     */
+    public function employeeReport(Request $request, Employee $employee): Response
+    {
+        $this->authorize('view', $employee);
+
+        $validated = $request->validate([
+            ...$this->periodRules(),
+            'period' => ['nullable', 'integer', 'in:'.implode(',', EmployeeReportService::PERIODS)],
+        ]);
+
+        if (! isset($validated['from']) && isset($validated['period'])) {
+            $validated['from'] = now(config('attendance.timezone'))->subDays($validated['period'] - 1)->toDateString();
+        }
+        if ($error = $this->rangeTooLong($validated)) {
+            return $error;
+        }
+
+        [$report] = $this->personal->build([$employee], $validated['from'] ?? null, $validated['to'] ?? null);
+        $period = $report['period'];
+
+        return $this->render('pdf.report.employee', [
+            'title' => 'Employee report · '.$report['employee']['name'],
+            'rangeLabel' => $this->rangeLabel($period['from'], $period['to']),
+            'p' => $report,
+        ], $this->filename('report-'.Str::slug($report['employee']['name'] ?: "employee-{$employee->id}"), $period));
+    }
+
+    /**
+     * The Monthly Statement Report: every active employee (or one department's), one
+     * page each, a row per calendar day, in the ZKTeco column layout the company
+     * already files (draft/OTR-SEP.xlsx). Same permission as the payroll summary.
+     */
+    public function monthlyStatement(Request $request): Response
+    {
+        if (! $request->user()->can('reports.view')) {
+            return ApiResponse::error('This action is unauthorized.', [], 403);
+        }
+
+        $validated = $request->validate([
+            ...$this->periodRules(),
+            'department_id' => ['nullable', 'integer'],
+        ]);
+
+        if ($error = $this->rangeTooLong($validated)) {
+            return $error;
+        }
+
+        $statement = $this->statement->build(
+            $validated['from'] ?? null,
+            $validated['to'] ?? null,
+            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
+        );
+
+        $count = count($statement['employees']);
+        if ($count > self::MAX_STATEMENT_EMPLOYEES) {
+            $message = "That is {$count} people, a page each — choose a department (up to ".self::MAX_STATEMENT_EMPLOYEES.' people per statement).';
+
+            return ApiResponse::error($message, ['department_id' => [$message]], 422);
+        }
+
+        $fmt = fn (string $d) => Carbon::parse($d)->format('m/d/Y');
+        $days = collect($statement['shift']['work_days'])->map(fn (int $d) => Carbon::create()->startOfWeek(Carbon::SUNDAY)->addDays($d)->format('D'))->implode(' ');
+        $filterLines = ["Shift {$statement['shift']['start']}–{$statement['shift']['end']} · {$days}"];
+        if (! empty($validated['department_id'])) {
+            $department = Department::find($validated['department_id']);
+            $filterLines[] = 'Department: '.($department?->name ?? "#{$validated['department_id']}");
+        }
+
+        return $this->render('pdf.monthly-statement', [
+            'title' => 'Monthly Statement Report',
+            'rangeLabel' => 'From '.$fmt($statement['from']).' To '.$fmt($statement['to']),
+            'filterLines' => $filterLines,
+            's' => $statement,
+        ], $this->filename('monthly-statement', ['from' => $statement['from'], 'to' => $statement['to']]));
+    }
+
+    /**
+     * The Monthly Statement for EVERY employee (or one department) as an Excel workbook:
+     * the same MonthlyStatement figures as the PDF, written by MonthlyStatementWorkbook.
+     * No 60-person cap — a workbook streams in a couple of seconds where dompdf took 18.6 s
+     * for 40 pages, which is why the Reports screen's "all employees" Excel is synchronous
+     * while its PDF is built in the background.
+     */
+    public function monthlyStatementExcel(Request $request, MonthlyStatementWorkbook $workbook): Response
+    {
+        if (! $request->user()->can('reports.view')) {
+            return ApiResponse::error('This action is unauthorized.', [], 403);
+        }
+
+        $validated = $request->validate([
+            ...$this->periodRules(),
+            'department_id' => ['nullable', 'integer'],
+        ]);
+
+        if ($error = $this->rangeTooLong($validated)) {
+            return $error;
+        }
+
+        $statement = $this->statement->build(
+            $validated['from'] ?? null,
+            $validated['to'] ?? null,
+            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
+        );
+
+        $path = tempnam(sys_get_temp_dir(), 'statement-');
+        $workbook->write(
+            $statement,
+            auth()->user()?->tenant?->name,
+            $path,
+            now(config('attendance.timezone'))->format('m/d/Y H:i'),
+        );
+
+        $name = str_replace('.pdf', '.xlsx', $this->filename('monthly-statement', ['from' => $statement['from'], 'to' => $statement['to']]));
+
+        return response()->download($path, $name, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend();
+    }
+
+    /**
+     * The date rules every period report shares. No future days: a work day that has
+     * not happened has no punches yet, and the summary would count it as an absence.
+     */
+    private function periodRules(): array
+    {
+        $today = now(config('attendance.timezone'))->toDateString();
+
+        return [
+            'from' => ['nullable', 'date', 'before_or_equal:'.$today],
+            'to' => ['nullable', 'date', 'after_or_equal:from', 'before_or_equal:'.$today],
+        ];
+    }
+
+    /** A 422 when the resolved range is longer than a report renders in reasonable time. */
+    private function rangeTooLong(array $validated): ?Response
+    {
+        [$fromDate, $toDate] = AttendanceSummaryService::window($validated['from'] ?? null, $validated['to'] ?? null);
+        if ($fromDate->copy()->startOfDay()->diffInDays($toDate->copy()->startOfDay()) + 1 > self::MAX_REPORT_DAYS) {
+            return ApiResponse::error('Choose a range of a year or less.', ['to' => ['Choose a range of a year or less.']], 422);
+        }
+
+        return null;
+    }
+
+    /** Shared rendering: the tenant, timezone and generation time, page-numbered. */
     private function render(string $view, array $data, string $filename): Response
     {
-        $tz = config('attendance.timezone');
-
-        $pdf = Pdf::loadView($view, [
-            ...$data,
-            'tenantName' => auth()->user()?->tenant?->name,
-            'timezone' => $tz,
-            'generatedAt' => now($tz)->format('Y-m-d g:i A'),
-        ])->setPaper('a4');
-
-        return $pdf->download($filename);
+        return $this->pdf->make($view, $data, auth()->user()?->tenant?->name)->download($filename);
     }
 
     /** "1 Sep 2026 – 14 Sep 2026", or an open/absent end stated as such. */

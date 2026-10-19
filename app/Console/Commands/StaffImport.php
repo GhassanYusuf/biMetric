@@ -2,14 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Department;
 use App\Models\Employee;
-use App\Models\Person;
 use App\Models\Tenant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Imports the staff list from HR as People and Employments.
+ * Imports the staff list from HR as Employments.
  *
  * WHY A COMMAND AND NOT A SCREEN: the Employees screen creates one person at a time,
  * which is right for a new hire and useless for onboarding an estate. There is no bulk
@@ -23,17 +23,16 @@ use Illuminate\Support\Facades\DB;
  *
  * COLUMNS (header row required; order irrelevant; unknown columns ignored):
  *
- *   name           REQUIRED
+ *   name           REQUIRED — the first name, or the whole name when there is no last_name
+ *   last_name      optional — an empty cell keeps the last name already stored
  *   employee_code  REQUIRED — the payroll number, unique within one company
- *   national_id    optional — the HRMS join key. Without it the person is `unverified`
- *                  and their attendance cannot be exported to payroll.
  *   email          optional
- *   department     optional
+ *   company        optional — top-level node of the department tree (2026-10-11)
+ *   department     optional — placed under `company` when both are given
  *   tenant         optional — tenant slug. Defaults to --tenant, else the only tenant.
  *
- * The same national_id appearing twice is NOT an error: it is the same human employed
- * by two sister companies, which is exactly what the Person layer exists to express.
- * They become one Person with two Employments.
+ * A `national_id` column, if present, is ignored: national ids were removed from the
+ * system on 2026-09-27.
  */
 class StaffImport extends Command
 {
@@ -42,7 +41,7 @@ class StaffImport extends Command
                             {--tenant= : Tenant slug for rows that do not name one}
                             {--dry-run : Report what would happen without writing}';
 
-    protected $description = 'Import the staff list (people + employments) from a CSV';
+    protected $description = 'Import the staff list (employments) from a CSV';
 
     public function handle(): int
     {
@@ -86,9 +85,7 @@ class StaffImport extends Command
 
         $created = 0;
         $updated = 0;
-        $peopleCreated = 0;
-        $peopleMatched = 0;
-        $noNationalId = 0;
+        $departmentsCreated = 0;
         $errors = [];
 
         DB::beginTransaction();
@@ -111,48 +108,39 @@ class StaffImport extends Command
                 continue;
             }
 
-            $nationalId = trim($row['national_id'] ?? '');
-            $person = null;
-
-            if ($nationalId !== '') {
-                // The same document already in the system means the SAME HUMAN — very
-                // possibly employed by a sister company. That is a match, not a clash.
-                $person = Person::findByNationalId($nationalId);
-
-                if ($person === null) {
-                    $person = Person::create(['full_name' => $name, 'status' => Person::UNVERIFIED]);
-                    $person->setNationalId($nationalId);
-                    $peopleCreated++;
-                } else {
-                    $peopleMatched++;
-                }
-            } else {
-                // No document yet. The employment is still created and attendance still
-                // collects; only the payroll export is blocked (Person::isExportable()).
-                $noNationalId++;
-            }
-
             $existing = Employee::withoutGlobalScopes()
                 ->where('tenant_id', $tenant->id)
                 ->where('employee_code', $code)
                 ->first();
 
+            $company = trim($row['company'] ?? '') ?: null;
+            $departmentName = trim($row['department'] ?? '') ?: null;
+
             $attributes = [
                 'name' => $name,
-                'person_id' => $person?->id,
                 'email' => trim($row['email'] ?? '') ?: null,
-                'department' => trim($row['department'] ?? '') ?: null,
+                // The free-text column keeps the most specific name, as it always held.
+                'department' => $departmentName ?? $company,
                 'is_active' => true,
             ];
 
-            if ($existing !== null) {
-                // person_id is never CLEARED by a re-import. A row that omits the
-                // national id this time must not detach a human we have already
-                // identified — that would silently un-export their payroll.
-                if ($person === null) {
-                    unset($attributes['person_id']);
-                }
+            // Same rule as the tree below: an empty cell is not a request to erase.
+            $lastName = trim($row['last_name'] ?? '');
+            if ($lastName !== '') {
+                $attributes['last_name'] = $lastName;
+            }
 
+            /*
+             * The department tree. A row that names neither leaves department_id alone:
+             * an empty cell is not evidence that somebody left their department, and
+             * clearing it would empty the tree for any file that lacks the columns.
+             */
+            $node = $this->departmentFor($tenant, $company, $departmentName, $departmentsCreated);
+            if ($node !== null) {
+                $attributes['department_id'] = $node->id;
+            }
+
+            if ($existing !== null) {
                 $existing->forceFill($attributes)->save();
                 $updated++;
             } else {
@@ -174,9 +162,7 @@ class StaffImport extends Command
         $this->line(sprintf('  %-28s %d', 'rows read', count($rows)));
         $this->line(sprintf('  %-28s %d', 'employments created', $created));
         $this->line(sprintf('  %-28s %d', 'employments updated', $updated));
-        $this->line(sprintf('  %-28s %d', 'people created', $peopleCreated));
-        $this->line(sprintf('  %-28s %d  (same human, another company)', 'people matched by national id', $peopleMatched));
-        $this->line(sprintf('  %-28s %d  (not exportable to payroll yet)', 'rows with no national id', $noNationalId));
+        $this->line(sprintf('  %-28s %d', 'departments created', $departmentsCreated));
 
         if ($errors !== []) {
             $this->newLine();
@@ -209,6 +195,59 @@ class StaffImport extends Command
     /**
      * @return array<int,array<string,string>> keyed by 1-based line number
      */
+    /**
+     * Find or create the tree node a row belongs to: the company at the top, the
+     * department beneath it. A department with no company is a top-level node, which
+     * is what every department was before the tree existed. Matched by name,
+     * case-insensitively, so "Finance" and "FINANCE" in one file are one department.
+     */
+    private function departmentFor(Tenant $tenant, ?string $company, ?string $department, int &$createdCount): ?Department
+    {
+        $parent = $company !== null ? $this->findOrCreateDepartment($tenant, null, $company, $createdCount) : null;
+
+        if ($department === null) {
+            return $parent;
+        }
+
+        return $this->findOrCreateDepartment($tenant, $parent?->id, $department, $createdCount);
+    }
+
+    /** @var array<string, Department> */
+    private array $departmentCache = [];
+
+    private function findOrCreateDepartment(Tenant $tenant, ?int $parentId, string $name, int &$createdCount): Department
+    {
+        $key = $tenant->id.'|'.($parentId ?? '').'|'.mb_strtolower($name);
+
+        if (isset($this->departmentCache[$key])) {
+            return $this->departmentCache[$key];
+        }
+
+        $existing = Department::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->when($parentId === null, fn ($q) => $q->whereNull('parent_id'), fn ($q) => $q->where('parent_id', $parentId))
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->first();
+
+        // withoutGlobalScopes() also lifts SoftDeletes, so a removed department is
+        // found here. Restoring it is the only option: the unique index on
+        // (tenant, parent, name) counts deleted rows and would refuse a second one.
+        if ($existing?->trashed()) {
+            $existing->restore();
+        }
+
+        if ($existing === null) {
+            $existing = Department::withoutGlobalScopes()->create([
+                'tenant_id' => $tenant->id,
+                'parent_id' => $parentId,
+                'name' => $name,
+            ]);
+            $createdCount++;
+        }
+
+        return $this->departmentCache[$key] = $existing;
+    }
+
     private function readCsv(string $path): array
     {
         $handle = fopen($path, 'r');

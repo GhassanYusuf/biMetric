@@ -17,10 +17,25 @@ class EmployeeResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'employee_code' => $this->employee_code,
+            'external_id' => $this->external_id,
             'email' => $this->email,
             'department' => $this->department,
-            'department_id' => $this->department_id,
-            'department_name' => $this->whenLoaded('department', fn () => $this->department?->name),
+            // Cast: SQL Server returns it as a string, and screens compare it to ids.
+            'department_id' => $this->department_id === null ? null : (int) $this->department_id,
+            // `department` is ALSO a free-text column, and Eloquent exposes the
+            // attribute before the relation, so the magic accessor would hand the
+            // resource a string. Read the loaded relation object directly instead.
+            'department_name' => $this->whenLoaded('department', fn () => $this->getRelation('department')?->name),
+            /*
+             * The company is the top of the department's branch (2026-10-12): the list
+             * shows Company and Department as two columns. When `department_id` IS a
+             * company, the person has a company and no department yet.
+             */
+            'company' => $this->whenLoaded('department', function () {
+                $company = $this->getRelation('department')?->company();
+
+                return $company ? ['id' => (int) $company->id, 'name' => $company->name] : null;
+            }),
             'photo_url' => $this->photo_url,
             'is_active' => (bool) $this->is_active,
             'card_number' => $this->card_number,
@@ -49,24 +64,11 @@ class EmployeeResource extends JsonResource
                 $this->whenLoaded('deviceMaps')
             ),
             /*
-             * IDENTITY — the link to the human, and to payroll.
-             *
-             * The national id is the HRMS join key and is government id, so the full
-             * value never leaves the server (see Person). What a screen needs is
-             * whether one exists, and enough of a tail to confirm the right document
-             * was entered — not the number itself.
-             *
-             * `person_id` null means this employment is not yet attached to a human:
-             * attendance still collects, payroll export is blocked.
+             * The link to the human across sister companies. Null means this
+             * employment is not attached to a Person yet. (The national id that used
+             * to hang off it was removed on 2026-09-27.)
              */
             'person_id' => $this->person_id,
-            'has_national_id' => $this->whenLoaded(
-                'person',
-                fn () => $this->person?->national_id_hash !== null,
-                $this->person_id !== null,
-            ),
-            'national_id_masked' => $this->whenLoaded('person', fn () => $this->person?->maskedNationalId()),
-            'exportable' => $this->whenLoaded('person', fn () => (bool) $this->person?->isExportable(), false),
             /*
              * Fingers the SYSTEM holds a copy of (2026-09-24, FingerprintVault), from
              * any terminal. Slot numbers only — the bytes never leave the server. Absent
@@ -98,6 +100,9 @@ class EmployeeResource extends JsonResource
             'has_device_password' => $this->device_password !== null && $this->device_password !== '',
             'privilege' => $this->privilege,
             'job_title' => $this->job_title,
+            // Employment (2026-10-12). A label and a date; resigned ⇒ inactive.
+            'employment_type' => $this->employment_type ?? 'full_time',
+            'resigned_at' => $this->resigned_at?->toDateString(),
             'office' => $this->office,
             'education' => $this->education,
             'country' => $this->country,

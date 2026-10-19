@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\DeviceNotAdoptedException;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveTenant;
 use App\Support\ApiResponse;
@@ -39,6 +40,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // auth; `permission`/`role` are spatie's authorization gates.
         $middleware->alias([
             'tenant' => ResolveTenant::class,
+            // Sanctum token abilities (integration API) and the Idempotency-Key replay.
+            'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
+            'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,
+            'idempotent' => \App\Http\Middleware\EnforceIdempotency::class,
             'permission' => PermissionMiddleware::class,
             'role' => RoleMiddleware::class,
         ]);
@@ -67,6 +72,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // DeviceErrorReporter directly instead, so a failure is never logged
         // twice: either the catch reports it, or this does.
         // ------------------------------------------------------------------
+        // A refused write to an unadopted terminal is a normal state for a new
+        // device, not an error, so it does not belong in the error log.
+        $exceptions->dontReport([DeviceNotAdoptedException::class]);
+
         $exceptions->report(function (DeviceException $e): bool {
             app(DeviceErrorReporter::class)->report($e, 'device communication');
 
@@ -101,6 +110,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 // returning a plausible-looking empty success.
                 $e instanceof UnsupportedCommandException => ApiResponse::error(
                     $e->getMessage(), [], 501,
+                ),
+
+                // 409: not a fault, a state — the terminal has not been adopted, so
+                // writes are refused on purpose. The message tells the operator what
+                // to do, so it goes out verbatim; before 2026-10-11 this fell through
+                // to 'Server error.' and the reason never reached the screen.
+                $e instanceof DeviceNotAdoptedException => ApiResponse::error(
+                    $e->getMessage(), ['device_id' => $e->device->id, 'reason' => 'not_adopted'], 409,
                 ),
 
                 // 502, not 500: the request was fine, the terminal upstream of us

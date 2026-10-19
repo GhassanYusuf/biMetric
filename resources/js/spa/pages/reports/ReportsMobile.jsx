@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Badge, Button, Card, EmptyState, PageHeader, SelectField, TextField } from '../../shared/ui';
-import { hours, rangeLabel } from './parts';
+import { ActionMenu, Badge, Button, Card, EmptyState, PageHeader, SelectField, TextField } from '../../shared/ui';
+import { ExportRuns, hours, rangeLabel } from './parts';
 
 // Mobile payroll summary: the same report and the same export, with the filters
 // collapsed behind a toggle and each employee as a card.
-export default function ReportsMobile({ report, departments, filters, onFilter, loading, exporting, onExport }) {
+export default function ReportsMobile({ report, departments, filters, onFilter, loading, exporting, onExport, runs, downloading, deleting, onDownloadRun, onDeleteRun, allEmployeesItems }) {
     const [filtersOpen, setFiltersOpen] = useState(false);
     const rows = report?.rows ?? [];
     const activeCount = [filters.from, filters.to, filters.department_id].filter(Boolean).length;
@@ -17,13 +17,35 @@ export default function ReportsMobile({ report, departments, filters, onFilter, 
         <div className="space-y-4">
             <PageHeader title="Payroll summary" compact>
                 <Button
+                    className="min-h-[38px] px-3 text-sm"
+                    loading={exporting === 'report'}
+                    disabled={!!exporting}
+                    onClick={() => onExport('report')}
+                >
+                    {exporting === 'report' ? 'Preparing…' : 'Report'}
+                </Button>
+                <ActionMenu
+                    label="All employees"
+                    className="min-h-[38px] px-3 text-sm"
+                    items={allEmployeesItems}
+                />
+                <Button
                     variant="secondary"
                     className="min-h-[38px] px-3 text-sm"
-                    loading={exporting}
-                    disabled={exporting}
-                    onClick={onExport}
+                    loading={exporting === 'payroll'}
+                    disabled={!!exporting}
+                    onClick={() => onExport('payroll')}
                 >
-                    {exporting ? 'Preparing…' : 'PDF'}
+                    {exporting === 'payroll' ? 'Preparing…' : 'Payroll'}
+                </Button>
+                <Button
+                    variant="secondary"
+                    className="min-h-[38px] px-3 text-sm"
+                    loading={exporting === 'statement'}
+                    disabled={!!exporting}
+                    onClick={() => onExport('statement')}
+                >
+                    {exporting === 'statement' ? 'Preparing…' : 'Statement'}
                 </Button>
                 <Button
                     variant="secondary"
@@ -60,6 +82,8 @@ export default function ReportsMobile({ report, departments, filters, onFilter, 
                     )}
                 </Card>
             )}
+
+            <ExportRuns runs={runs} downloading={downloading} deleting={deleting} onDownload={onDownloadRun} onDelete={onDeleteRun} />
 
             {rows.length === 0 ? (
                 <Card>

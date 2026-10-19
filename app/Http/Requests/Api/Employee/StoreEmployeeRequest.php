@@ -26,6 +26,11 @@ class StoreEmployeeRequest extends FormRequest
                 'required', 'string', 'max:255', $this->codeFormatRule(),
                 Rule::unique('employees', 'employee_code')->where('tenant_id', Tenancy::id()),
             ],
+            // The caller's own id for this person (integration API). Unique per tenant.
+            'external_id' => [
+                'nullable', 'string', 'max:128',
+                Rule::unique('employees', 'external_id')->where('tenant_id', Tenancy::id()),
+            ],
             'email' => ['nullable', 'email', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
             'department_id' => [

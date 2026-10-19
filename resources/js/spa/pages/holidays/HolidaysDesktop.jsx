@@ -1,9 +1,9 @@
 import { Button, Card, EmptyState, PageHeader, SectionCard } from '../../shared/ui';
-import { DayBadge, formatDate, partition } from './parts';
+import { AttendanceRulesCard, DayBadge, formatDate, partition } from './parts';
 
 // Desktop holidays: upcoming first (that's what anyone opening this page wants),
 // past collapsed underneath as reference.
-export default function HolidaysDesktop({ rows, canManage, onAdd, onEdit, onDelete }) {
+export default function HolidaysDesktop({ rows, canManage, onAdd, onEdit, onDelete, rulesProps }) {
     const { upcoming, past } = partition(rows);
 
     return (
@@ -11,6 +11,8 @@ export default function HolidaysDesktop({ rows, canManage, onAdd, onEdit, onDele
             <PageHeader title="Holidays" subtitle="Days excluded from absence calculations">
                 {canManage && <Button onClick={onAdd}>+ Add holiday</Button>}
             </PageHeader>
+
+            <AttendanceRulesCard {...rulesProps} />
 
             {rows.length === 0 ? (
                 <Card>

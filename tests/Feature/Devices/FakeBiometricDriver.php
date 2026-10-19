@@ -23,6 +23,9 @@ use Promoseven\Biometric\Value\DeviceUser;
  */
 class FakeBiometricDriver implements BiometricDeviceDriver
 {
+    /** user id => the password a save was asked to write (null = keep). */
+    public array $passwordsWritten = [];
+
     /** @var list<DeviceUser> */
     public array $roster = [];
 
@@ -71,7 +74,7 @@ class FakeBiometricDriver implements BiometricDeviceDriver
 
     public function readAttendance(Device $device, ?callable $onProgress = null): array
     {
-        return [];
+        return $this->punchLog;
     }
 
     public function readUsers(Device $device, bool $withFingerprints = false): array
@@ -85,6 +88,8 @@ class FakeBiometricDriver implements BiometricDeviceDriver
         string $name,
         ?\Closure $guard = null,
         bool $onlyIfMissing = false,
+        ?int $privilege = null,
+        ?string $password = null,
     ): DeviceUser {
         $occupant = $this->find($userId);
 
@@ -102,11 +107,13 @@ class FakeBiometricDriver implements BiometricDeviceDriver
             uid: $occupant?->uid ?? count($this->roster) + 1,
             userId: $userId,
             name: $name,
-            privilege: $occupant?->privilege ?? 0,
+            privilege: $privilege ?? $occupant?->privilege ?? 0,
             cardNumber: $occupant?->cardNumber,
             // THE DESTRUCTIVE PART, faithfully reproduced: a save replaces the record.
             // The previous holder's fingerprints do not survive it.
             fingerSlots: $occupant !== null && $occupant->name === $name ? $occupant->fingerSlots : null,
+            // Null keeps the record's password, as the real save does since 2.13.0.
+            password: $password ?? $occupant?->password ?? '',
         );
 
         $this->roster = array_values(array_filter(
@@ -115,6 +122,7 @@ class FakeBiometricDriver implements BiometricDeviceDriver
         ));
         $this->roster[] = $written;
         $this->writes[] = [$userId, $name];
+        $this->passwordsWritten[$userId] = $password;
 
         return $written;
     }
@@ -124,6 +132,27 @@ class FakeBiometricDriver implements BiometricDeviceDriver
 
     /** Simulates this firmware ACKing a write and then dropping it (rule 10). */
     public bool $dropCardWrites = false;
+
+    /** The terminal's clock; null = this family cannot read one. */
+    public ?\DateTimeImmutable $clock = null;
+
+    /** Simulates a clock write the terminal ACKs and ignores. */
+    public bool $ignoreClockWrites = false;
+
+    public function readClock(Device $device): ?\DateTimeImmutable
+    {
+        return $this->clock;
+    }
+
+    public function setClock(Device $device): array
+    {
+        $before = $this->clock;
+        if (! $this->ignoreClockWrites) {
+            $this->clock = new \DateTimeImmutable('now', new \DateTimeZone(\App\Support\Timezone::forDevice($device)));
+        }
+
+        return ['before' => $before, 'after' => $this->clock];
+    }
 
     public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser
     {
@@ -152,6 +181,66 @@ class FakeBiometricDriver implements BiometricDeviceDriver
         $this->roster[] = $written;
 
         return $written;
+    }
+
+    /** @var list<array{0:string,1:bool}> userId/admin pairs that reached the device */
+    public array $privilegeWrites = [];
+
+    public function setUserPrivilege(Device $device, string $userId, bool $admin): DeviceUser
+    {
+        $occupant = $this->find($userId);
+
+        if ($occupant === null) {
+            throw new \RuntimeException("User {$userId} is not on the device.");
+        }
+
+        $this->privilegeWrites[] = [$userId, $admin];
+
+        $written = new DeviceUser(
+            uid: $occupant->uid,
+            userId: $userId,
+            name: $occupant->name,
+            privilege: $admin ? 14 : 0,
+            cardNumber: $occupant->cardNumber,
+            fingerSlots: $occupant->fingerSlots,
+        );
+
+        $this->roster = array_values(array_filter($this->roster, fn (DeviceUser $u) => $u->userId !== $userId));
+        $this->roster[] = $written;
+
+        return $written;
+    }
+
+    /**
+     * Attendance the fake terminal holds, in readAttendance()'s shape. Empty by
+     * default, so existing tests see the [] they always did.
+     *
+     * @var list<array<string,mixed>>
+     */
+    public array $punchLog = [];
+
+    /** What attendanceRecordCount() reports; null = "cannot say". Defaults to the log's size. */
+    public ?int $reportedRecordCount = -1;
+
+    public int $clears = 0;
+
+    public function attendanceRecordCount(Device $device): ?int
+    {
+        return $this->reportedRecordCount === -1 ? count($this->punchLog) : $this->reportedRecordCount;
+    }
+
+    public function clearAttendance(Device $device, int $expectedRecords): int
+    {
+        if ($this->attendanceRecordCount($device) !== $expectedRecords) {
+            throw new \Promoseven\Biometric\Exception\ProtocolException('Refusing to clear attendance: count changed.');
+        }
+
+        $this->clears++;
+        $held = count($this->punchLog);
+        $this->punchLog = [];
+        $this->reportedRecordCount = -1;
+
+        return $held;
     }
 
     public function deleteUser(Device $device, string $userId): void
@@ -216,6 +305,41 @@ class FakeBiometricDriver implements BiometricDeviceDriver
         }
 
         return $this->templates ?? array_map(fn (array $r) => $r + ['valid' => 1, 'template' => 'bytes-'.$r['sha1']], $this->templateDigests);
+    }
+
+    /** @var list<array{user_id:string, slot:int, template:string}> templates that reached the device */
+    public array $uploads = [];
+
+    /** Simulates a device that ACKs a template write and then drops it. */
+    public bool $dropUploads = false;
+
+    public function uploadTemplates(Device $device, string $userId, array $templates): array
+    {
+        $occupant = $this->find($userId);
+        if ($occupant === null) {
+            throw new \RuntimeException("User {$userId} is not on the device.");
+        }
+
+        $written = [];
+        foreach ($templates as $t) {
+            if (in_array($t['slot'], $occupant->fingerSlots ?? [], true)) {
+                continue;
+            }
+            $this->uploads[] = ['user_id' => $userId, 'slot' => $t['slot'], 'template' => $t['template']];
+            if (! $this->dropUploads) {
+                $written[] = $t['slot'];
+            }
+        }
+
+        if ($written !== []) {
+            $slots = array_values(array_unique([...($occupant->fingerSlots ?? []), ...$written]));
+            sort($slots);
+            $this->roster = array_values(array_filter($this->roster, fn (DeviceUser $u) => $u->userId !== $userId));
+            $this->roster[] = new DeviceUser(uid: $occupant->uid, userId: $userId, name: $occupant->name,
+                privilege: $occupant->privilege, cardNumber: $occupant->cardNumber, fingerSlots: $slots);
+        }
+
+        return $written;
     }
 
     /** @var array<string,string> levels overlaid on the defaults, for firmware unlike the F18 */

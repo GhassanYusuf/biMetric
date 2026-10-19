@@ -7,9 +7,9 @@ import { can } from './parts';
 
 // Desktop devices: wide table, one row per unit, hardware actions inline.
 export default function DevicesDesktop({
-    rows, busy, syncingId, syncProgress, syncStalled,
+    rows, busy, outcomeOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches,
 }) {
     const showActions = canSync || canUpdate || canDelete;
     const failing = rows.filter((d) => d.last_sync_status === 'error').length;
@@ -101,6 +101,7 @@ export default function DevicesDesktop({
                                         <div className="flex justify-end">
                                             <ActionMenu
                                                 label="Actions"
+                                                outcome={outcomeOf(String(d.id))}
                                                 items={[
                                                     canSync && {
                                                         key: 'test',
@@ -171,6 +172,21 @@ export default function DevicesDesktop({
                                                         onSelect: () => onAdopt(d),
                                                     },
                                                     canSync && (canUpdate || canDelete) && { key: 'sep', separator: true },
+                                                    /*
+                                                      | Below the rule with the other destructive
+                                                      | action. devices.update, not devices.sync, and
+                                                      | only where the model can (rule 9) — the C3
+                                                      | panels and CSL never offer it.
+                                                    */
+                                                    canUpdate && can(d, 'attendance.clear') && {
+                                                        key: 'clear-attendance',
+                                                        label: 'Clear punches from terminal…',
+                                                        description: 'Save every punch, then erase them from the terminal. Staff, cards and fingers stay.',
+                                                        tone: 'danger',
+                                                        loading: running === 'clear-attendance',
+                                                        disabled: !!running,
+                                                        onSelect: () => onClearPunches(d),
+                                                    },
                                                     canUpdate && {
                                                         key: 'edit',
                                                         label: 'Edit device',

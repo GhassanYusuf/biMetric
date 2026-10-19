@@ -58,6 +58,16 @@ that leaves the system — it is a real employee.
 Retrying either is pointless: nothing about the device will have changed, and a retry
 that eventually "succeeded" would mean the guard had been bypassed.
 
+### Refusals of a punch clear (2026-10-18)
+
+`AttendanceClearService` refuses with `ProtocolException` — not retryable, so the
+command fails at once with the reason as its message — when the terminal cannot report
+its count, when a read never matches it, when any record would not decode or is dated in
+the future, or when fewer were stored than it holds. Each says "Nothing was cleared".
+The one failure AFTER the clear is the driver's `VerificationException` ("acknowledged
+the attendance clear but still reports N records"); the command is dispatched with one
+attempt so that reaches an operator instead of being retried behind them.
+
 ## An ack is not a commit
 
 This firmware sometimes acknowledges a write and then discards it. `UserService::save()`
@@ -86,6 +96,29 @@ buffer, which stops the *kernel* dropping a burst and does nothing for a device 
 goes quiet mid-transfer. A `TimeoutException` on a `READ_BUFFER` request is treated
 as the same stall and retried; a `TimeoutException` releasing the buffer
 (`FREE_DATA`, command 1502) is swallowed and never fails an otherwise-complete read.
+
+## One conversation per terminal: `DeviceBusyException` (2026-10-12)
+
+Every `DeviceDriverManager` call that reaches a terminal (`run`, `ping`, `info`, the
+reads, `saveUser`, `deleteUser`, `renumberUser`, `setUserCard`, the clock, the template
+upload, `probeCapabilities`) first takes that terminal's lock, `device-session:{id}` in
+`cache_locks`. Callers line up behind each other: two operators pressing Save, an
+operator and a queued sync, or a read-back and a scheduled roster read. Before this, Save,
+Push and Enroll ran inside the web request and skipped `ProcessDeviceCommand`'s
+`WithoutOverlapping`, so two sessions could interleave on one terminal (rule 11).
+
+- **Waits up to 60 s**, then throws `App\Exceptions\DeviceBusyException`: a
+  `DeviceException`, so every existing catch reports it, with *"Entrance is busy with
+  another operation … Nothing was sent to it — try again in a moment."* Retryable, so a
+  queued command requeues with backoff instead of failing.
+- **Different terminals never wait for each other.** Re-entrant inside one process: a call
+  made inside `run()` on the same terminal goes straight through.
+- **TTL 1800 s**, the worker's `--timeout`. A killed process leaves the terminal busy
+  until it expires; clear it with `DELETE FROM cache_locks WHERE [key] LIKE
+  '%device-session:{id}'`.
+- **`open()` is not locked**: the realtime listener holds that session for hours.
+
+Tests: `tests/Feature/DeviceSessionQueueTest.php`.
 
 ## Retries live on the row, not in the queue
 

@@ -10,6 +10,7 @@ use App\Models\AttendanceSyncRun;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\EmployeeDeviceMap;
+use App\Support\Timezone;
 use Illuminate\Support\Carbon;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Exception\DeviceException;
@@ -170,7 +171,7 @@ class AttendanceSyncService
             $device->forceFill($updates)->save();
 
             $run->forceFill([
-                'status' => $result['undecodable'] > 0 || $result['unmatched'] > 0
+                'status' => $result['undecodable'] > 0 || $result['unmatched'] > 0 || $result['future'] > 0
                     ? AttendanceSyncRun::STATUS_PARTIAL
                     : AttendanceSyncRun::STATUS_SUCCEEDED,
                 'finished_at' => now(),
@@ -178,7 +179,9 @@ class AttendanceSyncService
                 'records_read' => $result['read'],
                 'records_imported' => $result['imported'],
                 'records_duplicate' => $result['duplicate'],
-                'records_undecodable' => $result['undecodable'],
+                // Future-dated records are not punches either; the run's one column for
+                // "read but not usable" carries both, the counts in raw_response split them.
+                'records_undecodable' => $result['undecodable'] + $result['future'],
                 'records_unmatched' => $result['unmatched'],
                 'records_out_of_range' => $result['out_of_range'],
                 'watermark_after' => $newWatermark === null
@@ -317,7 +320,7 @@ class AttendanceSyncService
      * @param  list<array<string,mixed>>  $records
      * @param  ?\DateTimeInterface  $rangeFrom  earliest instant to import, or null for no lower bound
      * @param  ?\DateTimeInterface  $rangeTo  latest instant to import, or null for no upper bound
-     * @return array{read:int,imported:int,duplicate:int,undecodable:int,unmatched:int,out_of_range:int,newest:?Carbon}
+     * @return array{read:int,imported:int,duplicate:int,undecodable:int,unmatched:int,out_of_range:int,future:int,newest:?Carbon}
      */
     private function ingest(
         Device $device,
@@ -328,8 +331,10 @@ class AttendanceSyncService
         ?\DateTimeInterface $rangeFrom = null,
         ?\DateTimeInterface $rangeTo = null,
     ): array {
-        $counts = ['read' => count($records), 'imported' => 0, 'duplicate' => 0, 'undecodable' => 0, 'unmatched' => 0, 'out_of_range' => 0];
+        $counts = ['read' => count($records), 'imported' => 0, 'duplicate' => 0, 'undecodable' => 0, 'unmatched' => 0, 'out_of_range' => 0, 'future' => 0];
         $newest = null;
+        // See the "dated in the future" block below.
+        $latestPlausible = now()->addDay();
 
         /*
          * One query for the device's mappings, INCLUDING closed ones.
@@ -366,6 +371,36 @@ class AttendanceSyncService
 
             $punchedAt = $record['timestamp'];
             $deviceUserId = (string) ($record['user_id'] ?? '');
+
+            /*
+             * --- Dated in the future: archived, counted, NOT imported (2026-10-18).
+             *
+             * Camelot's misaligned reads produced 1,497 "punches" dated up to 2030
+             * (casebook DC-020). Imported, they are fake attendance; worse, the newest
+             * of them becomes the watermark and every later incremental sync skips real
+             * punches below it. A day of slack covers any device zone against UTC. A
+             * real punch from a terminal whose clock ran ahead is kept in the raw
+             * archive with its decoded fields, so it can be re-dated, not lost.
+             */
+            if ($punchedAt > $latestPlausible) {
+                $counts['future']++;
+                $rawRows[] = $this->rawRow(
+                    $device,
+                    $run,
+                    $record['raw'] ?? '',
+                    candidate: [
+                        'device_user_id' => $deviceUserId,
+                        'punched_at' => $punchedAt,
+                        'verify_method' => (int) ($record['verify_method'] ?? 0),
+                        'status' => (int) ($record['status'] ?? 0),
+                    ],
+                    decoded: true,
+                    imported: false,
+                    skipReason: AttendanceRawLog::SKIP_FUTURE,
+                );
+
+                continue;
+            }
 
             if ($newest === null || $punchedAt > $newest) {
                 $newest = $punchedAt;
@@ -664,6 +699,9 @@ class AttendanceSyncService
         if ($counts['undecodable'] > 0) {
             $parts[] = "{$counts['undecodable']} could not be decoded and were archived";
         }
+        if (($counts['future'] ?? 0) > 0) {
+            $parts[] = "{$counts['future']} dated in the future were archived, not imported";
+        }
 
         return 'Sync complete: '.implode(', ', $parts).'.';
     }
@@ -688,7 +726,7 @@ class AttendanceSyncService
             return [null, null];
         }
 
-        $timezone = $device->timezone ?: config('attendance.device_timezone', '+03:00');
+        $timezone = Timezone::forDevice($device);
 
         return [
             // Inclusive at both ends: a day named is a day imported, all 24 hours

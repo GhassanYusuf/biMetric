@@ -7,15 +7,11 @@ import { FOCUS } from '../../shared/theme';
 | Shared rather than duplicated because rule 5 requires the two to behave
 | identically — a filter that exists on one and not the other is the drift the rule
 | is there to stop. Only the LAYOUT differs, and that is the `stacked` prop.
-|
-| `national_id: '0'` is the one that does real work. After importing a roster almost
-| nobody has a national id, and without it nothing can be exported to the HRMS — so
-| "who is still missing one" is the working queue, not a refinement.
 */
 export default function EmployeeFilters({
     search, onSearch,
     filters, onChange,
-    departments = [], devices = [],
+    devices = [],
     counts = null,
     stacked = false,
 }) {
@@ -30,42 +26,16 @@ export default function EmployeeFilters({
         <div className="space-y-3">
             <div className={stacked ? 'space-y-3' : 'flex flex-wrap items-end gap-3'}>
                 <TextField
-                    placeholder="Search by name, code, department or email…"
+                    placeholder="Search by name, code, department, job title or email…"
                     aria-label="Search employees"
                     value={search}
                     onChange={(e) => onSearch(e.target.value)}
                     className={stacked ? '' : 'min-w-[16rem]'}
                 />
 
-                <SelectField
-                    label="National ID"
-                    aria-label="Filter by national ID"
-                    value={filters.national_id ?? ''}
-                    onChange={(e) => set('national_id', e.target.value)}
-                    className={stacked ? '' : 'w-44'}
-                >
-                    <option value="">Any</option>
-                    <option value="0">
-                        Missing{counts?.missing_national_id != null ? ` (${counts.missing_national_id})` : ''}
-                    </option>
-                    <option value="1">Has one</option>
-                </SelectField>
-
-                {departments.length > 0 && (
-                    <SelectField
-                        label="Department"
-                        aria-label="Filter by department"
-                        value={filters.department_id ?? ''}
-                        onChange={(e) => set('department_id', e.target.value)}
-                        className={stacked ? '' : 'w-48'}
-                    >
-                        <option value="">Any</option>
-                        {departments.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                    </SelectField>
-                )}
-
+                {/* Department is not here: the Company › Department tree beside
+                    the roster picks it (DepartmentTree.jsx, 2026-10-11). It is still
+                    `filters.department_id`, so "Clear filters" clears it too. */}
                 {devices.length > 0 && (
                     <SelectField
                         label="Terminal"
@@ -84,16 +54,20 @@ export default function EmployeeFilters({
                     </SelectField>
                 )}
 
+                {/* Resigned people are hidden until asked for (2026-10-12): they are off
+                    the terminals and no longer part of the roster anyone works from. */}
                 <SelectField
                     label="Status"
                     aria-label="Filter by status"
-                    value={filters.is_active ?? ''}
-                    onChange={(e) => set('is_active', e.target.value)}
-                    className={stacked ? '' : 'w-36'}
+                    value={filters.status ?? ''}
+                    onChange={(e) => set('status', e.target.value)}
+                    className={stacked ? '' : 'w-44'}
                 >
-                    <option value="">Any</option>
-                    <option value="1">Active</option>
-                    <option value="0">Inactive</option>
+                    <option value="">Current staff</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="resigned">Resigned</option>
+                    <option value="all">Everyone</option>
                 </SelectField>
             </div>
 

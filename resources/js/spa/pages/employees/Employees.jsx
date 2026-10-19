@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../../shared/api';
 import { useAuth } from '../../shared/auth';
 import { useMqtt } from '../../shared/useMqtt';
@@ -11,6 +12,7 @@ import EmployeesDesktop from './EmployeesDesktop';
 import EmployeesMobile from './EmployeesMobile';
 import EmployeeFormModal from './EmployeeFormModal';
 import MergeModal from './MergeModal';
+import DuplicateScanModal from './DuplicateScanModal';
 import PushModal from './PushModal';
 import EnrollModal from './EnrollModal';
 import EmployeeDetailModal from './EmployeeDetailModal';
@@ -19,6 +21,7 @@ import EmployeeDetailModal from './EmployeeDetailModal';
 // (no page reload) per the standards; the device-specific file only renders.
 export default function Employees() {
     const deviceClass = useDeviceClass();
+    const navigate = useNavigate();
     const { can, user } = useAuth();
     const confirm = useConfirm();
     // The operator's last answer to "change the user ID?", reused by a result-row Retry.
@@ -38,6 +41,9 @@ export default function Employees() {
                 api.get('/devices').then((r) => setDevices(r.data ?? [])).catch(() => {});
             } else {
                 load(search, filters);
+                // The tree's counts move with the roster, and its nodes with the
+                // departments table, both of which stamp the employees module.
+                loadDepartments();
             }
         },
     );
@@ -56,47 +62,99 @@ export default function Employees() {
     // string and an empty value means "no filter" without a second flag per field.
     const [filters, setFilters] = useState({});
     const [departments, setDepartments] = useState([]);
+    const [unassignedCount, setUnassignedCount] = useState(0);
+    const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
     const [formOpen, setFormOpen] = useState(false);
     const [enrolling, setEnrolling] = useState(null); // employee being enrolled
     const [editing, setEditing] = useState(null); // employee being edited
     const [pushing, setPushing] = useState(null); // employee being pushed to terminals
     const [merging, setMerging] = useState(null); // employee being merged with duplicates
+    // null = closed, 'all' = the whole-roster scan, otherwise one employee's scan
+    const [scanning, setScanning] = useState(null);
     const [viewing, setViewing] = useState(null); // employee whose enrollment is open
     const [readingDevice, setReadingDevice] = useState(false);
     const [total, setTotal] = useState(null);
+    const [pagination, setPagination] = useState(null);
+    /*
+     * Has the roster EVER loaded, as opposed to is it empty right now.
+     *
+     * This is the difference between "show a skeleton" and "show the list". It
+     * was `rows.length === 0`, which meant a search matching nobody replaced the
+     * ENTIRE page — including the search box — with a skeleton, so the box
+     * vanished under the cursor halfway through typing a name and took the
+     * keystrokes with it (2026-10-05). An empty result is not a loading state;
+     * the list has its own empty state that keeps the box on screen.
+     */
+    const [loadedOnce, setLoadedOnce] = useState(false);
+    /*
+     * Which page to request. A ref, not state: it is an input to the request, and
+     * the response is the authority on which page is on screen
+     * (meta.pagination.current_page). Nothing renders it, so nothing can go stale.
+     */
+    const pageRef = useRef(1);
     const debounce = useRef(null);
+    /*
+     * Which request owns the screen.
+     *
+     * Loads overlap: the search debounce, a filter change, a page change and an
+     * MQTT roster event can all be in flight at once, and they do not come back
+     * in order. Whichever resolved LAST used to win, so a slow pre-search
+     * response could land after the search and repaint the list with people who
+     * do not match what is in the box. Each request takes a number on the way
+     * out and only the newest one is allowed to write.
+     */
+    const requestId = useRef(0);
 
-    // Matches the roster's one-page view; see the truncation notice in load().
+    // 100 a page. The roster is 362 people and each row carries every terminal
+    // mapping, so this is four requests rather than one 362-row payload.
     const PER_PAGE = 100;
 
-    const load = useCallback(async (term = '', active = {}) => {
+    const load = useCallback(async (term = '', active = {}, pageNum = pageRef.current) => {
+        const id = ++requestId.current;
         setLoading(true);
         try {
-            const params = new URLSearchParams({ per_page: String(PER_PAGE) });
+            const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pageNum) });
             if (term) params.set('search', term);
-            if (active.national_id) params.set('has_national_id', active.national_id);
             if (active.department_id) params.set('department_id', active.department_id);
-            if (active.is_active) params.set('is_active', active.is_active);
+            // Status: resigned people are left out unless asked for (2026-10-12).
+            const status = active.status ?? '';
+            if (status === 'active' || status === 'inactive') params.set('is_active', status === 'active' ? '1' : '0');
+            if (status === 'resigned') params.set('resigned', '1');
+            else if (status !== 'all') params.set('resigned', '0');
             // "On no terminal" is a different question from "on terminal N", so it is a
             // separate parameter rather than a magic device id.
             if (active.device === 'none') params.set('unenrolled', '1');
             else if (active.device) params.set('device_id', active.device);
 
             const res = await api.get(`/employees?${params.toString()}`);
+            // Superseded while in flight: a newer request already owns the screen.
+            if (id !== requestId.current) return;
             setRows(res.data);
-            // The endpoint paginates, so this list can be a truncated view. Keep
-            // the total so the UI can say so rather than quietly showing 100 of
-            // 300 people as if that were everyone.
-            setTotal(res.meta?.pagination?.total ?? null);
+            // The endpoint paginates, so this list is one page of the roster, not
+            // the roster. Hand the whole block to the pager and follow the server's
+            // idea of the current page: it clamps an out-of-range request, and
+            // following it means a filter that narrows the list can never leave the
+            // pager reading "page 9 of 2".
+            const meta = res.meta?.pagination ?? null;
+            setPagination(meta);
+            pageRef.current = meta?.current_page ?? 1;
+            setTotal(meta?.total ?? null);
+            setLoadedOnce(true);
         } catch (err) {
+            // A failure the user has already moved past is not worth a toast.
+            if (id !== requestId.current) return;
             toast.error(err instanceof ApiError ? err.message : 'Could not load employees.');
         } finally {
-            setLoading(false);
+            // Only the newest request may clear the spinner; an older one
+            // finishing would hide it while its replacement is still loading.
+            if (id === requestId.current) setLoading(false);
         }
     }, []);
 
     useEffect(() => {
-        load(search, filters);
+        // A changed filter is a different result set: start at the top of it.
+        pageRef.current = 1;
+        load(search, filters, 1);
         // Filters apply immediately; only the free-text search is debounced, and it
         // calls load() itself.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,9 +162,35 @@ export default function Employees() {
 
     // Departments for the filter. Absent permission simply means no department filter
     // is offered, rather than an error the operator can do nothing about.
-    useEffect(() => {
-        api.get('/departments').then((res) => setDepartments(res.data ?? [])).catch(() => setDepartments([]));
+    // The response's meta also carries the tree's "Unassigned" count.
+    const loadDepartments = useCallback(() => {
+        api.get('/departments')
+            .then((res) => {
+                setDepartments(res.data ?? []);
+                setUnassignedCount(res.meta?.unassigned_count ?? 0);
+            })
+            .catch(() => setDepartments([]))
+            .finally(() => setDepartmentsLoaded(true));
     }, []);
+
+    useEffect(() => { loadDepartments(); }, [loadDepartments]);
+
+    /*
+     * A company (no parent) or a department beneath one, created from the employee
+     * form's dropdowns by whoever manages departments (2026-10-12). The tree reloads
+     * so the new node is listed straight away; the form also keeps its own copy.
+     */
+    const createDepartment = useCallback(async (name, parentId) => {
+        try {
+            const res = await api.post('/departments', { name, parent_id: parentId });
+            toast.success(`${parentId ? 'Department' : 'Company'} “${res.data.name}” added.`);
+            loadDepartments();
+            return res.data;
+        } catch (err) {
+            toast.error(err instanceof ApiError ? (err.errors?.name?.[0] ?? err.message) : `Could not add “${name}”.`);
+            return null;
+        }
+    }, [loadDepartments, toast]);
 
     // Terminals for the enroll dialog. A user who may push employees but not
     // view devices simply gets no terminals offered, which the dialog explains.
@@ -121,19 +205,19 @@ export default function Employees() {
     function onSearch(term) {
         setSearch(term);
         clearTimeout(debounce.current);
-        debounce.current = setTimeout(() => load(term, filters), 300);
+        debounce.current = setTimeout(() => {
+            // A new term is a new result set, so page 1 of it — page 4 of the old
+            // one is rarely part of the answer.
+            pageRef.current = 1;
+            load(term, filters, 1);
+        }, 200);
     }
 
-    /**
-     * Saves one national ID.
-     *
-     * Throws on failure rather than toasting, so the inline editor can keep the error
-     * on the field with the half-typed value still in it (rule 2: a 422 is not a toast).
-     *
-     * The row is patched in place rather than reloading the list: if the operator is
-     * filtered to "missing a national ID", a reload would make the row they just filled
-     * vanish from under the cursor mid-run.
-     */
+    function goToPage(next) {
+        pageRef.current = next;
+        load(search, filters, next);
+    }
+
     /*
      * "Read fingerprints to system" (2026-09-24): copies this person's fingerprints
      * from every terminal they are on into the system's encrypted store, and writes
@@ -214,17 +298,6 @@ export default function Employees() {
         }
     }
 
-    async function saveNationalId(employee, nationalId) {
-        try {
-            const res = await api.put(`/employees/${employee.id}/national-id`, { national_id: nationalId });
-            setRows((prev) => prev.map((r) => (r.id === employee.id ? res.data : r)));
-            toast.success(res.message);
-        } catch (err) {
-            const message = err instanceof ApiError ? err.message : 'Could not save the national ID.';
-            throw new Error(message);
-        }
-    }
-
     /**
      * Saves, then writes them onto the terminals the form selected.
      *
@@ -253,7 +326,10 @@ export default function Employees() {
              * about the request, and the operator cares about the hardware.
              */
             const failed = (res.data?.failed ?? []).length;
-            if (failed > 0) toast.error(res.message);
+            // Say where the fix is, when the operator has one to press (2026-10-11).
+            const fixable = (res.data?.failed ?? []).filter((f) => f.action).map((f) => f.device_name);
+            const hint = fixable.length ? ` ${fixable.join(' and ')}: use the button in the dialog to fix ${fixable.length === 1 ? 'it' : 'them'}.` : '';
+            if (failed > 0) toast.error(res.message + hint);
             else toast.success(res.message);
             // Returned so the form can show one result row per terminal, with Retry.
             return res.data;
@@ -428,7 +504,11 @@ export default function Employees() {
             }
         }
         const failed = rows.filter((r) => !r.ok);
-        if (failed.length > 0) toast.error(`${employee.name} could not be removed from ${failed.map((r) => r.device_name).join(', ')}.`);
+        // The reason goes in the toast: "could not be removed" alone left the operator
+        // nothing to act on (2026-10-11 — the real answer was "terminal not adopted").
+        if (failed.length > 0) {
+            toast.error(failed.map((r) => `${employee.name} was not removed from ${r.device_name}: ${r.message.replace(/^not removed — /, '')}`).join(' '));
+        }
         else toast.success(`${employee.name} removed from ${names.join(', ')}.`);
         return rows;
     }
@@ -638,6 +718,59 @@ export default function Employees() {
         }
     }
 
+    /*
+     * "Push fingerprints to terminals" (2026-09-24): writes this person's stored
+     * fingerprints to the terminals they are on that can take templates and lack
+     * those fingers — how a finger enrolled on the F18 reaches Glass Door and
+     * Entrance, which cannot capture one. A device write, so it asks first; add-only,
+     * so the confirmation is not danger-toned.
+     */
+    async function pushFingerprints(employee, deviceIds = null, { ask = true } = {}) {
+        const liveOn = new Set((employee.enrollments ?? []).filter((m) => m.is_live !== false).map((m) => m.device_id));
+        const targets = devices.filter(
+            (d) => d.is_active && canDevice(d, 'template.upload') && liveOn.has(d.id) && (deviceIds === null || deviceIds.includes(d.id)),
+        );
+        const stored = (employee.stored_fingerprint_slots ?? []).length;
+
+        if (stored === 0) {
+            if (ask) toast.info(`${employee.name} has no fingerprint stored in the system. Enroll one, or read them from a terminal first.`);
+            return null;
+        }
+        if (targets.length === 0) {
+            if (ask) toast.info(`None of ${employee.name}'s terminals can take fingerprints from here. Push the person to a door panel first.`);
+            return null;
+        }
+        if (ask) {
+            const ok = await confirm({
+                title: `Copy ${employee.name}'s fingerprints?`,
+                body: [
+                    `Writes their ${stored} stored fingerprint${stored === 1 ? '' : 's'} to ${targets.map((d) => d.name).join(', ')}, wherever that finger is missing.`,
+                    'A finger a terminal already holds is never replaced. Each terminal is read back afterwards.',
+                ],
+                confirmLabel: 'Copy fingerprints',
+            });
+            if (!ok) return null;
+        }
+
+        const notice = toast.info(`Writing ${employee.name}'s fingerprints to ${targets.length} terminal${targets.length === 1 ? '' : 's'}…`, { duration: 180000 });
+        try {
+            const res = await api.post(`/employees/${employee.id}/fingerprints/push`, { device_ids: targets.map((d) => d.id) });
+            toast.dismiss(notice);
+            const failed = (res.data?.terminals ?? []).filter((t) => t.status === 'failed');
+            if (failed.length > 0) {
+                toast.error(`${res.message} ${failed.map((t) => `${t.device_name}: ${t.message}`).join('; ')}`);
+            } else {
+                toast.success(res.message);
+            }
+            await load(search, filters);
+            return res.data;
+        } catch (err) {
+            toast.dismiss(notice);
+            toast.error(err instanceof ApiError ? err.message : 'Could not write the fingerprints.');
+            return null;
+        }
+    }
+
     /**
      * Refreshes the whole roster's fingerprint and card counts from a terminal in
      * ONE device conversation. Reading per row would open a connection per
@@ -673,9 +806,9 @@ export default function Employees() {
         filters,
         onFilters: setFilters,
         departments,
+        unassignedCount,
+        departmentsLoaded,
         devices,
-        canSetNationalId: can('employees.update'),
-        onSaveNationalId: saveNationalId,
         canCreate: can('employees.create'),
         canUpdate: can('employees.update'),
         canDelete: can('employees.delete'),
@@ -683,7 +816,9 @@ export default function Employees() {
         canReadDevice: can('devices.sync') && devices.some((d) => d.protocol === 'binary' && d.is_active),
         readingDevice,
         total,
-        perPage: PER_PAGE,
+        loading,
+        pagination,
+        onPage: goToPage,
         onAdd: () => setFormOpen(true),
         onDelete: deleteEmployee,
         onEnroll: (employee) => setEnrolling(employee),
@@ -694,12 +829,17 @@ export default function Employees() {
         },
         onPush: (employee) => setPushing(employee),
         onMerge: (employee) => setMerging(employee),
+        // Opened from the toolbar (the whole roster) or from a row (that person
+        // only) — same screen, different question.
+        onScan: (target) => setScanning(target ?? 'all'),
         onReadFingerprints: readFingerprintsToSystem,
+        onPushFingerprints: pushFingerprints,
         autoPush,
         savingAutoPush,
         canManageSettings: can('settings.manage'),
         onToggleAutoPush: toggleAutoPush,
         onView: (employee) => setViewing(employee),
+        onReport: (employee) => navigate(`/employees/${employee.id}/report`),
         onReadFromDevice: readFromDevice,
     };
 
@@ -707,8 +847,15 @@ export default function Employees() {
 
     return (
         <>
-            {loading && rows.length === 0 ? (
-                <SkeletonTable rows={8} cols={7} />
+            {/*
+              * The skeleton is for the FIRST load only. Testing `rows.length === 0`
+              * here instead meant a search matching nobody unmounted the whole page
+              * — search box included — and stole the caret mid-word. After the first
+              * response the presentation always stays mounted, so an empty result
+              * renders the list's own empty state and the box keeps focus.
+              */}
+            {!loadedOnce && loading ? (
+                <SkeletonTable rows={8} cols={8} />
             ) : (
                 <Presentation {...presentationProps} />
             )}
@@ -719,21 +866,52 @@ export default function Employees() {
                     onRetry={retryPropagate}
                     onClose={() => setFormOpen(false)}
                     onDone={() => { setFormOpen(false); load(search, filters); }}
+                    departments={departments}
+                    onCreateDepartment={can('departments.manage') ? createDepartment : null}
                 />
             )}
             {pushing && (
                 <PushModal
                     employee={rows.find((r) => r.id === pushing.id) ?? pushing}
                     devices={devices}
-                    onSubmit={async (deviceIds) => {
+                    onSubmit={async (deviceIds, { fingerprints } = {}) => {
                         // Always ask for the Personnel ID; the server changes it only on
                         // terminals that support it and says per terminal what it did.
-                        await propagate(pushing, deviceIds, true);
-                        setPushing(null);
-                        // The push changes what the terminals hold, which the roster
-                        // reports. Refetch rather than guess — the commands run on a
-                        // worker and land shortly after.
+                        const result = await propagate(pushing, deviceIds, true);
+                        // A terminal the operator can fix keeps the dialog open on it
+                        // (TerminalFixes, 2026-10-11); otherwise it closes as before.
+                        const needsFix = (result?.failed ?? []).some((f) => f.action);
+                        if (!needsFix) setPushing(null);
+                        const employee = pushing;
+                        const followUp = async () => {
+                            if (fingerprints) {
+                                // Only where the person now IS: the terminals the push wrote.
+                                const written = (result?.written ?? []).map((w) => w.device_id);
+                                const fresh = await api.get(`/employees/${employee.id}`).then((r) => r.data).catch(() => null);
+                                if (fresh && written.length) await pushFingerprints(fresh, written, { ask: false });
+                            }
+                            // The push changes what the terminals hold, which the roster
+                            // reports. Refetch rather than guess — the commands run on a
+                            // worker and land shortly after.
+                            await load(search, filters);
+                        };
+                        /*
+                         * A terminal that needs the operator's go-ahead gets its button
+                         * NOW, with the toast — not after the fingerprint copy and the
+                         * reload, which took ~15 s on 2026-10-11 and hid the buttons
+                         * behind a toast that had already said "FAILED".
+                         */
+                        if (needsFix) {
+                            followUp();
+                            return result;
+                        }
+                        await followUp();
+                        return result;
+                    }}
+                    onRetry={async (ids) => {
+                        const again = await propagate(pushing, ids, true);
                         await load(search, filters);
+                        return again;
                     }}
                     onClose={() => setPushing(null)}
                 />
@@ -751,6 +929,19 @@ export default function Employees() {
                     onClose={() => setMerging(null)}
                 />
             )}
+            {scanning && (
+                <DuplicateScanModal
+                    employee={scanning === 'all' ? null : (rows.find((r) => r.id === scanning.id) ?? scanning)}
+                    onMerged={async (message) => {
+                        toast.success(message);
+                        setScanning(null);
+                        // Same reason as the merge above: the rows and their
+                        // history changed underneath the screen.
+                        await load(search, filters);
+                    }}
+                    onClose={() => setScanning(null)}
+                />
+            )}
             {editing && (
                 <EmployeeFormModal
                     // The row from the last fetch, so `enrollments` is the current
@@ -761,6 +952,8 @@ export default function Employees() {
                     onRetry={retryPropagate}
                     onClose={() => setEditing(null)}
                     onDone={() => setEditing(null)}
+                    departments={departments}
+                    onCreateDepartment={can('departments.manage') ? createDepartment : null}
                     onEnrollFingerprint={can('employees.push') ? enrollFromForm : null}
                     onReadFingerprints={can('employees.push') ? readFingerprintsToSystem : null}
                     autoPush={autoPush}

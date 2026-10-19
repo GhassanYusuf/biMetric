@@ -49,7 +49,7 @@ class AttendanceSummaryService
      *                                summarising more than one person; leaving it
      *                                null builds a batch of this employee alone, so
      *                                both callers run identical code.
-     * @return array{employee:array,from:string,to:string,daily:array,categories:array,total_punches:int,total_payroll_hours:float}
+     * @return array{employee:array,from:string,to:string,daily:array,off_days:array,categories:array,total_punches:int,total_payroll_hours:float}
      */
     public function summary(Employee $employee, ?string $from = null, ?string $to = null, ?SummaryBatch $batch = null): array
     {
@@ -141,9 +141,32 @@ class AttendanceSummaryService
                 'payroll_hours' => $payrollHours,
                 'first' => $info ? $info['first']->format('g:i A') : null,
                 'last' => $info ? $info['last']->format('g:i A') : null,
+                // Minutes after local midnight, for charts that plot time of day.
+                'first_minutes' => $info ? $info['first']->hour * 60 + $info['first']->minute : null,
+                'last_minutes' => $info && $info['count'] > 1 ? $info['last']->hour * 60 + $info['last']->minute : null,
                 'arrival' => $arrival,
                 'departure' => $departure,
                 'missed_punch_out' => $info !== null && $info['count'] === 1,
+            ];
+        }
+
+        /*
+         * Punches on days that are NOT scheduled work days. They count toward none of
+         * the figures above — a Saturday is never late or absent — but they are real
+         * attendance, and a statement that printed only work days would show somebody
+         * who came in on their day off as not having come in at all.
+         */
+        $workDayKeys = array_flip(array_column($batch->days, 'key'));
+        $offDays = [];
+        foreach ($byDay as $key => $info) {
+            if (isset($workDayKeys[$key])) {
+                continue;
+            }
+            $offDays[] = [
+                'date' => $key,
+                'first_minutes' => $info['first']->hour * 60 + $info['first']->minute,
+                'last_minutes' => $info['count'] > 1 ? $info['last']->hour * 60 + $info['last']->minute : null,
+                'missed_punch_out' => $info['count'] === 1,
             ];
         }
 
@@ -160,6 +183,7 @@ class AttendanceSummaryService
             'from' => $fromDate->format('Y-m-d'),
             'to' => $toDate->format('Y-m-d'),
             'daily' => $daily,
+            'off_days' => $offDays,
             'categories' => $categories,
             'total_punches' => $logs->count(),
             'total_payroll_hours' => round($totalPayrollHours, 1),

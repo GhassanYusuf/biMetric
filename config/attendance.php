@@ -1,6 +1,9 @@
 <?php
 
 return [
+    // Requests per minute per integration token (/api/v1).
+    'integration_rate_limit' => (int) env('INTEGRATION_RATE_LIMIT', 120),
+
     // The office's real local timezone - attendance_logs stores UTC, but "was
     // this person early/late" only makes sense against local wall-clock time.
     'timezone' => env('ATTENDANCE_TIMEZONE', '+03:00'),

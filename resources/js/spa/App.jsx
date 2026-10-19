@@ -10,6 +10,7 @@ import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/dashboard/Dashboard';
 import Employees from './pages/employees/Employees';
+import EmployeeReport from './pages/employees/report/EmployeeReport';
 import Devices from './pages/devices/Devices';
 import DeviceDetail from './pages/devices/DeviceDetail';
 import DeviceGroups from './pages/devices/DeviceGroups';
@@ -19,6 +20,9 @@ import Reconciliation from './pages/devices/Reconciliation';
 import Attendance from './pages/attendance/Attendance';
 import Reports from './pages/reports/Reports';
 import Holidays from './pages/holidays/Holidays';
+import Organisation from './pages/organisation/Organisation';
+import LegacyData from './pages/legacy/LegacyData';
+import Settings from './pages/settings/Settings';
 import Notifications from './pages/notifications/Notifications';
 
 function Protected({ children }) {
@@ -115,6 +119,7 @@ export default function App() {
                         <Route index element={<Navigate to="/dashboard" replace />} />
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/employees" element={<Employees />} />
+                        <Route path="/employees/:id/report" element={<EmployeeReport />} />
                         <Route path="/devices" element={<Devices />} />
                         {/*
                           | Device sub-screens. `/devices/:id` must come after `/devices` but
@@ -129,7 +134,11 @@ export default function App() {
                         <Route path="/attendance" element={<Attendance />} />
                         <Route path="/reports" element={<Reports />} />
                         <Route path="/holidays" element={<Holidays />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/organisation" element={<Organisation />} />
                         <Route path="/notifications" element={<Notifications />} />
+
+                        <Route path="/legacy" element={<LegacyData />} />
                     </Route>
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>

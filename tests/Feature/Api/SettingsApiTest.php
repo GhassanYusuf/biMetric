@@ -54,14 +54,22 @@ class SettingsApiTest extends TestCase
     {
         $api = $this->as('tenant-admin');
 
-        $api->getJson('/api/settings')->assertOk()->assertJsonPath('data', ['employees.auto_push_on_save' => false]);
+        // assertJsonFragment, not assertJsonPath: the key contains a LITERAL dot, so
+        // a dotted path reads it as nested object access and matches nothing.
+        // Fragment also ignores the rest of the payload, so this test stops failing
+        // every time DEFAULTS gains a setting.
+        $api->getJson('/api/settings')
+            ->assertOk()
+            ->assertJsonFragment(['employees.auto_push_on_save' => false]);
 
         $api->putJson('/api/settings', ['employees' => ['auto_push_on_save' => true], 'something' => ['else' => 1]])
             ->assertOk()
-            ->assertJsonPath('data', ['employees.auto_push_on_save' => true]);
+            ->assertJsonFragment(['employees.auto_push_on_save' => true]);
 
         $this->app['auth']->forgetGuards();
-        $this->assertSame(['employees.auto_push_on_save' => true], $this->getJson('/api/settings')->json('data'));
+        // The one key, not the whole payload — see the assertJsonFragment note above.
+        $data = $this->getJson('/api/settings')->json('data');
+        $this->assertTrue($data['employees.auto_push_on_save']);
 
         $audit = AuditLog::withoutGlobalScopes()->where('action', 'setting.updated')->sole();
         $this->assertSame(['key' => 'employees.auto_push_on_save', 'old' => false, 'new' => true], $audit->changes);

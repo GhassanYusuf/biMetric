@@ -192,12 +192,25 @@ interface BiometricDeviceDriver
      *
      * @param  ?\Closure(?DeviceUser):void  $guard
      */
+    /*
+     * $privilege (2026-10-11): null keeps what the terminal record has (0 for a new
+     * record). Passed explicitly only to put back a privilege the person had before
+     * their record was re-created — an admin re-added as a normal user is a silent
+     * demotion (rule 19). Ignored by families with no per-user privilege (C3).
+     *
+     * $password (2026-10-12): the keypad password. Null keeps whatever the terminal
+     * record has — before library 2.13.0 a standalone write erased it — and '' clears
+     * it. Read back after the write and never put in a message (a door credential).
+     * Callers pass one only where the model's `password.write` allows (rule 9).
+     */
     public function saveUser(
         Device $device,
         string $userId,
         string $name,
         ?\Closure $guard = null,
         bool $onlyIfMissing = false,
+        ?int $privilege = null,
+        ?string $password = null,
     ): DeviceUser;
 
     /**
@@ -231,6 +244,68 @@ interface BiometricDeviceDriver
      * nothing. 0 clears the card.
      */
     public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser;
+
+    /**
+     * Makes an EXISTING user an administrator of the terminal (may open its menu) or a
+     * normal user, keeping name, card, password and fingerprints, and returns the record
+     * as read back — the driver confirms the privilege took (rule 10). Gated by
+     * user.privilege; families with no per-user privilege throw UnsupportedCommandException.
+     * Added 2026-10-18 (owner: "be able to change the access on the device").
+     */
+    public function setUserPrivilege(Device $device, string $userId, bool $admin): DeviceUser;
+
+    /**
+     * How many attendance records the terminal says it holds, from its own counters,
+     * without transferring the log. Null when this family cannot say — never a guessed
+     * 0 (rule 10). Added 2026-10-18.
+     */
+    public function attendanceRecordCount(Device $device): ?int;
+
+    /**
+     * ERASES the terminal's attendance log; users, cards and fingerprints are kept.
+     * Call only through AttendanceClearService, which stores every record first.
+     *
+     * $expectedRecords is how many records the caller has just read and stored. The
+     * driver re-reads the terminal's own count in the same session and refuses, sending
+     * nothing, when it differs; afterwards the count must be 0 or it throws. Returns
+     * the number of records cleared. Gated by attendance.clear. Added 2026-10-18.
+     */
+    public function clearAttendance(Device $device, int $expectedRecords): int;
+
+    /**
+     * The terminal's clock as it shows it (LOCAL time in the device's zone), or null
+     * when this family has no way to read it — "not read", never midnight (rule 10).
+     * Added 2026-10-11 so the clock can be read on every family, each its own way.
+     */
+    public function readClock(Device $device): ?\DateTimeImmutable;
+
+    /**
+     * Sets the terminal's clock to the real time in its zone (Timezone::forDevice)
+     * and returns ['before' => …, 'after' => …] as read from the terminal — the caller
+     * checks `after` rather than trusting the acknowledgement (rule 10).
+     * Gated by device.time.write.
+     *
+     * @return array{before:?\DateTimeImmutable, after:?\DateTimeImmutable}
+     */
+    public function setClock(Device $device): array;
+
+    /**
+     * Writes fingerprint templates for a user the device already holds — biometric
+     * data going DOWN, the mirror of readTemplates(). Added 2026-09-24 so a finger
+     * enrolled once (on an F18, say) reaches the C3 panels, which cannot capture one.
+     *
+     * ADD-ONLY: a slot the device already fills is skipped, never overwritten. Returns
+     * the slots written and CONFIRMED by a read-back; a driver MUST verify per finger
+     * rather than trust the acknowledgement (rule 10), and MUST leave the user's
+     * existing fingers as they were when it fails.
+     *
+     * Only App\Services\Employees\FingerprintPusher calls this: like readTemplates(),
+     * its argument is biometric data and must not be logged or returned over HTTP.
+     *
+     * @param  list<array{slot:int, template:string, valid?:int}>  $templates
+     * @return list<int> slots written
+     */
+    public function uploadTemplates(Device $device, string $userId, array $templates): array;
 
     /**
      * What this device can do.

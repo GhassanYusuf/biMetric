@@ -6,6 +6,15 @@
 
 ## What changed in this rebuild
 
+### An integration API for other software (2026-10-08)
+
+`/api/v1` lets an HRMS/ERP/payroll system manage employees (with its own `external_id`
+and idempotent upsert), remove people from terminals, trigger fingerprint/card
+enrollment, read punches as a gap-free cursor feed, and receive signed webhooks.
+Scoped Sanctum tokens, per-token rate limit, `Idempotency-Key` replay. Device work is
+queued and reported as command ids. See [integration-api.md](integration-api.md) —
+including what was deliberately left out.
+
 ### The protocol became a library
 
 Device code was spread through controllers and services. It is now
@@ -167,8 +176,37 @@ queueing, and a change → documentation mapping table.
 
 ---
 
-## Known unknowns
+### The legacy ZKAccess database is importable
 
+`10-06-2026.mdb` — the old ZKAccess attendance-software backup (a Jet 4 .mdb on the
+Windows host) — can now be brought into this system with a two-step pipeline that
+never talks to a stopped source of truth twice:
+
+1. `scripts/export-zkaccess.ps1` on Windows (Access ODBC driver) dumps the MDB into
+   one canonical `zkaccess-export.json`.
+2. `php artisan zkaccess:import file.json` merges it: dry-run by default, `--apply`
+   to commit, `--tenant`, `--no-create-new`, `--skip-attendance` as levers.
+
+Hard facts the importer encodes, all measured against the live database:
+
+- People match on `Badgenumber` == `employee_code` (304/338), then by normalised
+  name (a name shared by two employees is neither merged nor created).
+- Punches are attributed by ZKAccess `USERID` (stable across PIN renumbering) but
+  written with the PIN as `device_user_id`, so the existing unique index
+  `(device_id, device_user_id, punched_at, verify_method)` dedupes against live rows.
+- `CHECKTIME` is local Iraq time (UTC+3); `punched_at` is stored UTC, exactly like
+  live sync — 99.2% of the export cancels out to existing rows at that offset.
+- `VERIFYCODE` is copied verbatim (proved 1:1); `privilege` is deliberately skipped
+  (no table to our string enum).
+
+First run against production: 7 departments created (was an empty table), 20
+employees created, profiles filled up to the measured fill rates, 673 attendance
+rows inserted (the export was ~10 days ahead of the stopped live sync). Everything
+idempotent — a re-run converges to "0 created, 0 inserted".
+
+---
+
+## Known unknowns
 Carried deliberately, not forgotten. Each is a claim we have **not** earned.
 
 | | |

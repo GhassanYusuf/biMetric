@@ -52,6 +52,14 @@ terminal understands.
 
 ### Person — keyed on national ID
 
+> **National IDs were removed on 2026-09-27** at the owner's request: the column on the
+> Employees screen, the form field, the roster filter, the Attendance lookup, the
+> `PUT /api/employees/{employee}/national-id` and `POST /api/employees/lookup` endpoints,
+> and in the database `person_national_ids` plus `people.national_id` /
+> `people.national_id_hash` (migration `2026_09_27_110000_drop_national_ids`).
+> Everything below about national ids describes the design as it was, and
+> is kept for the reasoning. `people` survives with `hrms_person_id`.
+
 The downstream HRMS links attendance to payroll by **national ID**, so that is the
 join key. It is the one identifier we do not get to choose.
 
@@ -89,8 +97,14 @@ Mappings are **time-boxed** (`valid_from` / `valid_to`):
   (`EmployeeDeviceMap::scopeInForceAt`), not the current one.
 - A retired mapping is **closed, not deleted**. Deleting it orphans the attendance
   recorded under it.
-- **A retired PIN is never reissued.** `DeviceIdentityResolver::nextFreePin()` skips
+- **A retired PIN is never reissued** to a different person. `DeviceIdentityResolver::nextFreePin()` skips
   every PIN the device has ever handed out, including those held by unclaimed people.
+  **The same person may come back to it (2026-10-11):** `claim()` gives someone added
+  back the PIN they last held there — or the one asked for — when our mappings only
+  ever gave that PIN to them and its roster entry is the removal's reservation or
+  their own claim (`pinWasOnlyEverTheirs()`); the entry becomes their claim again. A
+  keypad-enrolled stranger at that PIN is still refused by the slot guard inside
+  `saveUser()`. Before this, removing and re-adding Akram on IT Room put him on PIN 2.
 - `valid_from` is **null** for a mapping adopted off hardware. The person was already
   enrolled and we do not know since when; stamping the claim date would orphan every
   punch older than it. On the Glass Door panel that would have been 87,000 records.
@@ -110,9 +124,29 @@ unadopted  →  read_only  →  adopted
               syncs
 ```
 
-`Device::assertWritable()` is called before **every** device write and throws
-`DeviceNotAdoptedException`. Reads are deliberately not gated — reading is how a device
-gets adopted, and it cannot destroy anything.
+`Device::assertWritable()` is called before **every** device write. Reads are
+deliberately not gated — reading is how a device gets adopted, and it cannot destroy
+anything.
+
+### The write adopts the device itself (2026-10-11)
+
+Owner's request, after repeatedly being sent to the Devices page to press "Allow
+writes" on terminals whose every person was already matched — the case where the step
+decides nothing. `assertWritable()` now calls `DeviceAdoptionService::adoptIfClear()`:
+
+| Situation | What the write does |
+|---|---|
+| Already adopted | Proceeds. |
+| Unmatched people already known on the terminal | Refuses at once, without touching the hardware, with a 409 naming up to five of them ("IT ROOM holds 2 people nobody has matched: ali-test (PIN 5), …"). Only a person can decide who they are. |
+| Otherwise (never read, or read and fully decided) | Reads the roster afresh — a read — then adopts and proceeds if that read turns up nobody unmatched; refuses as above if it does. |
+| The roster read itself fails | Refuses with the read's error. Nothing is written. |
+
+The check is unchanged; it is run by the system rather than an operator. Adoption is
+recorded against the user whose action triggered it (`adopted_by`). `isWritable()` —
+and so the devices payload's `is_writable` and the propagator's skip list — is true when
+the device is adopted or has no known unmatched entries, so the "Allow writes" button
+only appears when there is something left to decide. Each push still reads its target
+slot first (guard 3 below), so a write never lands on somebody either way.
 
 ### The flow
 

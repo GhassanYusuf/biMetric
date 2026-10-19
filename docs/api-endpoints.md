@@ -3,6 +3,10 @@
 73 routes under `/api`. Generated from the live route table, not written from
 memory.
 
+> **Integrating another system?** Use the versioned, scoped, documented surface in
+> [integration-api.md](integration-api.md) (`/api/v1`). The routes below are the web
+> app's own and may change with its screens.
+
 ## Conventions
 
 **Envelope** — every response, success or failure:
@@ -294,8 +298,7 @@ Claiming takes over the PIN the device **already** uses, and writes nothing to t
 hardware — that is what preserves the person's existing fingerprints.
 
 There is **no bulk employee import over HTTP**. `POST /api/employees` creates one at a
-time; the estate-sized path is `php artisan staff:import staff.csv`, which also
-populates the Person layer from `national_id`.
+time; the estate-sized path is `php artisan staff:import staff.csv`.
 
 Full background: `docs/device-identity-and-adoption.md`.
 
@@ -319,62 +322,47 @@ that the employee has no fingerprints.
 
 ## Employees
 
-### Identity — the national ID
+### Identity — national ID (removed)
 
-| Method | Path | Notes |
-|---|---|---|
-| PUT | `/api/employees/{employee}/national-id` | `{national_id}` — **write-only** |
-| POST | `/api/employees/lookup` | `{national_id}` — resolves a number to an employee. `employees.view`, throttled 20/min |
+**National IDs were removed on 2026-09-27** at the owner's request: the column on the
+Employees screen, the form field, the roster filter, the Attendance lookup, the
+`PUT /api/employees/{employee}/national-id` and `POST /api/employees/lookup` endpoints,
+and in the database `person_national_ids` plus `people.national_id` /
+`people.national_id_hash` (migration `2026_09_27_110000_drop_national_ids`).
 
-**Nothing reads a national ID back.** The employee resource carries `has_national_id`,
-`national_id_masked` (e.g. `••••••123`) and `exportable` — enough to confirm the right
-document was entered, not enough to harvest the roster. It is government ID and the
-HRMS join key.
+### `GET /api/employees/{employee}/report` — the Report screen (2026-09-27)
 
-The same ID **already in this company** is refused (422): one human cannot be employed
-twice by one employer, so it is a typo, and accepting it would share one Person between
-two people — after which editing either rewrites the document for both.
+`EmployeeReportService`, built on `AttendanceSummaryService`: every day's verdict is
+the payroll summary's, so the screen and the payroll report cannot disagree. Read-only;
+`employees.view` via the employee policy.
 
-The same ID **at a sister company** is the same human: one Person, two Employments.
+- **One summary run** over `max(2 × period, 365)` days ending `to` (default today).
+  `stats` is the period, `previous_stats` the period before it, `days` the whole span
+  (work days only, oldest first; a missing date is a non-work day).
+- **One `outcome` per day**, worst first: `absent`, `excused`, `missed_punch_out`,
+  `late` (first punch after shift start + grace), `left_early` (last punch before
+  the shift end — judged here, because the summary's `leave_on_time` means "before
+  end + grace" and includes full shifts), `on_time`.
+- **`untracked`** for days before `tracking_from` — the hire date, else the first
+  punch ever, else null. The summary has no start date and would call a new starter's
+  whole year absent; untracked days count in no statistic.
+- **Null, never 0**, for a statistic with no days under it (`on_time_rate` with no day
+  present, averages, rates with no expected day).
+- `enrollment` per live terminal mapping: `state` is `never_read` (no sync),
+  `unknown` (synced, template table did not decode) or `read` with a count (rule 3).
+- `punches.by_verify_method` carries RAW method numbers; the screen decodes only the
+  documented ones (`attendance/parts.jsx`).
 
-Re-submitting a different ID for someone who has one is a **renewal** — the old number
-is superseded, not overwritten, so payroll exports made under it still reconcile.
-
-#### `POST /api/employees/lookup` — the one direction that IS readable
-
-It answers "whose number is this?", never "what is their number". You must already
-hold the document to get anything back, and the response is the ordinary employee
-resource — `national_id_masked` and nothing more.
-
-- **POST, not GET, deliberately.** A number in a query string is written to the
-  access log, kept in browser history, and sent in the `Referer` of whatever the
-  page loads next. The body is none of those places.
-- **Exact match only**, and permanently so: the column searched is an HMAC blind
-  index, which has no prefix to match on. Punctuation and case are normalised away
-  (`830-108-246` = `830108246`), a partial number matches nothing, and a `LIKE`
-  search would require storing the document in plaintext.
-- **404 when nobody holds it.** An honest miss, not an empty list.
-- **Scoped to the signed-in company.** `people` is not tenant-scoped — that is how
-  sister companies share one human — so the lookup resolves through `employees`,
-  which is. A number held only at another company does not resolve here.
-- **Every call is audited, hit and miss**, as `employee.national_id_lookup`. The
-  misses are the point: a run of them from one user is what guessing looks like.
-  Neither the number nor its hash is written to the audit row.
-
-The Attendance screen uses it: enter a national ID, get that person's punches. See
-`resources/js/spa/pages/attendance/parts.jsx` (`NationalIdLookup`).
-
-**Straight SQL, for the same question outside the app:**
-`docs/sql/national-id-lookup.sql` — person, employments, daily in/out and raw
-punches, keyed by the same hash.
+The screen is `/app/employees/{id}/report` (row action **Report**). `/app/employees/sample/report`
+renders generated sample data in the same layout, labelled as sample on screen, for
+viewing the design before real attendance exists.
 
 ### Filters on `GET /api/employees`
 
 | Parameter | |
 |---|---|
-| `search` | name, code, department or email |
-| `has_national_id` | `0` = still missing one (**the working queue** — they cannot be exported to payroll), `1` = has one |
-| `department_id` | |
+| `search` | every word must match first name, last name, code, department or email — so the full name as shown finds the person (2026-10-11) |
+| `department_id` | that department **and every department beneath it** (the Company › Department tree, 2026-10-11); `none` = no department at all |
 | `device_id` | enrolled on that terminal, via the live mapping |
 | `unenrolled` | `1` = on no terminal at all; they cannot clock in anywhere |
 | `is_active` | |
@@ -385,6 +373,7 @@ punches, keyed by the same hash.
 | GET | `/api/employees/next-code` | suggests the lowest free code; declared before `{employee}` or binding would 404 |
 | GET/PUT/PATCH/DELETE | `/api/employees/{employee}` | |
 | GET | `/api/employees/{employee}/attendance-summary` | |
+| GET | `/api/employees/{employee}/report` | `?period=30\|90\|365` (default 30), optional `to`. The Report screen's data — see below |
 | POST | `/api/employees/{employee}/propagate` | queues a write onto several terminals |
 | POST | `/api/employees/{employee}/devices/{device}/push` | |
 | POST | `/api/employees/{employee}/devices/{device}/remove` | |
@@ -451,12 +440,12 @@ a panel has been confirmed on this estate's hardware.
 
 | Method | Path |
 |---|---|
-| GET | `/api/attendance` |
+| GET | `/api/attendance` — filters `employee_id`, `device_id`, `from`, `to`, and (2026-10-11) `department_id` (a tree node and everything beneath it; `none` = employees with no department, never unmatched punches) and `search` (every word must match the employee's first name, last name or code, or the terminal PIN). `employee_name` is first + last name. `/api/exports/attendance` takes the same filters. |
 | GET | `/api/holidays` · POST · PUT/PATCH · DELETE `/{holiday}` |
 | GET | `/api/dashboard/summary` |
 | GET | `/api/reports/attendance` |
 | GET | `/api/audit-logs` |
-| GET | `/api/departments` (+ full resource) |
+| GET | `/api/departments` (+ full resource). Each carries `parent_id` (null = a top-level company); `meta.unassigned_count` = employees with no department |
 | GET | `/api/notifications` · `/unread-count` · POST `/{notification}/read` · `/read-all` |
 
 ### Date filters are OFFICE-LOCAL dates
@@ -478,6 +467,10 @@ do — shifted every boundary by the office offset and made `to` mean midnight, 
 | GET | `/api/exports/attendance` | `attendance.view`, or `attendance.view.self` for own rows |
 | GET | `/api/exports/employees/{employee}/attendance` | `employees.view` |
 | GET | `/api/exports/payroll` | `reports.view` |
+| GET | `/api/exports/attendance-report` | `reports.view` |
+| GET | `/api/exports/employees/{employee}/report` | `employees.view` |
+| GET / POST | `/api/exports/employee-reports` — list recent runs / start one | `reports.view` |
+| GET | `/api/exports/employee-reports/{id}` and `…/{id}/download` | `reports.view` |
 
 Rendered synchronously with dompdf (`barryvdh/laravel-dompdf`) and returned as
 `application/pdf` with a `Content-Disposition` filename. These are read-only
@@ -486,6 +479,66 @@ queries, so rule 11's "queue it" applies to device work, not to these.
 Query parameters mirror the screen each one exports: `employee_id`, `device_id`,
 `from`, `to` for the punch log; `from`, `to` for one employee; `from`, `to`,
 `department_id` for payroll.
+
+### The two visual reports (2026-10-18)
+
+`/api/exports/attendance-report?from&to&department_id` — the company attendance report
+for management (`AttendanceReport`, template `pdf.report.attendance`): headline figures
+against the same-length period before, how the person-days went, day-by-day (weekly
+above 62 work days) outcome columns, departments, an arrival-time histogram, weekday
+pattern, the people who need attention, and everyone as an appendix. `department_id`
+takes the node and everything beneath it. Range defaults to the last 30 days, at most
+366 days, and **no date may be in the future** (422) — an unhappened work day has no
+punches and would count as everybody's absence.
+
+`/api/exports/employees/{employee}/report?from&to` (or `?period=30|90|365`, ending
+today) — one person's report for any period up to 366 days (`PersonalReport`, template
+`pdf.report.employee`): KPIs against the period before, a wall calendar of the period
+(a heatmap above 62 days), arrivals/departures, weekday and monthly patterns, terminals
+and methods, enrollment, and **every punch of every day** with its terminal and verify
+method. Its figures equal the Employee Report screen's for the same days
+(`PersonalReportTest`).
+
+### Every employee's report as one PDF — built in the background (2026-10-18)
+
+`POST /api/exports/employee-reports {from, to, department_id?}` → `202` with the run.
+Active employees in the department and everything beneath it (or everyone), in
+department then name order; anyone not tracked by `to` (no hire date, no punch) is left
+out and named on the contents page. `409` while another run of the company's is queued
+or running (younger than an hour); `422` for future dates, more than 366 days, or nobody
+to report on; `503` if `pdfunite` is missing.
+
+`BuildEmployeeReports` renders `CHUNK` (6) people per job and re-queues itself at the
+back of the queue, so device commands on the single worker run in between. Each person is
+rendered alone — the same page as the single export — and the last chunk adds a contents
+page (two passes, so its own length is in the page numbers) and joins everything with
+**`pdfunite` (poppler-utils, a runtime dependency since 2026-10-18)**. A person who fails
+to draw is named on the contents page, never silently dropped; a disk failure fails the
+run. Files live in `storage/app/private/report-exports/{id}/`, are downloadable only
+through the API, and are cleared after 7 days when the next run starts. Progress is live
+through the `reports` module (`LiveController` stamp + MQTT `module/reports/{id}`), and
+the requester gets a notification when it finishes. Measured 2026-10-18: 132 people,
+September, 68 s, 417 pages, 12.8 MB.
+
+Two things a reader of the company report must know:
+
+- **Rates are over the people who punched at least once in the period.** A person
+  expected at work and seen on no terminal is a *no-show*: named on the "Needs
+  attention" page, kept out of every rate, and the all-in attendance rate is printed
+  beside the headline. On 2026-09 data this was 73 of 132 people — whole companies on
+  terminals that were not syncing — and pooling them in turned 78.6% into 35.1%.
+- **Every per-person figure is `EmployeeReportService::stats()`** over days judged by
+  `EmployeeReportService::outcome()`, so a person's line equals their own Employee
+  Report for the same days (`AttendanceReportTest` pins it). Company, department and
+  weekday figures are the same function over the pooled person-days.
+
+Charts are SVG drawn by `App\Support\PdfCharts`. dompdf 3.1.6 renders SVG rect, line,
+path (M/L/Z), circle and text, but **not** the arc command or CSS gradients, and this
+server has no GD, so there are no raster images.
+
+"Page N of M" is drawn on the canvas by `ExportController::numberPages()`: dompdf
+never resolves CSS `counter(pages)`, and every export printed "Page 1 of 0" until
+2026-10-18.
 
 Three properties every export holds to, all enforced in `ExportController`:
 

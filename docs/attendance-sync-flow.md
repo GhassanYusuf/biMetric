@@ -91,6 +91,13 @@ distinguishes a healthy sync from a broken one.
 | `unmatched` | device user id maps to no employee | non-zero = former staff or a missing map |
 | `undecodable` | **offered but could not be decoded** | **any non-zero value needs attention** |
 | `out_of_range` | outside the requested date window | always 0 unless the run was a range read |
+| `future` | decoded, but stamped more than a day ahead of now — archived (`skip_reason = future_timestamp`), not imported, never the watermark | any non-zero value: misaligned reads (DC-020) or a clock set ahead |
+
+`future` (2026-10-18) is in the command's `raw_response.counts`; the run row's single
+`records_undecodable` column carries `undecodable + future`, since neither is a usable
+punch. Before it existed Camelot's misaligned reads stored 1,497 punches dated up to
+2030, and the newest of them could have become the watermark — after which every
+incremental read would have skipped real punches below it.
 
 `out_of_range` exists for the same reason `undecodable` does: a record the importer
 decided not to store is **counted**, never silently dropped. It is what makes a
@@ -325,6 +332,28 @@ with a 422 on the field before anything is queued — it could only ever import
 nothing, and a run that reads a whole terminal to import nothing is
 indistinguishable on screen from a terminal that has stopped recording.
 
+## The daily past-day read, after the clock sync (2026-10-11)
+
+Owner: "every day at 5 am sync the time from the server to the biometrics … after that,
+read attendance from all devices from the past day". `App\Services\Devices\
+DeviceMorningRoutine`, checked every minute by the scheduler (`device-morning-routine`):
+
+- **When:** `devices.clock_sync_schedule` (default `0 5 * * *`) in the **company's**
+  timezone — 05:00 in Bahrain is 02:00 UTC.
+- **Per terminal, in order on its own queue:** `sync_time` (clock set from the server,
+  read back), then `sync_attendance` with `from` = yesterday, `to` = today — dates in the
+  terminal's own zone. One command at a time per terminal, so the read runs after the
+  clock is right.
+- **Safe to repeat:** a range read REPLACES the watermark for that run but never moves
+  it, and the unique punch index makes a re-read punch a no-op — so it neither
+  duplicates nor skips anything, and the scheduled watermark read (above) is unaffected.
+- **Switches:** `devices.clock_sync_enabled` and `devices.daily_read_enabled`, both on by
+  default; Settings → *Daily clock sync and attendance read*. A terminal with a read
+  already queued or running is not given another.
+- **Cost:** the protocol cannot filter, so each read still transfers the terminal's whole
+  table (minutes on Glass Door) — once a day, in the early morning.
+- Runs only once cron runs `schedule:run`.
+
 ## Live progress, and why it is coarse
 
 A sync of a 10,000-record terminal takes tens of seconds. `attendance_sync_runs`
@@ -500,6 +529,39 @@ Per-punch `PunchRecorded` events were also removed from the bulk path: firing th
 during a historical sync would flood MQTT with thousands of "just clocked in"
 notifications for punches from 2023. Real-time notification belongs to the
 real-time path, not the backfill.
+
+## Clearing punches from a terminal (2026-10-18)
+
+Owner: "trigger a wipe of the punch data stored in the device, but don't delete the
+employees — only their punch data". `AttendanceClearService`, command
+`clear_attendance`, `POST /api/devices/{device}/clear-attendance` (`devices.update`,
+one attempt). ZKTeco standalone terminals only (`attendance.clear`: I on the F18, U on
+the F22 and generic terminals, N on C3 and CSL — the UI hides it there).
+
+Why it is worth having: the protocol cannot be asked for "punches since X", so every
+read transfers the whole log. Camelot's 42,352 records take ~5 minutes over the
+internet and arrive with a third of them misaligned (DC-020). A short log is a fast,
+clean read.
+
+Save before you destroy, or refuse:
+
+1. The terminal's own count (`GET_FREE_SIZES`). Unknown → refuse.
+2. A full read through `sync()` — every record stored, the unique index deduping.
+   Refused unless `read` equals the count AND `undecodable` and `future` are 0 AND
+   `imported + duplicate` equals the count.
+3. The count again; a punch made since → back to 1 (up to three passes).
+4. `clearAttendance($device, $held)` — the driver re-checks the count in the same
+   session, clears, and requires the count to be 0 afterwards.
+5. `attendance_watermark` → null: every record on the terminal is new from here.
+
+Users, cards, fingerprints and the system's own attendance are untouched. The command's
+message says how many punches were cleared and how many of them were new, or exactly
+why nothing was. **Camelot cannot be cleared until it reads cleanly** — its 2026-10-18
+read had 17,203 misaligned records, and the guard refuses on exactly that.
+
+Confirmed preconditions on 2026-10-18 (read-only): IT ROOM (F18) read 11,332 = its count,
+0 undecodable, 0 future; On The Road (F22) 8,430 = its count. The clear itself has never
+been run. Covered by `tests/Feature/Devices/AttendanceClearTest.php`.
 
 ## Clearing history
 

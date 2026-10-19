@@ -57,6 +57,7 @@ class DeviceQueueTest extends TestCase
             'ip_address' => '192.0.2.10',
             'port' => 4370,
             'protocol' => Device::PROTOCOL_BINARY,
+            'model' => 'F18', // rule 21: write levels come from the model
             'is_active' => true,
         ]);
         Tenancy::clear();
@@ -391,6 +392,7 @@ class DeviceQueueTest extends TestCase
             'ip_address' => '192.0.2.11',
             'port' => 4370,
             'protocol' => Device::PROTOCOL_BINARY,
+            'model' => 'F18', // rule 21: write levels come from the model
             'is_active' => true,
         ]);
         Tenancy::clear();

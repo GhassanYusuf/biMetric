@@ -27,6 +27,21 @@ export const NAV_SECTIONS = [
         ],
     },
     {
+        /*
+         | Its own section rather than another row under Menu: this screen is the only
+         | place company-wide behaviour is decided — which time zone the terminals run
+         | on and how often attendance is read — and burying it next to Dashboard made
+         | it read as a per-user preference.
+         */
+        label: 'Company',
+        items: [
+            { to: '/settings', label: 'Settings', icon: 'sliders', permission: 'settings.view' },
+            // The Company › Department tree (2026-10-12).
+            { to: '/organisation', label: 'Companies', icon: 'building', permission: 'departments.view' },
+            { to: '/legacy', label: 'Legacy data', icon: 'archive', permission: 'employees.update' },
+        ],
+    },
+    {
         label: 'Hardware',
         /*
          * Four siblings, no tree. Each is a screen an operator goes to directly, and
@@ -77,6 +92,8 @@ export function Icon({ name, className = 'h-[18px] w-[18px]' }) {
         logout: 'M15 17l5-5-5-5M20 12H9M12 3H6a1 1 0 00-1 1v16a1 1 0 001 1h6',
         sliders: 'M4 8h10M18 8h2M4 16h4M12 16h8M15 5v6M9 13v6',
         report: 'M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zM14 3v5h5M9 13h6M9 17h4',
+        archive: 'M21 8v11a1 1 0 01-1 1H4a1 1 0 01-1-1V8M3 8h18M16 4H8l-2 4M8 12h8',
+        building: 'M4 21V5a1 1 0 011-1h9a1 1 0 011 1v16M15 10h4a1 1 0 011 1v10M3 21h18M8 8h3M8 12h3M8 16h3',
     };
     return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

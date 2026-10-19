@@ -66,8 +66,6 @@
             color: #475569;
         }
 
-        .page-number:after { content: counter(page) " of " counter(pages); }
-
         table { width: 100%; border-collapse: collapse; }
 
         thead { display: table-header-group; }
@@ -124,8 +122,10 @@
     <footer>
         {{-- The zone is stated on every page: these times are office-local, not UTC,
              and not the reader's browser timezone. --}}
+        {{-- "Page N of M" is drawn by ExportController::render(): dompdf leaves
+             counter(pages) at 0 (every export printed "Page 1 of 0" until
+             2026-10-18), so CSS cannot print the total. --}}
         Times shown in office time ({{ $timezone }}) · Generated {{ $generatedAt }}
-        <span style="float: right;">Page <span class="page-number"></span></span>
     </footer>
 
     @yield('content')

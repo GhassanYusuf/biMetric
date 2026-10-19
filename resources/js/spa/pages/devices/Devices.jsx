@@ -7,11 +7,13 @@ import { useConfirm } from '../../shared/confirm';
 import { useToast } from '../../shared/toast';
 import { SkeletonTable } from '../../shared/ui';
 import { useSyncProgress, describeProgress } from '../../shared/useSyncProgress';
+import { useActionResult } from '../../shared/useActionResult';
+import { waitForCommand } from '../../shared/deviceCommand';
 import DevicesDesktop from './DevicesDesktop';
 import DevicesMobile from './DevicesMobile';
 import DeviceFormModal from './DeviceFormModal';
 import SyncRangeModal from './SyncRangeModal';
-import { FULL_RESYNC_CONFIRM, adoptConfirm } from './parts';
+import { FULL_RESYNC_CONFIRM, adoptConfirm, clearPunchesConfirm } from './parts';
 
 // Actions that QUEUE a device read rather than returning a result inline. The POST
 // comes back at once with a queued command; the read then runs on the worker and
@@ -34,6 +36,17 @@ export default function Devices() {
     const [editing, setEditing] = useState(null); // device object, or {} for "new"
     const [rangeFor, setRangeFor] = useState(null); // device awaiting a date range
     const [busy, setBusy] = useState({}); // { [deviceId]: 'test' | 'sync' | 'import' }
+    const { flash, resultOf, outcomeOf } = useActionResult();
+
+    /*
+     * The outcome of an action on the control that started it: the row's Actions
+     * menu on desktop (keyed by device), the button itself on mobile (keyed by
+     * device and action). Called once the outcome is KNOWN, not when it is queued.
+     */
+    const settle = useCallback((deviceId, action, result) => {
+        flash(String(deviceId), result, result === 'success' ? 'Done' : 'Failed');
+        flash(`${deviceId}:${action}`, result);
+    }, [flash]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -90,15 +103,19 @@ export default function Devices() {
         setBusy((b) => ({ ...b, [device.id]: key }));
         try {
             const res = await api.post(`/devices/${device.id}/${action}`, body);
-            toast.success(res.message);
+            // "Queued" is not an outcome; the completion effect below reports that.
+            if (queued) toast.info(res.message);
+            else toast.success(res.message);
             // A queued read returns immediately; the row STAYS busy and the
             // completion effect below clears it and refetches when the worker
             // finishes. Everything else resolves inline here.
             if (queued) return;
+            settle(device.id, key, 'success');
             if (action !== 'test-connection') await load();
             else setRows((prev) => prev.map((d) => (d.id === device.id ? { ...d, last_sync_error: null } : d)));
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : `Could not reach ${device.name}.`);
+            settle(device.id, key, 'error');
             if (queued) setBusy((b) => ({ ...b, [device.id]: undefined })); // failed to QUEUE — release now
         } finally {
             if (!queued) setBusy((b) => ({ ...b, [device.id]: undefined }));
@@ -159,6 +176,41 @@ export default function Devices() {
         }
     }
 
+    /**
+     * Saves every punch on the terminal, then erases them from it (2026-10-18,
+     * AttendanceClearService). Staff, cards and fingerprints stay. Queued — it reads
+     * the whole log first — so the row stays busy until the command FINISHES, and
+     * the outcome is the command's own message: either what was cleared, or why
+     * nothing was.
+     */
+    async function clearPunches(device) {
+        if (!(await confirm(clearPunchesConfirm(device)))) return;
+
+        const key = 'clear-attendance';
+        setBusy((b) => ({ ...b, [device.id]: key }));
+        try {
+            const res = await api.post(`/devices/${device.id}/clear-attendance`);
+            toast.info(res.message);
+
+            const done = await waitForCommand(res.data.id);
+            if (done === null) {
+                toast.info(`Still working on ${device.name} — the result will appear in its command history.`);
+            } else if (done.status === 'succeeded') {
+                toast.success(done.message);
+                settle(device.id, key, 'success');
+            } else {
+                toast.error(done.message ?? `Punches were not cleared from ${device.name}.`);
+                settle(device.id, key, 'error');
+            }
+            await load();
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : `Could not reach ${device.name}.`);
+            settle(device.id, key, 'error');
+        } finally {
+            setBusy((b) => ({ ...b, [device.id]: undefined }));
+        }
+    }
+
     async function rangeSync(device, { from, to }) {
         await runAction(device, 'sync-attendance', { body: { from, to }, busyKey: 'range-read' });
         setRangeFor(null);
@@ -203,16 +255,26 @@ export default function Devices() {
 
         handled.current = syncingId;
         const finishedId = syncingId;
-        if (status === 'succeeded' || status === 'partial') toast.success('Attendance sync finished.');
-        else if (status === 'failed') toast.error('Attendance sync failed — open the device for details.');
-        else if (stalled) toast.info('Lost contact with the progress feed — refreshing.');
+        const action = busy[finishedId];
+        if (status === 'succeeded' || status === 'partial') {
+            toast.success('Attendance sync finished.');
+            settle(finishedId, action, 'success');
+        } else if (status === 'failed') {
+            toast.error('Attendance sync failed — open the device for details.');
+            settle(finishedId, action, 'error');
+        } else if (stalled) toast.info('Lost contact with the progress feed — refreshing.');
 
         load().finally(() => setBusy((b) => ({ ...b, [finishedId]: undefined })));
-    }, [status, stalled, syncingId, load, toast]);
+    // `busy` is read for the finishing action's key only; the handled ref keeps a
+    // busy change from firing this twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [status, stalled, syncingId, load, toast, settle]);
 
     const presentationProps = {
         rows,
         busy,
+        resultOf,
+        outcomeOf,
         syncingId: syncingId ? Number(syncingId) : null,
         syncProgress: progress,
         syncStalled: stalled,
@@ -229,6 +291,7 @@ export default function Devices() {
         onRangeSync: (d) => setRangeFor(d),
         onAdopt: adoptDevice,
         onImport: (d) => runAction(d, 'import-employees'),
+        onClearPunches: clearPunches,
     };
 
     const Presentation = deviceClass === 'desktop' ? DevicesDesktop : DevicesMobile;

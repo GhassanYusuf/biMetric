@@ -436,6 +436,9 @@ falls through to "never read" rather than rendering as zero.
 
 ## The system's copy of each fingerprint (2026-09-24)
 
+> Since 2026-10-11 this is governed by CLAUDE.md rule 19 — card numbers included.
+> The procedure is `docs/credential-preservation.md`.
+
 Owner's decision: keep a copy of every employee's fingerprint templates in the
 system, "in case we need to change the id or bring in a new device". This reverses
 the earlier rule that template bytes are never stored (reasoning in
@@ -451,8 +454,12 @@ the earlier rule that template bytes are never stored (reasoning in
   row `employee.fingerprints_captured` holds counts. The API exposes only
   `stored_fingerprint_slots`.
 - **When copies are taken:** `php artisan device:read-templates [device]` (all
-  terminals, read-only), and after every per-person enrollment read (dialog open,
-  post-push read-back) — best effort, a failure there never fails the read.
+  terminals, read-only); after every per-person enrollment read (dialog open,
+  post-push read-back); after every roster read (`SYNC_ENROLLMENT`), which is queued
+  for every terminal nightly at 02:30 UTC (`fingerprint-copies-nightly` in
+  `routes/console.php` — only runs once `schedule:run` is in cron); and **before
+  every "Remove from terminal"**, which refuses (409) if the copy cannot be taken.
+  The read-backs are best effort; a failure there never fails the read.
 - **On demand, one person:** "Read fingerprints to system" in the roster row menu
   and "Read to system" beside Fingerprints in the edit form —
   `POST /api/employees/{employee}/fingerprints/read` (optional `device_ids`), which
@@ -462,16 +469,29 @@ the earlier rule that template bytes are never stored (reasoning in
   captured, nothing deleted). Answers 503 with a plain message until the storage
   migration has run.
 - **Capture rules:** a finger on the terminal is stored, or refreshed when its digest
-  changed; a finger row missing from a table that DECODED is dropped; a failed or
-  unsupported read changes nothing. Copies from different terminals never overwrite
-  each other.
-- **Lifecycle:** rows follow their terminal — "Remove from terminal", deleting a
-  finger there, or deleting the terminal from the app removes that terminal's copies
-  (existing `device_id` cascade). Deleting the employee removes all of them.
+  changed; a failed or unsupported read changes nothing. Copies from different
+  terminals never overwrite each other.
+- **Lifecycle (changed 2026-10-11):** a copy OUTLIVES the terminal's finger. "Remove
+  from terminal", deleting a finger there, or a read that no longer finds it removes
+  only the bare slot marker; the stored template stays. The old rule — copies follow
+  their terminal — deleted the copy at the exact moment it was needed: Akram was
+  removed from IT Room (his finger existed nowhere else in the system), added back,
+  and showed 0 fingers. Deleting the terminal from the app (`device_id` cascade) or
+  the employee still removes copies. What a terminal HOLDS is the mapping's
+  `fingerprint_slots`, never these rows.
 - **Compatibility:** `FingerprintVault::templatesFor($employee, $protocol, $model)`
   returns only copies from the same family. An F18 template is `unknown` on an F22
   until a real upload says otherwise (rule 15).
-- **Not built yet:** writing a stored copy to a NEW terminal. It needs the same
-  `SAVE_USERTEMPS` upload the Personnel ID change uses, which has not yet been run on
-  hardware; it is the next step once the IT Room test passes.
+- **Writing copies back (2026-10-11):** every path that adds a person to a terminal
+  (`DeviceUserSyncService::pushEmployee()` — the push dialog, the single-device push
+  and queued `PUSH_USER`) then writes their stored card (if the terminal record has
+  none; `assignCard`, read back) and their stored fingers (`FingerprintPusher::restoreOnto`
+  → driver `uploadTemplates`, add-only, read back). Each outcome is a sentence in the
+  push result; a failure there never fails the push. Methods per family: F18 →
+  `SAVE_USERTEMPS` (`TemplateService::addTemplates`, implemented, write CONFIRMED
+  2026-10-11 on IT Room); C3 panels → `templatev10` rows (`Personnel::addFingerprints`).
+  A terminal without `template.upload` says "cannot take a fingerprint from this app".
+- **The employee's card is the system's record:** a read of a terminal that holds no
+  card no longer clears `employees.card_number` (it did, for Akram, 2026-10-11); the
+  per-terminal row still records exactly what the terminal holds.
 

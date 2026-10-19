@@ -147,6 +147,9 @@ export const COMMAND_LABELS = {
     enroll_card: 'Capture card',
     delete_fingerprint: 'Delete fingerprint',
     clear_card: 'Clear card',
+    rebuild_device: 'Rebuild: back up and plan',
+    rebuild_person: 'Rebuild: update a person',
+    rebuild_remove: 'Rebuild: remove an unlinked record',
 };
 
 export function commandLabel(command) {

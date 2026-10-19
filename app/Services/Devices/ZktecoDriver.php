@@ -5,16 +5,21 @@ namespace App\Services\Devices;
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\Device;
 use App\Support\DeviceProgress;
+use App\Support\Timezone;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Capability\CapabilitySet;
+use Promoseven\Biometric\Capability\CapabilityResolver;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
+use Promoseven\Biometric\Model\TerminalModelFactory;
 use Promoseven\Biometric\Codec\AttendanceCodec;
 use Promoseven\Biometric\Codec\RecordBuffer;
 use Promoseven\Biometric\Contracts\ProgressListener;
 use Promoseven\Biometric\Exception\DeviceException;
 use Promoseven\Biometric\Exception\VerificationException;
+use Promoseven\Biometric\Service\UserService;
 use Promoseven\Biometric\Value\DeviceConfig;
 use Promoseven\Biometric\Value\DeviceUser;
 use Promoseven\Biometric\Value\Progress;
@@ -121,7 +126,7 @@ class ZktecoDriver implements BiometricDeviceDriver
 
         return AttendanceCodec::decode(
             $raw,
-            $device->timezone ?: config('attendance.device_timezone', '+03:00'),
+            Timezone::forDevice($device),
         );
     }
 
@@ -253,8 +258,10 @@ class ZktecoDriver implements BiometricDeviceDriver
         string $name,
         ?\Closure $guard = null,
         bool $onlyIfMissing = false,
+        ?int $privilege = null,
+        ?string $password = null,
     ): DeviceUser {
-        return $this->run($device, function (ProtocolDevice $d) use ($userId, $name, $guard, $onlyIfMissing) {
+        return $this->run($device, function (ProtocolDevice $d) use ($userId, $name, $guard, $onlyIfMissing, $privilege, $password) {
             $occupant = $d->users()->find($userId);
 
             // Throwing here abandons the write. That is the whole point: the exception
@@ -267,9 +274,11 @@ class ZktecoDriver implements BiometricDeviceDriver
                 return $occupant;
             }
 
-            // save() preserves the card and privilege already on the device — writing
-            // the defaults would wipe a card and demote an admin, both silently.
-            return $d->users()->save($userId, $name);
+            // save() preserves the card, privilege and keypad password already on the
+            // device — writing the defaults would wipe a card, demote an admin and erase
+            // a password, all silently. Explicit values only restore or set one (see
+            // the contract).
+            return $d->users()->save($userId, $name, $privilege, null, $password);
         });
     }
 
@@ -330,6 +339,26 @@ class ZktecoDriver implements BiometricDeviceDriver
         return $user;
     }
 
+    public function readClock(Device $device): ?\DateTimeImmutable
+    {
+        return $this->run($device, fn (ProtocolDevice $d) => $d->time());
+    }
+
+    /**
+     * GET_TIME, SET_TIME (202) to now in the device's zone (DeviceConfig timezone),
+     * GET_TIME again — in one session. Run on IT ROOM, On The Road, Good Wheels and
+     * Camelot 2026-10-11 and read back within seconds (casebook DC-019).
+     */
+    public function setClock(Device $device): array
+    {
+        return $this->run($device, function (ProtocolDevice $d) {
+            $before = $d->time();
+            $d->syncTime();
+
+            return ['before' => $before, 'after' => $d->time()];
+        });
+    }
+
     public function setUserCard(Device $device, string $userId, int $cardNumber): DeviceUser
     {
         // UserService::setCard() refuses a user the device does not hold, keeps name
@@ -337,15 +366,71 @@ class ZktecoDriver implements BiometricDeviceDriver
         return $this->run($device, fn (ProtocolDevice $d) => $d->users()->setCard($userId, $cardNumber));
     }
 
+    public function setUserPrivilege(Device $device, string $userId, bool $admin): DeviceUser
+    {
+        $this->capabilities($device)->require(Capability::USER_PRIVILEGE);
+
+        // UserService::setPrivilege() refuses a user the device does not hold, keeps
+        // name, card and password, and reads the privilege back (library 2.14.0).
+        return $this->run($device, fn (ProtocolDevice $d) => $d->users()->setPrivilege(
+            $userId,
+            $admin ? UserService::PRIVILEGE_ADMIN : UserService::PRIVILEGE_USER,
+        ));
+    }
+
+    /** GET_FREE_SIZES — CONFIRMED on the F18 and F22, 2026-10-18 (FreeSizesCodec). */
+    public function attendanceRecordCount(Device $device): ?int
+    {
+        return $this->run($device, fn (ProtocolDevice $d) => $d->attendance()->deviceCount());
+    }
+
+    /**
+     * Count, CLEAR_ATTLOG (15), count — one session, so no punch can land between the
+     * check and the clear unnoticed (AttendanceService::clearAll, library 2.14.0).
+     * IMPLEMENTED, never run on hardware.
+     */
+    public function clearAttendance(Device $device, int $expectedRecords): int
+    {
+        $this->capabilities($device)->require(Capability::ATTENDANCE_CLEAR);
+
+        return $this->run($device, fn (ProtocolDevice $d) => $d->attendance()->clearAll($expectedRecords));
+    }
+
+    /*
+     * Adds stored fingerprints to a user the terminal already holds (2026-10-11,
+     * owner's request: "store it in the webapp and whenever needed write it to a
+     * device"). TemplateService::addTemplates() writes the device's own user record
+     * plus their existing AND new templates in one SAVE_USERTEMPS commit, never
+     * overwrites a filled slot, and returns only the slots that read back
+     * byte-identical — the ACK is not trusted (rule 10).
+     *
+     * Gated by template.upload in the capability set (see CapabilitySet::defaults()
+     * for the level and the hardware run behind it).
+     */
+    public function uploadTemplates(Device $device, string $userId, array $templates): array
+    {
+        return $this->run($device, fn (ProtocolDevice $d) => $d->templates()->addTemplates(
+            $userId,
+            array_map(fn (array $t) => ['fid' => (int) $t['slot'], 'template' => (string) $t['template']], $templates),
+        ));
+    }
+
+    /**
+     * What this terminal can do — from ITS MODEL's own set (library 2.11.0,
+     * Model\TerminalModelFactory), refined by a stored probe. Until 2026-10-11 every
+     * standalone model got the F18's set, so a method proven on the F18 was offered
+     * on the F22 unrun (CLAUDE.md rule 21; casebook DC-015).
+     */
     public function capabilities(Device $device): CapabilitySet
     {
+        $baseline = TerminalModelFactory::for($device->model)->capabilities();
         $stored = $device->capabilities_cache;
 
         if (is_array($stored) && $stored !== []) {
-            return CapabilitySet::defaults()->with($stored);
+            return $baseline->with($stored);
         }
 
-        return CapabilitySet::defaults();
+        return $baseline;
     }
 
     /**
@@ -356,10 +441,19 @@ class ZktecoDriver implements BiometricDeviceDriver
      */
     public function probeCapabilities(Device $device): CapabilitySet
     {
-        $resolved = $this->run($device, fn (ProtocolDevice $d) => $d->probeCapabilities());
+        $baseline = TerminalModelFactory::for($device->model)->capabilities();
+        $resolved = $this->run($device, fn (ProtocolDevice $d) => $d->probeCapabilities($baseline));
+
+        // Only what the probe can establish (reads) is stored; write levels stay the
+        // model's, so a stored F18-shaped set can never override another model's file.
+        $probeable = array_diff_key($resolved->toArray(), CapabilityResolver::unprobeable());
+        // A write level recorded for THIS terminal after a real run (e.g. its
+        // fingerprint-write test) is kept: a re-probe cannot re-establish it, and
+        // wiping it is how IT ROOM's renumber level vanished before (casebook DC-006).
+        $earned = array_intersect_key($device->capabilities_cache ?? [], CapabilityResolver::unprobeable());
 
         $device->forceFill([
-            'capabilities_cache' => $resolved->toArray(),
+            'capabilities_cache' => $probeable + $earned,
             'capabilities_probed_at' => now(),
         ])->save();
 
@@ -385,7 +479,7 @@ class ZktecoDriver implements BiometricDeviceDriver
             port: $device->port ?: 4370,
             commKey: (int) ($device->comm_key ?: 0),
             timeout: (float) config('attendance.device_timeout', 8.0),
-            timezone: $device->timezone ?: config('attendance.device_timezone', '+03:00'),
+            timezone: Timezone::forDevice($device),
             receiveBufferBytes: (int) config('attendance.device_receive_buffer', 4 * 1024 * 1024),
             // Windowed-read stall tolerance. A LAN device never stalls a window, so
             // the default is harmless there; a device reached over the internet
