@@ -19,10 +19,13 @@ use App\Models\Holiday;
 use App\Models\Setting;
 use App\Models\Notification;
 use App\Models\ReportExport;
+use App\Models\User;
 use App\Support\ApiResponse;
+use App\Support\Tenancy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Spatie\Permission\Models\Role;
 
 /**
  * "What has changed?" — the fallback carrier for CLAUDE.md rule 18 (every page is live).
@@ -51,6 +54,9 @@ class LiveController extends Controller
             'holidays' => $this->stamp(Holiday::query(), Setting::query()->where('key', 'like', 'attendance.%')),
             // Background report files (2026-10-18): the Reports screen's export list.
             'reports' => $this->stamp(ReportExport::query()),
+            // The Users screen (2026-10-19): users, and their levels (RoleController touches
+            // a role when its permissions change, which no column records otherwise).
+            'users' => $this->stamp(User::query(), Role::query()->where('team_id', Tenancy::id())),
             'notifications' => $this->stamp(Notification::query()->where('user_id', $user->id)),
         ], 'Live stamps.');
     }

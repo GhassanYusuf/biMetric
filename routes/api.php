@@ -24,7 +24,9 @@ use App\Http\Controllers\Api\MultiCardGroupController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ReportExportController;
+use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SettingController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WaiverController;
 use Illuminate\Support\Facades\Route;
 
@@ -80,6 +82,12 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
     // Departments
     Route::apiResource('departments', DepartmentController::class)->names('api.departments');
+
+    // Users and permission levels (2026-10-19). Self-lockout and privilege-climb guards
+    // are in the controllers.
+    Route::put('users/{user}/password', [UserController::class, 'password']);
+    Route::apiResource('users', UserController::class)->except('show')->names('api.users');
+    Route::apiResource('roles', RoleController::class)->except('show')->names('api.roles');
 
     // "What changed?" stamps per module — the live fallback when MQTT is down (rule 18).
     Route::get('live', [LiveController::class, 'index']);

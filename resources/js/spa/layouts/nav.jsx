@@ -38,6 +38,8 @@ export const NAV_SECTIONS = [
             { to: '/settings', label: 'Settings', icon: 'sliders', permission: 'settings.view' },
             // The Company › Department tree (2026-10-12).
             { to: '/organisation', label: 'Companies', icon: 'building', permission: 'departments.view' },
+            // Who can sign in and their permission levels (2026-10-19).
+            { to: '/users', label: 'Users', icon: 'shield', permission: 'users.view' },
             { to: '/legacy', label: 'Legacy data', icon: 'archive', permission: 'employees.update' },
         ],
     },
@@ -94,6 +96,7 @@ export function Icon({ name, className = 'h-[18px] w-[18px]' }) {
         report: 'M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zM14 3v5h5M9 13h6M9 17h4',
         archive: 'M21 8v11a1 1 0 01-1 1H4a1 1 0 01-1-1V8M3 8h18M16 4H8l-2 4M8 12h8',
         building: 'M4 21V5a1 1 0 011-1h9a1 1 0 011 1v16M15 10h4a1 1 0 011 1v10M3 21h18M8 8h3M8 12h3M8 16h3',
+        shield: 'M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6l7-3zM9 12l2 2 4-4',
     };
     return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

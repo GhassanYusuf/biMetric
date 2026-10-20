@@ -21,6 +21,7 @@ import Attendance from './pages/attendance/Attendance';
 import Reports from './pages/reports/Reports';
 import Holidays from './pages/holidays/Holidays';
 import Organisation from './pages/organisation/Organisation';
+import Users from './pages/users/Users';
 import LegacyData from './pages/legacy/LegacyData';
 import Settings from './pages/settings/Settings';
 import Notifications from './pages/notifications/Notifications';
@@ -136,6 +137,7 @@ export default function App() {
                         <Route path="/holidays" element={<Holidays />} />
                         <Route path="/settings" element={<Settings />} />
                         <Route path="/organisation" element={<Organisation />} />
+                        <Route path="/users" element={<Users />} />
                         <Route path="/notifications" element={<Notifications />} />
 
                         <Route path="/legacy" element={<LegacyData />} />

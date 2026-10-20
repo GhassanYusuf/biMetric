@@ -59,6 +59,8 @@ class AppServiceProvider extends ServiceProvider
         Device::observe(AuditObserver::class);
         Department::observe(AuditObserver::class);
         Holiday::observe(AuditObserver::class);
+        // The Users screen (2026-10-19); the password is redacted by the observer.
+        User::observe(AuditObserver::class);
 
         // Outbound webhooks (integration API). Model observers, so the device code paths
         // that change these rows stay untouched (rule 15).
