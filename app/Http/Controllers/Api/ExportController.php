@@ -293,34 +293,36 @@ class ExportController extends Controller
             return ApiResponse::error('This action is unauthorized.', [], 403);
         }
 
-        $validated = $request->validate([
-            ...$this->periodRules(),
-            'department_id' => ['nullable', 'integer'],
-        ]);
+        $validated = $request->validate([...$this->periodRules(), ...$this->statementScopeRules()]);
 
         if ($error = $this->rangeTooLong($validated)) {
             return $error;
         }
 
-        $statement = $this->statement->build(
-            $validated['from'] ?? null,
-            $validated['to'] ?? null,
-            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
-        );
+        $statement = $this->buildStatement($validated);
+        if ($error = $this->nobodyChosen($statement, $validated)) {
+            return $error;
+        }
 
         $count = count($statement['employees']);
         if ($count > self::MAX_STATEMENT_EMPLOYEES) {
-            $message = "That is {$count} people, a page each — choose a department (up to ".self::MAX_STATEMENT_EMPLOYEES.' people per statement).';
+            $picked = ! empty($validated['employee_ids']);
+            $message = "That is {$count} people, a page each — ".($picked ? 'choose fewer' : 'choose a department').' (up to '.self::MAX_STATEMENT_EMPLOYEES.' people per statement).';
 
-            return ApiResponse::error($message, ['department_id' => [$message]], 422);
+            $field = $picked ? 'employee_ids' : (isset($validated['department_ids']) ? 'department_ids' : 'department_id');
+
+            return ApiResponse::error($message, [$field => [$message]], 422);
         }
 
         $fmt = fn (string $d) => Carbon::parse($d)->format('m/d/Y');
         $days = collect($statement['shift']['work_days'])->map(fn (int $d) => Carbon::create()->startOfWeek(Carbon::SUNDAY)->addDays($d)->format('D'))->implode(' ');
         $filterLines = ["Shift {$statement['shift']['start']}–{$statement['shift']['end']} · {$days}"];
-        if (! empty($validated['department_id'])) {
-            $department = Department::find($validated['department_id']);
-            $filterLines[] = 'Department: '.($department?->name ?? "#{$validated['department_id']}");
+        if ($departmentIds = $this->statementDepartmentIds($validated)) {
+            $names = Department::whereIn('id', $departmentIds)->orderBy('name')->pluck('name');
+            $filterLines[] = (count($departmentIds) === 1 ? 'Department: ' : 'Departments: ').$names->implode(', ');
+        }
+        if (! empty($validated['employee_ids'])) {
+            $filterLines[] = $count === 1 ? 'Employee: '.$statement['employees'][0]['employee']['name'] : "{$count} chosen employees";
         }
 
         return $this->render('pdf.monthly-statement', [
@@ -332,7 +334,8 @@ class ExportController extends Controller
     }
 
     /**
-     * The Monthly Statement for EVERY employee (or one department) as an Excel workbook:
+     * The Monthly Statement for every employee, one company or department, or chosen
+     * people, as an Excel workbook:
      * the same MonthlyStatement figures as the PDF, written by MonthlyStatementWorkbook.
      * No 60-person cap — a workbook streams in a couple of seconds where dompdf took 18.6 s
      * for 40 pages, which is why the Reports screen's "all employees" Excel is synchronous
@@ -344,20 +347,16 @@ class ExportController extends Controller
             return ApiResponse::error('This action is unauthorized.', [], 403);
         }
 
-        $validated = $request->validate([
-            ...$this->periodRules(),
-            'department_id' => ['nullable', 'integer'],
-        ]);
+        $validated = $request->validate([...$this->periodRules(), ...$this->statementScopeRules()]);
 
         if ($error = $this->rangeTooLong($validated)) {
             return $error;
         }
 
-        $statement = $this->statement->build(
-            $validated['from'] ?? null,
-            $validated['to'] ?? null,
-            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
-        );
+        $statement = $this->buildStatement($validated);
+        if ($error = $this->nobodyChosen($statement, $validated)) {
+            return $error;
+        }
 
         $path = tempnam(sys_get_temp_dir(), 'statement-');
         $workbook->write(
@@ -372,6 +371,54 @@ class ExportController extends Controller
         return response()->download($path, $name, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend();
+    }
+
+    /**
+     * Who a Monthly Statement covers: everyone, one or more companies / departments (with
+     * the ones below each), or people picked by id (owner, 2026-10-19) — departments or
+     * people, never both. `department_id` is the single form the Reports screen's PDF
+     * button sends; `department_ids[]` the dialog's multiple choice. Ids go through the
+     * tenant-scoped Employee query, so another company's id simply drops out.
+     */
+    private function statementScopeRules(): array
+    {
+        return [
+            'department_id' => ['nullable', 'integer', 'prohibits:employee_ids'],
+            'department_ids' => ['nullable', 'array', 'min:1', 'max:200', 'prohibits:employee_ids'],
+            'department_ids.*' => ['integer', 'distinct'],
+            'employee_ids' => ['nullable', 'array', 'min:1', 'max:1000'],
+            'employee_ids.*' => ['integer', 'distinct'],
+        ];
+    }
+
+    /** @return list<int>|null  null = no department filter */
+    private function statementDepartmentIds(array $validated): ?array
+    {
+        $ids = array_map('intval', [...($validated['department_ids'] ?? []), ...(isset($validated['department_id']) ? [$validated['department_id']] : [])]);
+
+        return $ids === [] ? null : array_values(array_unique($ids));
+    }
+
+    private function buildStatement(array $validated): array
+    {
+        return $this->statement->build(
+            $validated['from'] ?? null,
+            $validated['to'] ?? null,
+            $this->statementDepartmentIds($validated),
+            isset($validated['employee_ids']) ? array_map('intval', $validated['employee_ids']) : null,
+        );
+    }
+
+    /** A 422 when people were picked but none of them is an employee here. */
+    private function nobodyChosen(array $statement, array $validated): ?Response
+    {
+        if (! empty($validated['employee_ids']) && $statement['employees'] === []) {
+            $message = 'None of the chosen people were found.';
+
+            return ApiResponse::error($message, ['employee_ids' => [$message]], 422);
+        }
+
+        return null;
     }
 
     /**

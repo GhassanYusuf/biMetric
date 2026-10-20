@@ -24,7 +24,7 @@ export default function ReportsDesktop({ report, departments, filters, onFilter,
                     {exporting === 'statement' ? 'Preparing…' : 'Monthly statement'}
                 </Button>
                 <ActionMenu
-                    label="All employees"
+                    label="Employees"
                     className="min-h-[42px] px-4 text-sm"
                     items={allEmployeesItems}
                 />

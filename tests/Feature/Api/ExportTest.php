@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\AttendanceLog;
+use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Models\ReportExport;
@@ -357,6 +358,107 @@ class ExportTest extends TestCase
 
         $this->login('admin@acme.test')->getJson('/api/holidays/rules')
             ->assertOk()->assertJsonPath('data.weekend_days', [5, 6]);
+    }
+
+    /** The text of an xlsx response's cells, for asserting who is in it. */
+    private function workbookText($res): string
+    {
+        $zip = new \ZipArchive();
+        $this->assertTrue($zip->open($res->baseResponse->getFile()->getPathname()) === true, 'not a valid xlsx');
+        $text = $zip->getFromName('xl/worksheets/sheet1.xml').$zip->getFromName('xl/sharedStrings.xml');
+        $zip->close();
+
+        return $text;
+    }
+
+    /** Owner, 2026-10-19: the Excel statement "based on selection … one person or multiple". */
+    public function test_the_statement_excel_covers_only_the_chosen_people(): void
+    {
+        Tenancy::set($this->acme->id);
+        $mona = Employee::where('employee_code', '2001')->firstOrFail();
+        Tenancy::clear();
+
+        $one = $this->login('admin@acme.test')
+            ->get("/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14&employee_ids[]={$this->employee->id}");
+        $one->assertOk();
+        $text = $this->workbookText($one);
+        $this->assertStringContainsString('Sara Ahmed', $text);
+        $this->assertStringNotContainsString('Yusuf Khalid', $text);
+        $this->assertStringNotContainsString('Mona Hassan', $text);
+
+        $two = $this->login('admin@acme.test')
+            ->get("/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14&employee_ids[]={$this->employee->id}&employee_ids[]={$mona->id}");
+        $two->assertOk();
+        $text = $this->workbookText($two);
+        $this->assertStringContainsString('Sara Ahmed', $text);
+        $this->assertStringContainsString('Mona Hassan', $text);
+        $this->assertStringNotContainsString('Yusuf Khalid', $text);
+    }
+
+    /** "Engineering and below" means what it says: a company's statement holds its departments' people. */
+    public function test_the_statement_for_a_company_includes_its_departments(): void
+    {
+        Tenancy::set($this->acme->id);
+        $company = Department::create(['tenant_id' => $this->acme->id, 'name' => 'Acme Holding']);
+        Department::where('name', 'Engineering')->update(['parent_id' => $company->id]);
+        Tenancy::clear();
+
+        $res = $this->login('admin@acme.test')
+            ->get("/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14&department_id={$company->id}");
+
+        $res->assertOk();
+        $text = $this->workbookText($res);
+        $this->assertStringContainsString('Sara Ahmed', $text);
+        $this->assertStringContainsString('Yusuf Khalid', $text);
+        $this->assertStringNotContainsString('Mona Hassan', $text);
+    }
+
+    /** Owner, 2026-10-19: "give me the option to select multiple department". */
+    public function test_the_statement_covers_several_departments_at_once(): void
+    {
+        Tenancy::set($this->acme->id);
+        $engineering = Department::where('name', 'Engineering')->firstOrFail();
+        $operations = Department::where('name', 'Operations')->firstOrFail();
+        $sales = Department::create(['tenant_id' => $this->acme->id, 'name' => 'Sales']);
+        Employee::create(['tenant_id' => $this->acme->id, 'name' => 'Omar Sales', 'employee_code' => '3001', 'department_id' => $sales->id, 'is_active' => true]);
+        Tenancy::clear();
+
+        $res = $this->login('admin@acme.test')
+            ->get("/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14&department_ids[]={$engineering->id}&department_ids[]={$operations->id}");
+
+        $res->assertOk();
+        $text = $this->workbookText($res);
+        $this->assertStringContainsString('Sara Ahmed', $text);
+        $this->assertStringContainsString('Yusuf Khalid', $text);
+        $this->assertStringContainsString('Mona Hassan', $text);
+        $this->assertStringNotContainsString('Omar Sales', $text);
+
+        $this->login('admin@acme.test')
+            ->get("/api/exports/monthly-statement?from=2026-09-01&to=2026-09-14&department_ids[]={$engineering->id}&department_ids[]={$sales->id}")
+            ->assertOk();
+
+        $this->login('admin@acme.test')
+            ->getJson("/api/exports/monthly-statement/excel?department_ids[]={$engineering->id}&employee_ids[]={$this->employee->id}")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('department_ids');
+    }
+
+    public function test_the_statement_refuses_a_department_and_people_together_or_nobody_found(): void
+    {
+        $this->login('admin@acme.test')
+            ->getJson("/api/exports/monthly-statement/excel?department_id=1&employee_ids[]={$this->employee->id}")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('department_id');
+
+        // Another company's employee, or a deleted one, is not found — never a blank file.
+        $this->login('admin@acme.test')
+            ->getJson('/api/exports/monthly-statement/excel?employee_ids[]=999999')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('employee_ids');
+
+        $this->login('admin@acme.test')
+            ->get("/api/exports/monthly-statement?from=2026-09-01&to=2026-09-14&employee_ids[]={$this->employee->id}")
+            ->assertOk();
     }
 
     public function test_the_monthly_statement_asks_for_a_department_when_too_many_people(): void

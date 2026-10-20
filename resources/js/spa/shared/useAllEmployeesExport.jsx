@@ -11,8 +11,9 @@ import ReportRangeDialog from './ReportRangeDialog';
 | buttons cannot drift apart:
 |
 |   'pdf'    every person's report in one PDF, built in the background (ReportExportController)
-|   'excel'  every person's Monthly Statement as one workbook, downloaded at once
-|            (ExportController::monthlyStatementExcel)
+|   'excel'  the Monthly Statement as one workbook, downloaded at once
+|            (ExportController::monthlyStatementExcel) — for everyone, chosen companies or
+|            departments, or chosen people (owner, 2026-10-19: "one person or multiple")
 |
 | Returns `choose(format)` to open the range dialog, `excelBusy` for the menu item's
 | spinner, and `dialog` to render. A PDF started here announces itself with a toast when
@@ -67,6 +68,8 @@ export function useAllEmployeesExport({ departments = null, initialRange = null,
         try {
             const params = new URLSearchParams({ from: range.from, to: range.to });
             if (range.department_id) params.set('department_id', range.department_id);
+            (range.department_ids ?? []).forEach((id) => params.append('department_ids[]', id));
+            (range.employee_ids ?? []).forEach((id) => params.append('employee_ids[]', id));
             const name = await api.download(`/exports/monthly-statement/excel?${params}`, 'monthly-statement.xlsx');
             toast.success(`Saved ${name}.`);
             setFormat(null);
@@ -80,14 +83,15 @@ export function useAllEmployeesExport({ departments = null, initialRange = null,
 
     const dialog = format && (
         <ReportRangeDialog
-            title={format === 'excel' ? 'All employees · Excel' : 'All employees · PDF'}
+            title={format === 'excel' ? 'Monthly Statement · Excel' : 'All employees · PDF'}
             intro={format === 'excel'
-                ? 'Every person\'s Monthly Statement in one workbook, in the ZKTeco layout: a block per person, a row per day, and a Summary sheet of totals. Downloads straight away.'
+                ? 'The Monthly Statement in one workbook, in the ZKTeco layout: a block per person, a row per day, and a Summary sheet of totals. For everyone, the companies or departments you tick, or the people you choose. Downloads straight away.'
                 : 'Every person\'s report — charts and every punch — in one PDF with a contents page. It is built in the background; large companies take a minute or two.'}
             confirmLabel={format === 'excel' ? 'Download Excel' : 'Build PDF'}
             initial={initialRange}
             departments={departments}
             initialDepartment={initialDepartment}
+            allowPeople={format === 'excel'}
             onSubmit={format === 'excel' ? downloadExcel : startPdf}
             onClose={() => setFormat(null)}
         />
@@ -96,7 +100,7 @@ export function useAllEmployeesExport({ departments = null, initialRange = null,
     /** The two menu items, for an ActionMenu. */
     const items = [
         { key: 'all-pdf', label: 'All employees · PDF', description: 'Every person\'s report in one PDF, built in the background', onSelect: () => setFormat('pdf') },
-        { key: 'all-excel', label: 'All employees · Excel', description: 'Monthly Statement for everyone, one workbook', onSelect: () => setFormat('excel'), loading: excelBusy },
+        { key: 'all-excel', label: 'Monthly Statement · Excel', description: 'Everyone, chosen departments, or chosen people', onSelect: () => setFormat('excel'), loading: excelBusy },
     ];
 
     return { items, excelBusy, dialog };

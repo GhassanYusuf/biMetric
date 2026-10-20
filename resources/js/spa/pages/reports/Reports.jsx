@@ -113,7 +113,8 @@ export default function Reports() {
         }
     }
 
-    // "All employees ▾" — PDF or Excel — shared with the Attendance screen.
+    // "Employees ▾" — everyone as PDF, or the Monthly Statement as Excel for everyone, a
+    // department or chosen people — shared with the Attendance screen.
     const allEmployees = useAllEmployeesExport({
         departments,
         initialRange: filters.from && filters.to ? { from: filters.from, to: filters.to } : null,

@@ -25,7 +25,7 @@ export default function ReportsMobile({ report, departments, filters, onFilter, 
                     {exporting === 'report' ? 'Preparing…' : 'Report'}
                 </Button>
                 <ActionMenu
-                    label="All employees"
+                    label="Employees"
                     className="min-h-[38px] px-3 text-sm"
                     items={allEmployeesItems}
                 />

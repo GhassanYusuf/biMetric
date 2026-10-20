@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Models\Department;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\SummaryBatch;
@@ -50,17 +51,28 @@ class MonthlyStatement
     public function __construct(private readonly AttendanceSummaryService $summaries) {}
 
     /**
+     * Who is on it: every active employee, or those in one or more companies /
+     * departments AND THEIR SUB-DEPARTMENTS (the dialog says "and below"; a company holds
+     * no staff directly), or exactly the people picked by id (owner, 2026-10-19: "one
+     * person or multiple", then "multiple departments"). Picked people are included even
+     * if inactive — somebody chose them by name.
+     *
+     * @param  list<int>|null  $departmentIds
+     * @param  list<int>|null  $employeeIds
      * @return array{from:string,to:string,shift:array,employees:list<array>}
      */
-    public function build(?string $from = null, ?string $to = null, ?int $departmentId = null): array
+    public function build(?string $from = null, ?string $to = null, ?array $departmentIds = null, ?array $employeeIds = null): array
     {
         [$fromDate, $toDate] = AttendanceSummaryService::window($from, $to);
         $from = $fromDate->format('Y-m-d');
         $to = $toDate->format('Y-m-d');
 
+        $inDepartments = $departmentIds === null ? null
+            : array_values(array_unique(array_merge(...array_map(fn (int $id) => Department::subtreeIds($id), $departmentIds))));
+
         $employees = Employee::query()
-            ->where('is_active', true)
-            ->when($departmentId !== null, fn ($q) => $q->where('department_id', $departmentId))
+            ->when($employeeIds !== null, fn ($q) => $q->whereIn('id', $employeeIds), fn ($q) => $q->where('is_active', true))
+            ->when($inDepartments !== null, fn ($q) => $q->whereIn('department_id', $inDepartments))
             ->orderBy('name')
             ->get();
 
