@@ -57,7 +57,11 @@ class CheckAllDeviceHealth implements ShouldQueue
                 continue;
             }
 
-            DeviceCommand::create([
+            // tap() the helper, not ->tap(): a Model has no tap() of its own, so the
+            // method call fell through to a query Builder, $command->id threw, and the
+            // row was left `queued` with no job behind it — which then made every later
+            // run skip the terminal (casebook DC-024).
+            tap(DeviceCommand::create([
                 'tenant_id' => $device->tenant_id,
                 'device_id' => $device->id,
                 'command' => DeviceCommand::HEALTH_CHECK,
@@ -67,7 +71,7 @@ class CheckAllDeviceHealth implements ShouldQueue
                 // The next scheduled run is the retry.
                 'max_attempts' => 1,
                 'available_at' => now(),
-            ])->tap(fn ($command) => ProcessDeviceCommand::dispatch($command->id));
+            ]), fn ($command) => ProcessDeviceCommand::dispatch($command->id));
 
             Tenancy::clear();
         }

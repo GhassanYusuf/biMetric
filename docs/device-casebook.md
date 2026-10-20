@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-18**
+**Last updated: 2026-10-20**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-024 | 2026-10-18 to 2026-10-20 | Good Wheels, On The Road, Camelot, IT ROOM | The 5-minute health check never ran: it threw before queueing, then skipped every terminal | FIXED |
 | DC-023 | 2026-10-18 | all six | Punches were never read automatically: nothing ran the scheduler | MONITORING |
 | DC-022 | 2026-10-12 | all six | Keypad passwords: never pushed, never read — and erased by every standalone write | MONITORING |
 | DC-021 | 2026-10-12 | Entrance, Glass Door, IT ROOM | Every Save took 20–40 s; two operators could talk to one terminal at once | FIXED |
@@ -98,6 +99,20 @@ Template:
 ---
 
 ## Entries
+
+### DC-024 — The 5-minute health check never ran: it threw before queueing, then skipped every terminal
+
+- **Date:** 2026-10-18 to 2026-10-20
+- **Devices:** Good Wheels (F18/ID, 46.184.163.106), On The Road (F22/ID, 192.168.7.63), Camelot (F18, 87.237.196.60), IT ROOM (F18, 192.168.7.62) — the four ZKTeco terminals `CheckAllDeviceHealth` covers. Glass Door and Entrance (C3) are not in it.
+- **Direction:** software → device (never reached the device)
+- **Symptom:** found 2026-10-20 while listing the cron jobs for the owner: the last `health_check` command was created 2026-10-18 09:00 UTC, although the job is scheduled every 5 minutes and cron had been running `schedule:run` since 08:43 UTC that day (DC-023).
+- **What was done:** (1) `schedule:list` showed `CheckAllDeviceHealth` every 5 min; the other scheduled work (05:00 clock + read, 02:30 copies) had produced commands on 2026-10-20, so the scheduler was fine. (2) `device_commands`: 164–167 (one per terminal, 2026-10-18 08:48–09:00 UTC) all still `queued`, `jobs` table empty — rows with nothing behind them. (3) `failed_jobs` 14–17 at the same times: `Property [id] does not exist on the Eloquent builder instance`. (4) Read the job: `DeviceCommand::create([...])->tap(fn ($command) => ProcessDeviceCommand::dispatch($command->id))`. (5) Fixed, tested, then on production marked 164–167 `failed` with message "Never sent … (DC-024)" and `finished_at` = 2026-10-20 07:44 UTC (to undo: set them back to `queued` — pointless, they have no queue job); `queue:restart`.
+- **Root cause:** a Model has no `tap()` method; `->tap()` falls through `__call` to a new query Builder, so the closure received a Builder and `$command->id` threw. The row was already saved `queued`, but `ProcessDeviceCommand` was never dispatched. Each terminal's first failure therefore left a permanent "pending" check, and the job's own guard (skip a terminal with a check queued or running) skipped all four on every later run — so after the first 15 minutes it failed silently, without even new failed jobs.
+- **Fix:** `app/Jobs/CheckAllDeviceHealth.php` uses the `tap()` helper, `tap(DeviceCommand::create([...]), fn ($command) => …)`. Test `tests/Feature/Devices/CheckAllDeviceHealthTest.php` (each terminal gets a check AND a queue job; no second check while one is pending) — fails on the old code with the production error, passes on the new. No other `)->tap(` on a model in `app/`.
+- **Verified:** the 2026-10-20 07:45 UTC scheduled run queued commands 224–227 and all four ran: On The Road online (17 ms), Camelot online (11 ms), IT ROOM online (11 ms), Good Wheels "did not answer: Device connection timed out or closed unexpectedly" (it took a clock set at 07:01 UTC the same day). The next run, 07:50 UTC, commands 228–231: all four online, Good Wheels in 35 ms — the 07:45 miss was a one-off on its internet link, not the job.
+- **Evidence:** failed_jobs 14–17; device_commands 164–167 (stuck, now failed), 224–227 (first working run); `CheckAllDeviceHealthTest`.
+- **Status:** FIXED
+- **Keywords:** health check, health_check, CheckAllDeviceHealth, tap, Property [id] does not exist on the Eloquent builder instance, stuck queued, never runs, skipped, schedule
 
 ### DC-023 — Punches were never read automatically: nothing ran the scheduler
 
