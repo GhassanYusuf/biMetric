@@ -180,9 +180,10 @@ class ProtocolLibraryBoundaryTest extends TestCase
             // "Rebuild from system" (2026-10-11): plans from capability levels which
             // writes a terminal can take; names Capability only, speaks no protocol.
             'app/Services/Devices/DeviceRebuildService.php',
-            // Daily clock sync + past-day read (2026-10-11): asks a terminal's capability set whether
-            // it can take a clock / read attendance; names Capability only.
-            'app/Services/Devices/DeviceMorningRoutine.php',
+            // The Cron jobs runner (2026-10-20, was DeviceMorningRoutine): asks a terminal's
+            // capability set whether it can take a clock / read attendance; names
+            // Capability only and reaches hardware only through the command bus.
+            'app/Services/Devices/ScheduledJobRunner.php',
             // Clear a terminal's punches (2026-10-18): asks for attendance.clear and
             // refuses with ProtocolException; reaches hardware only through the contract.
             'app/Services/Devices/AttendanceClearService.php',

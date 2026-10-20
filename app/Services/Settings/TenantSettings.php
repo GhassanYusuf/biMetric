@@ -50,41 +50,10 @@ class TenantSettings
         'system.timezone' => ['Asia/Bahrain', 'timezone'],
 
         /*
-         * Scheduled attendance import (owner, 2026-10-05).
-         *
-         * OFF by default, and that default is deliberate rather than cautious: this
-         * server had no `schedule:run` wired to cron until 2026-10-05, so switching
-         * this on is the step that starts real traffic at real terminals. Every read
-         * transfers a device's WHOLE attendance table (87,806 rows on Glass Door,
-         * ~5 min on Camelot) because the protocol cannot be asked for "punches since
-         * X" — so the frequency is the operator's cost decision, not a preference.
-         *
-         * `schedule` is a standard 5-field cron expression, evaluated in the
-         * SERVER's timezone. Someone who wants "03:00 Gulf time" should say so rather
-         * than have it silently mean whatever the app server is set to.
+         * The attendance and clock schedules that used to be here
+         * (`attendance.sync_*`, `devices.clock_sync_*`, `devices.daily_read_enabled`)
+         * are rows in `scheduled_jobs` since 2026-10-20 — the Cron jobs screen.
          */
-        'attendance.sync_enabled' => [false, 'bool'],
-        'attendance.sync_schedule' => ['0 3 * * *', 'cron'],
-
-        /*
-         * Daily clock sync (owner, 2026-10-11: "every day sync the time from server to
-         * the biometrics, at 5 am"; casebook DC-019). Every terminal that can take a
-         * clock is set to the server's NTP-synchronised time in its own zone and read
-         * back. ON by default — unlike the attendance read it is one tiny command per
-         * terminal — at 05:00 in the COMPANY's timezone (system.timezone).
-         */
-        'devices.clock_sync_enabled' => [true, 'bool'],
-        'devices.clock_sync_schedule' => ['0 5 * * *', 'cron'],
-
-        /*
-         * Right after the clock sync, read the PAST DAY's attendance (yesterday and
-         * today, in each terminal's own zone) from every terminal (owner, 2026-10-11:
-         * "after that, a job to read attendance from all devices from the past day").
-         * Queued behind the clock sync on each terminal, so the read runs once the
-         * clock is right. A range read does not move the watermark and the unique
-         * punch index keeps it free of duplicates. ON by default.
-         */
-        'devices.daily_read_enabled' => [true, 'bool'],
 
         /*
          * The attendance rules (owner, 2026-10-19), set on the Holidays screen and read

@@ -6,12 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Device;
 use App\Services\Devices\DeviceCommandBus;
 use App\Services\Devices\DeviceDriverManager;
-use App\Services\Settings\TenantSettings;
 use App\Support\ApiResponse;
 use App\Support\Timezone;
-use Cron\CronExpression;
-use DateTimeImmutable;
-use DateTimeZone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Promoseven\Biometric\Capability\Capability;
@@ -97,98 +93,12 @@ class DeviceTimezoneController extends Controller
              | rather than letting "03:00" quietly mean something nobody typed.
              */
             'schedule_zone_note' => sprintf(
-                'The attendance schedule is evaluated in your company time zone (%s). This server itself runs on %s.',
+                'Cron jobs run on your company time zone (%s). This server itself runs on %s.',
                 $system,
                 config('app.timezone')
             ),
             'devices' => $devices,
         ], 'Time zone plan retrieved.');
-    }
-
-    /**
-     * The attendance import schedule, with the next times it will actually fire.
-     *
-     * The preview is computed on the server on purpose. A browser has no cron parser,
-     * and shipping one to label "0 3 * * *" as "daily at 03:00" would mean the
-     * explanation and the scheduler could disagree — the exact failure this whole
-     * feature is trying to avoid. Same library, same clock, same answer.
-     *
-     * `?expression=` previews an unsaved expression, which is what makes the form
-     * useful: the operator types a schedule and sees when it will fire before saving.
-     */
-    public function schedule(Request $request, TenantSettings $settings): JsonResponse
-    {
-        abort_unless($request->user()->can('settings.view'), 403);
-
-        $system = Timezone::system();
-
-        // Only accept a preview of a VALID expression; an invalid one must not be able
-        // to reach the cron library and throw a 500 from what is only a preview.
-        $preview = $request->query('expression');
-        $expression = is_string($preview) && trim($preview) !== ''
-            ? trim($preview)
-            : $settings->get('attendance.sync_schedule');
-
-        // Only the cron library gets a say here — the timezone validator knows nothing
-        // about schedules and would answer the wrong question.
-        if (! CronExpression::isValidExpression($expression)) {
-            return ApiResponse::success([
-                'valid' => false,
-                'expression' => $expression,
-                'timezone' => $system,
-                'error' => sprintf(
-                    "'%s' is not a valid cron expression. Five fields, e.g. '0 3 * * *' for 03:00 daily.",
-                    $expression
-                ),
-                'next_runs' => [],
-            ], 'Schedule expression is not valid.');
-        }
-
-        // The zone belongs to getNextRunDate(), NOT to the constructor — its second
-        // argument is a FieldFactory. Passing a string there is a TypeError.
-        $cron = new CronExpression($expression);
-
-        // `getNextRunDate` advances from "now", so it naturally yields tomorrow's run
-        // for a daily schedule rather than repeating today's. $allowCurrentDate is
-        // false so an expression that is due right now does not list this minute.
-        $next = [];
-        $cursor = new DateTimeImmutable('now', new DateTimeZone($system));
-
-        try {
-            for ($i = 0; $i < 3; $i++) {
-                $cursor = $cron->getNextRunDate($cursor, 0, false, $system);
-                $next[] = $cursor->format('Y-m-d H:i:s P');
-            }
-        } catch (\Throwable $e) {
-            /*
-             | Syntactically valid but impossible — '0 0 30 2 *' is 30 February, which
-             | passes isValidExpression and then throws when the library searches for
-             | the first match. The library raises a plain \Exception (or
-             | \RuntimeException after too many iterations), not a dedicated type.
-             *
-             | Deliberately catches Throwable rather than only Exception: an impossible
-             | date and an unbounded search must both come back as a validation message,
-             | not a 500 from a settings screen.
-             */
-            return ApiResponse::success([
-                'valid' => false,
-                'expression' => $expression,
-                'timezone' => $system,
-                'error' => 'This expression can never match a real date, so it would never run.',
-                'next_runs' => [],
-            ], 'Schedule expression never matches.');
-        }
-
-        return ApiResponse::success([
-            'valid' => true,
-            'expression' => $expression,
-            'timezone' => $system,
-            'enabled' => $settings->get('attendance.sync_enabled'),
-            // Saving this is what starts real traffic at real terminals: the protocol
-            // transfers each device's entire attendance table on every run.
-            'cost_note' => 'Each run transfers every terminal\'s FULL attendance table — the protocol cannot be asked for "punches since X".',
-            'next_runs' => $next,
-        ], 'Schedule retrieved.');
     }
 
     /**

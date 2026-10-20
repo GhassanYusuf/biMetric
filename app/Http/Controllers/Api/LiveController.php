@@ -19,6 +19,7 @@ use App\Models\Holiday;
 use App\Models\Setting;
 use App\Models\Notification;
 use App\Models\ReportExport;
+use App\Models\ScheduledJob;
 use App\Models\User;
 use App\Support\ApiResponse;
 use App\Support\Tenancy;
@@ -57,6 +58,8 @@ class LiveController extends Controller
             // The Users screen (2026-10-19): users, and their levels (RoleController touches
             // a role when its permissions change, which no column records otherwise).
             'users' => $this->stamp(User::query(), Role::query()->where('team_id', Tenancy::id())),
+            // The Cron jobs screen (2026-10-20); a run stamps last_run_at, so it moves too.
+            'schedules' => $this->stamp(ScheduledJob::query()),
             'notifications' => $this->stamp(Notification::query()->where('user_id', $user->id)),
         ], 'Live stamps.');
     }

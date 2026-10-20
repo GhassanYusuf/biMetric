@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-10-19**
+**Last updated: 2026-10-20**
 
 ---
 
@@ -23,7 +23,7 @@ cannot see:
 | **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It is still **not a git repository**: no history, no tags, no remote. **The windowed-read protocol fix lives only there**, on this box's filesystem, outside every repository. This is still the worst of the three. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Everything through 2026-10-19 is **committed** on branch **`employees`** (branched from `camelot`) — **locally only**. The 2026-09-25 → 2026-10-19 working tree was committed in one go on 2026-10-19 by Yousif; the library at `/var/biometric-protocol` (2.10.0–2.14.0) was **not** part of that and is still uncommitted there. No branch has been pushed; `origin/main` is still the first commit. `employees` is not merged into `main`. Pushing and merging are the owner's call. |
+| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Everything through 2026-10-20 is **committed** on branch **`employees`** (branched from `camelot`) — **locally only**. The 2026-09-25 → 2026-10-19 working tree was committed in one go on 2026-10-19 by Yousif; the rest of 2026-10-19 and 2026-10-20 went in as four commits on 2026-10-20 (Users screen, statement selection, health-check fix, Cron jobs); the library at `/var/biometric-protocol` (2.10.0–2.14.0) was **not** part of that and is still uncommitted there. No branch has been pushed; `origin/main` is still the first commit. `employees` is not merged into `main`. Pushing and merging are the owner's call. |
 | ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. On 2026-09-24 the working tree (2.7.0–2.9.0) was committed as `2180866` on `main`; **not tagged**. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
@@ -97,9 +97,43 @@ All six succeeded the same day: imported Good Wheels 112, On The Road 20, Camelo
 Glass Door 51, Entrance 53, IT ROOM 32. Camelot again returned 17,203 of 42,352 records
 undecodable (archived raw — the known over-the-internet desync, see the 2026-09-14
 Camelot section); Entrance had 84 punches not matched to an employee.
-**Not changed:** `attendance.sync_enabled` stays `false` — the 05:00 morning routine
-(`devices.daily_read_enabled`, on) is the daily read the owner asked for; the separate
-`attendance.sync_schedule` full-table read would duplicate it.
+Since 2026-10-20 the daily read is a cron job (next section); the full-table read
+stays off — the clock-then-read job is the daily read the owner asked for.
+
+**The 5-minute health check never worked until 2026-10-20** (DC-024): `->tap()` on a
+model threw before queueing, and the stuck rows made every later run skip all four
+ZKTeco terminals. Fixed and committed 2026-10-20 (`413374c`); first working run 07:45 UTC.
+
+### Cron jobs screen — BUILT and committed 2026-10-20
+
+Owner: first "another read of punches … make sure the clock is set before reading …
+10am daily Bahrain", then "add another tab, call it cron job, that shows the cron jobs
+that exist and lets users add another and tinker with the time". Owner's choices: jobs
+are **actions from a fixed list, never typed commands**, and **every schedule moves to
+the new screen** (out of Settings). Sidebar → Company → **Cron jobs** (`settings.view` /
+`settings.manage`): the company's jobs (add, edit times and days or a cron expression,
+pick terminals, pause, run now, delete) and the system's own, read-only.
+`scheduled_jobs` table, `ScheduledJob`, `ScheduledJobRunner` (was `DeviceMorningRoutine`),
+`ScheduledJobController`, `schedules` live stamp. Migration ran on this server on
+2026-10-20: the only job is *Set clocks, then read the past day* at `0 5,10 * * *`;
+the five `devices.clock_sync_*` / `attendance.sync_*` settings rows were removed (the
+one stored value, `0 5,10 * * *`, is in the job). Details:
+`docs/attendance-sync-flow.md`, "Scheduled reads".
+
+### Users screen with permission levels — BUILT 2026-10-19, committed 2026-10-20 (`1eb76d4`)
+
+Owner: "add users tab that has permissions levels and add users". Chose **editable
+levels** (Administrator locked to everything) and **the admin sets the starting
+password** (no invite e-mail — outgoing mail was never set up). Sidebar → Company →
+**Users** (`users.view`). Two tabs: Users (add, edit, set new password, deactivate,
+delete) and Permission levels (the four built-in levels plus custom ones, a tick-grid of
+every permission by group). `UserController`, `RoleController`, `PermissionCatalogue`
+(the labels), `ManagedUserResource`, `UserPolicy`; `User` is now audited; `users` live
+stamp. Guards, all server-side and tested (`UserManagementTest`, 13): nobody changes their
+own level or deactivates/deletes themselves; the last active Administrator cannot be
+removed; nobody grants a level or adds a permission they lack; deactivating or a password
+reset signs the person out; a user with any history is deactivated, not deleted. No
+migration. As of today the owner is the only user.
 
 ### Monthly Statement PDF (ZKTeco layout) — BUILT 2026-10-19, committed 2026-10-19
 
@@ -131,6 +165,15 @@ it asks for a department. For everyone, the Reports screen's **All employees ▾
 Summary sheet, real dates/times/`[h]:mm` durations. 235 people: 3.4 s, 63 MB peak. Uses
 **`openspout/openspout` ^4.28 — a new composer dependency** (streams rows; PhpSpreadsheet
 would not fit 235 people in the 256 MB limit). `composer.json`/`.lock` changed, committed 2026-10-19.
+
+**Later on 2026-10-19, committed 2026-10-20 (`094b61a`):** the Excel (and the statement PDF endpoint) can be
+run for chosen people — `employee_ids[]`, one or many, from a search-and-tick picker in
+the dialog ("Who: Everyone / Departments / Chosen people"); under Departments, several companies or departments can be ticked at once (`department_ids[]`, each with its sub-departments). The menu item is now
+**Monthly Statement · Excel**, and the Reports button is **Employees ▾**. Also fixed: the
+department filter said "and below" but matched only that department's own staff; it now
+takes sub-departments too (`Department::subtreeIds`), so a company includes its
+departments. Note: our P7H department holds 2 people; ZKTeco's P7H sheet
+(`draft/P7H-SEP.xlsx`) lists 30 who are filed under other departments here.
 
 
 Owner asked for "an amazing PDF report for attendance", for management / HR, and chose
@@ -675,6 +718,17 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-20 — A second clock set and read at 10:00, then the Cron jobs screen
+
+Owner asked for a second punch read at 10:00 Bahrain with the clock set first. Done
+first as a second time on the old setting (`0 5,10 * * *`, at 10:01 UTC+3, a minute late,
+so the 2026-10-20 10:00 run was queued by hand: commands 212–223, all succeeded; Camelot
+imported 0 with 39,520 of 42,388 undecodable, far worse than the usual ~17,000, DC-020).
+Then the owner asked for a Cron jobs tab; built as above. Owner then asked
+for the health check fix: DC-024, fixed and verified the same day. Then, on the owner's
+request, everything was committed as separate commits (Users screen `1eb76d4`, statement
+selection `094b61a`, health check `413374c`, Cron jobs). Nothing pushed.
+
 ### 2026-10-19 — Working tree committed on `employees`
 
 Owner asked for everything on `employees` to be committed, recorded as committed by

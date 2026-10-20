@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\ReportExportController;
 use App\Http\Controllers\Api\RoleController;
+use App\Http\Controllers\Api\ScheduledJobController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WaiverController;
@@ -89,6 +90,12 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::apiResource('users', UserController::class)->except('show')->names('api.users');
     Route::apiResource('roles', RoleController::class)->except('show')->names('api.roles');
 
+    // Cron jobs (2026-10-20): device actions from a fixed list, on a schedule. Guarded
+    // by settings.view / settings.manage in the controller.
+    Route::get('scheduled-jobs/preview', [ScheduledJobController::class, 'preview']);
+    Route::post('scheduled-jobs/{scheduledJob}/run', [ScheduledJobController::class, 'run']);
+    Route::apiResource('scheduled-jobs', ScheduledJobController::class)->except('show')->names('api.scheduled-jobs');
+
     // "What changed?" stamps per module — the live fallback when MQTT is down (rule 18).
     Route::get('live', [LiveController::class, 'index']);
 
@@ -103,7 +110,6 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
      */
     Route::get('settings/timezones', [DeviceTimezoneController::class, 'plan']);
     Route::post('settings/timezones/check', [DeviceTimezoneController::class, 'check']);
-    Route::get('settings/attendance-schedule', [DeviceTimezoneController::class, 'schedule']);
     Route::post('settings/timezones/apply', [DeviceTimezoneController::class, 'apply']);
 
     // Access levels + multi-card groups for the employee form. Database only —

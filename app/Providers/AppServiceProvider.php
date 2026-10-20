@@ -61,6 +61,8 @@ class AppServiceProvider extends ServiceProvider
         Holiday::observe(AuditObserver::class);
         // The Users screen (2026-10-19); the password is redacted by the observer.
         User::observe(AuditObserver::class);
+        // The Cron jobs screen (2026-10-20): who added, changed, paused or deleted a job.
+        \App\Models\ScheduledJob::observe(AuditObserver::class);
 
         // Outbound webhooks (integration API). Model observers, so the device code paths
         // that change these rows stay untouched (rule 15).

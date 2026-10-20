@@ -14,8 +14,6 @@ import {
     Thead,
 } from '../../shared/ui';
 import { COMMON_ZONES, driftLabel, useAllZones, zoneLabel } from './parts';
-import ScheduleSection from './ScheduleSection';
-import ClockSyncSection from './ClockSyncSection';
 
 // Company settings: the system time zone, per-terminal overrides, and the daily
 // attendance read.
@@ -431,22 +429,6 @@ export default function Settings() {
                     </p>
                 )}
             </SectionCard>
-
-            {/* ---------------------------------------------------------------- */}
-            <ScheduleSection
-                settings={settings}
-                canManage={canManage}
-                onSaved={(next) => setSettings(next)}
-                onError={setSaveError}
-            />
-
-            {/* ---------------------------------------------------------------- */}
-            <ClockSyncSection
-                settings={settings}
-                canManage={canManage}
-                onSaved={(next) => setSettings(next)}
-                onError={setSaveError}
-            />
 
             {/* ---------------------------------------------------------------- */}
             {canManage && (

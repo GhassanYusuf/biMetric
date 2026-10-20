@@ -40,6 +40,8 @@ export const NAV_SECTIONS = [
             { to: '/organisation', label: 'Companies', icon: 'building', permission: 'departments.view' },
             // Who can sign in and their permission levels (2026-10-19).
             { to: '/users', label: 'Users', icon: 'shield', permission: 'users.view' },
+            // What runs on its own and when (2026-10-20); was two sections of Settings.
+            { to: '/cron-jobs', label: 'Cron jobs', icon: 'timer', permission: 'settings.view' },
             { to: '/legacy', label: 'Legacy data', icon: 'archive', permission: 'employees.update' },
         ],
     },
@@ -96,6 +98,7 @@ export function Icon({ name, className = 'h-[18px] w-[18px]' }) {
         report: 'M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zM14 3v5h5M9 13h6M9 17h4',
         archive: 'M21 8v11a1 1 0 01-1 1H4a1 1 0 01-1-1V8M3 8h18M16 4H8l-2 4M8 12h8',
         building: 'M4 21V5a1 1 0 011-1h9a1 1 0 011 1v16M15 10h4a1 1 0 011 1v10M3 21h18M8 8h3M8 12h3M8 16h3',
+        timer: 'M12 9v4l2.5 2M9 2h6M12 22a8 8 0 100-16 8 8 0 000 16z',
         shield: 'M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6l7-3zM9 12l2 2 4-4',
     };
     return (

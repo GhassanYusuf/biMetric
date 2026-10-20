@@ -332,27 +332,59 @@ with a 422 on the field before anything is queued — it could only ever import
 nothing, and a run that reads a whole terminal to import nothing is
 indistinguishable on screen from a terminal that has stopped recording.
 
-## The daily past-day read, after the clock sync (2026-10-11)
+## Scheduled reads: the Cron jobs screen (2026-10-20)
 
-Owner: "every day at 5 am sync the time from the server to the biometrics … after that,
-read attendance from all devices from the past day". `App\Services\Devices\
-DeviceMorningRoutine`, checked every minute by the scheduler (`device-morning-routine`):
+Every automatic read is a **cron job**: a row in `scheduled_jobs`, managed on the
+sidebar's **Company → Cron jobs** screen (`settings.view` to see it, `settings.manage`
+to change it; `ScheduledJobController`, `GET|POST|PUT|DELETE /api/scheduled-jobs`,
+`POST /api/scheduled-jobs/{id}/run`, `GET /api/scheduled-jobs/preview?expression=`).
+`App\Services\Devices\ScheduledJobRunner` is checked every minute by the scheduler
+(`scheduled-jobs` in `routes/console.php`).
 
-- **When:** `devices.clock_sync_schedule` (default `0 5 * * *`) in the **company's**
-  timezone — 05:00 in Bahrain is 02:00 UTC.
-- **Per terminal, in order on its own queue:** `sync_time` (clock set from the server,
-  read back), then `sync_attendance` with `from` = yesterday, `to` = today — dates in the
-  terminal's own zone. One command at a time per terminal, so the read runs after the
-  clock is right.
-- **Safe to repeat:** a range read REPLACES the watermark for that run but never moves
-  it, and the unique punch index makes a re-read punch a no-op — so it neither
-  duplicates nor skips anything, and the scheduled watermark read (above) is unaffected.
-- **Switches:** `devices.clock_sync_enabled` and `devices.daily_read_enabled`, both on by
-  default; Settings → *Daily clock sync and attendance read*. A terminal with a read
-  already queued or running is not given another.
-- **Cost:** the protocol cannot filter, so each read still transfers the terminal's whole
-  table (minutes on Glass Door) — once a day, in the early morning.
-- Runs only once cron runs `schedule:run`.
+History: the owner asked on 2026-10-11 for "every day at 5 am sync the time from the
+server to the biometrics … after that, read attendance from all devices from the past
+day" (`DeviceMorningRoutine`, settings `devices.clock_sync_*` / `devices.daily_read_enabled`),
+and there was a separate full read on `attendance.sync_*` (off). On 2026-10-20 the
+owner asked for a second clock-then-read at 10:00 and then for a screen to see and add
+cron jobs. The migration turned the settings' CURRENT values into rows and removed the
+settings, so nothing that ran stopped and nothing that was off started.
+
+- **A job is an action from a fixed list** (`ScheduledJob::ACTIONS`), never a command
+  line — owner's choice, 2026-10-20: a command box would run anything on the server.
+
+  | Action | Per terminal, in this order |
+  |---|---|
+  | Set clocks, then read the past day | `sync_time`, then `sync_attendance` `{from: yesterday, to: today}` |
+  | Read the past day | `sync_attendance` `{from, to}` |
+  | Read all new punches | `sync_attendance` (watermark; transfers the whole table) |
+  | Set clocks | `sync_time` |
+  | Copy fingerprints and cards | `sync_enrollment` |
+
+- **When:** one cron expression per job, in the **company's** timezone
+  (`system.timezone`) — 05:00 in Bahrain is 02:00 UTC. The screen's simple editor writes
+  `minute hours * * days`; several times must share a minute (one expression cannot
+  say "05:00 and 10:30" without also firing at 05:30 and 10:00), anything else is typed
+  as an expression. Refused on save: invalid, impossible (`0 0 30 2 *`), or runs closer
+  than **15 minutes** apart (`ScheduledJob::MIN_INTERVAL_MINUTES`) — every read moves a
+  terminal's whole table.
+- **Order:** the commands are queued in the table's order on the terminal's own queue,
+  one command at a time (rule 11), so a read runs after its clock is right.
+- **Skips:** a terminal that already has the same command queued or running, or cannot
+  do it (`SET_TIME` / `ATTENDANCE_READ`; the copy only on ZKTeco and C3) is skipped for
+  that run, and the job's `last_result` says how many.
+- **Safe to repeat:** a range read never moves the watermark and the unique punch index
+  makes a re-read punch a no-op.
+- **Run now** queues the same commands immediately and is audited
+  (`scheduled_job.run`); adding, editing, pausing and deleting are audited by the
+  observer.
+- **This company, 2026-10-20:** one job, *Set clocks, then read the past day*,
+  `0 5,10 * * *`, all terminals.
+- **The system's own jobs** (health check, enrollment expiry, the nightly fingerprint
+  copy, webhook relay, report pruning) stay in `routes/console.php`, are listed
+  read-only on the screen, and `ScheduledJobsApiTest` pins that list to the real
+  scheduler. The nightly copy is rule 19's guarantee, which is why it cannot be deleted
+  from the browser.
+- Runs only once cron runs `schedule:run` (DC-023).
 
 ## Live progress, and why it is coarse
 

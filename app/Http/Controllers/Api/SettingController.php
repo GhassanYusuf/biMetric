@@ -27,20 +27,14 @@ class SettingController extends Controller
 
         /*
          | Only the keys that are simple scalars are validated here. `system.timezone`
-         | and `attendance.sync_schedule` are NOT: their real rules live in
-         | TenantSettings::cast() (a zone must be one PHP knows, a schedule must be a
-         | cron expression the scheduler accepts), so validating a weaker version here
-         | would let through values the cast then rejects with an opaque error. They
-         | are deliberately absent below and reach the cast unchecked.
+         | is NOT: its real rule lives in TenantSettings::cast() (a zone must be one PHP
+         | knows), so validating a weaker version here would let through values the cast
+         | then rejects with an opaque error. Schedules are on the Cron jobs screen
+         | (ScheduledJobController) since 2026-10-20.
          */
         $data = $request->validate([
             'employees.auto_push_on_save' => ['sometimes', 'boolean'],
             'system.timezone' => ['sometimes', 'string', 'max:64'],
-            'attendance.sync_enabled' => ['sometimes', 'boolean'],
-            'attendance.sync_schedule' => ['sometimes', 'string', 'max:64'],
-            'devices.clock_sync_enabled' => ['sometimes', 'boolean'],
-            'devices.clock_sync_schedule' => ['sometimes', 'string', 'max:64'],
-            'devices.daily_read_enabled' => ['sometimes', 'boolean'],
         ]);
 
         /*

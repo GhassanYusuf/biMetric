@@ -128,7 +128,7 @@ A terminal stamps every punch with its own clock, so a clock that is wrong makes
 punch wrong. **The time-zone setting in the app does NOT change a clock** — it only tells
 the app how to read one.
 
-**The method, every terminal, every model** (`App\Services\Devices\DeviceMorningRoutine`,
+**The method, every terminal, every model** (`App\Services\Devices\ScheduledJobRunner`,
 command `sync_time`):
 
 1. **Reference:** this server's clock — NTP-synchronised, UTC.
@@ -147,15 +147,15 @@ command `sync_time`):
 
 **When:**
 
-- **Daily**, at the time in Settings → *Daily clock sync and attendance read* (default
-  **05:00 company time**, on by default; `devices.clock_sync_enabled`,
-  `devices.clock_sync_schedule`). **Right after it, on the same terminal's queue, the
-  past day's attendance is read** — yesterday and today in the terminal's own dates
-  (`devices.daily_read_enabled`, on by default). The terminal runs one command at a time,
-  so the read starts once its clock is right; a range read leaves the watermark alone and
-  a punch already stored is never added twice.
-  Checked every minute by the scheduler in each company's own timezone — **only runs
-  once cron runs `schedule:run`**.
+- **On a schedule:** a cron job on Company → *Cron jobs* (2026-10-20; was the
+  `devices.clock_sync_*` settings). This company: *Set clocks, then read the past day*
+  at **05:00 and 10:00 company time**. **Right after each clock set, on the same
+  terminal's queue, the past day's attendance is read** — yesterday and today in the
+  terminal's own dates. The terminal runs one command at a time, so the read starts once
+  its clock is right; a range read leaves the watermark alone and a punch already stored
+  is never added twice. A *Set clocks* job without the read is also on the list.
+  Checked every minute in each company's own timezone — **only runs once cron runs
+  `schedule:run`**. See `docs/attendance-sync-flow.md`, "Scheduled reads".
 - **On demand:** the terminal's page → **Set clock**.
 
 **If a clock keeps going wrong:** measure it (the health check reports the clock; the

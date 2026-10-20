@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 /**
- * Company time zone, per-terminal overrides, and the attendance schedule (2026-10-05).
+ * Company time zone and per-terminal overrides (2026-10-05). The attendance schedule
+ * that was tested here is a Cron job since 2026-10-20 — ScheduledJobsApiTest.
  *
  * Under test, in order of how badly it would hurt if it broke:
  *
@@ -24,9 +25,7 @@ use Tests\TestCase;
  *  - a device's clock cannot be queued for a terminal whose panel reports SET_TIME
  *    unsupported, and the refusal is returned rather than silently swallowed. Glass
  *    Door and Entrance are exactly this case: both C3, neither can take a clock write.
- *  - an invalid zone and an impossible cron expression are REFUSED. The second is the
- *    subtle one: '0 0 30 2 *' passes cron validation and then throws when the library
- *    searches for a match, so it can only be caught where the search happens.
+ *  - an invalid zone is REFUSED.
  */
 class TimezoneSettingsTest extends TestCase
 {
@@ -235,129 +234,5 @@ class TimezoneSettingsTest extends TestCase
         $this->device(['name' => 'IT Room']);
 
         $this->as('operator')->postJson('/api/settings/timezones/apply')->assertStatus(403);
-    }
-
-    // ------------------------------------------------------------------
-    // The schedule.
-    // ------------------------------------------------------------------
-
-    public function test_the_schedule_defaults_to_off_with_a_daily_expression(): void
-    {
-        $api = $this->as('tenant-admin');
-
-        $data = $api->getJson('/api/settings/attendance-schedule')->assertOk()->json('data');
-
-        // Off by default, and deliberately: enabling it starts real traffic at real
-        // terminals, so it must be something a person does.
-        $this->assertFalse($data['enabled']);
-        $this->assertSame('0 3 * * *', $data['expression']);
-        $this->assertTrue($data['valid']);
-        $this->assertCount(3, $data['next_runs']);
-    }
-
-    public function test_next_runs_are_given_in_company_time_not_server_time(): void
-    {
-        // The host runs app.timezone = UTC. If the preview leaked that, "03:00" would
-        // be reported as 03:00 UTC while actually firing at 06:00 Bahrain time.
-        $this->assertSame('UTC', config('app.timezone'));
-
-        $api = $this->as('tenant-admin');
-        $api->putJson('/api/settings', ['system' => ['timezone' => 'Asia/Bahrain']])->assertOk();
-        $this->app['auth']->forgetGuards();
-
-        $data = $api->getJson('/api/settings/attendance-schedule?expression='.urlencode('0 3 * * *'))
-            ->assertOk()->json('data');
-
-        $this->assertSame('Asia/Bahrain', $data['timezone']);
-        foreach ($data['next_runs'] as $when) {
-            $this->assertStringContainsString('+03:00', $when, "next run '{$when}' is not Bahrain time");
-            $this->assertMatchesRegularExpression('/ 03:00:00 /', $when);
-        }
-    }
-
-    public function test_an_impossible_but_syntactically_valid_schedule_is_refused(): void
-    {
-        // 30 February passes cron validation and only fails when the library searches
-        // for the first match — so this can only be caught where the search happens.
-        $api = $this->as('tenant-admin');
-
-        $data = $api->getJson('/api/settings/attendance-schedule?expression='.urlencode('0 0 30 2 *'))
-            ->assertOk()->json('data');
-
-        $this->assertFalse($data['valid']);
-        $this->assertSame([], $data['next_runs']);
-        $this->assertNotEmpty($data['error']);
-    }
-
-    public static function badScheduleProvider(): array
-    {
-        return [
-            'too few fields' => ['0 3 * *'],
-            'too many fields' => ['0 3 * * * *'],
-            'words' => ['every tuesday'],
-            'trailing junk' => ['0 3 * * * xyz'],
-        ];
-    }
-
-    /** @dataProvider badScheduleProvider */
-    public function test_a_malformed_schedule_is_refused_not_thrown(string $expression): void
-    {
-        $api = $this->as('tenant-admin');
-
-        $api->getJson('/api/settings/attendance-schedule?expression='.urlencode($expression))
-            ->assertOk()
-            ->assertJsonPath('data.valid', false)
-            ->assertJsonPath('data.next_runs', []);
-    }
-
-    public function test_a_blank_preview_falls_back_to_the_saved_schedule(): void
-    {
-        // The settings screen sends an empty field while an operator is still typing.
-        // Blank must mean "show me the saved one", not "this is invalid".
-        $api = $this->as('tenant-admin');
-        $api->putJson('/api/settings', ['attendance' => ['sync_schedule' => '15 4 * * *']])->assertOk();
-        $this->app['auth']->forgetGuards();
-
-        $data = $api->getJson('/api/settings/attendance-schedule?expression=')
-            ->assertOk()->json('data');
-
-        $this->assertTrue($data['valid']);
-        $this->assertSame('15 4 * * *', $data['expression']);
-    }
-
-    public function test_an_invalid_schedule_cannot_be_saved(): void
-    {
-        $api = $this->as('tenant-admin');
-
-        $api->putJson('/api/settings', ['attendance' => ['sync_schedule' => 'every tuesday']])->assertStatus(422);
-
-        $this->app['auth']->forgetGuards();
-        $this->assertDatabaseMissing('settings', ['key' => 'attendance.sync_schedule']);
-    }
-
-    public function test_a_valid_schedule_can_be_saved_and_is_audited(): void
-    {
-        $api = $this->as('tenant-admin');
-
-        $api->putJson('/api/settings', [
-            'attendance' => [
-                'sync_enabled' => true,
-                'sync_schedule' => '30 2 * * *',
-            ],
-        ])->assertOk();
-
-        $this->app['auth']->forgetGuards();
-
-        $this->assertDatabaseHas('settings', [
-            'tenant_id' => $this->tenant->id,
-            'key' => 'attendance.sync_schedule',
-            // JSON as the 'array' cast stores it, not the bare string.
-            'value' => json_encode('30 2 * * *'),
-        ]);
-        $this->assertDatabaseHas('settings', [
-            'tenant_id' => $this->tenant->id,
-            'key' => 'attendance.sync_enabled',
-            'value' => 'true',
-        ]);
     }
 }

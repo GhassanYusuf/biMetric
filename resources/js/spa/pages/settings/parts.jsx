@@ -77,28 +77,6 @@ export function zoneLabel(zone) {
     return offset ? `${zone} (${offset})` : zone;
 }
 
-/**
- * Schedule presets. `expr` is what actually gets saved; `label` is what the operator
- * reads. Each is a real cron expression, and the server previews the next runs from
- * the same library the scheduler uses, so a preset's label cannot drift from what it
- * does.
- */
-export const SCHEDULE_PRESETS = [
-    { expr: '0 * * * *', label: 'Every hour, on the hour' },
-    { expr: '0 */2 * * *', label: 'Every 2 hours' },
-    { expr: '0 */6 * * *', label: 'Every 6 hours' },
-    { expr: '0 0 * * *', label: 'Daily, midnight' },
-    { expr: '0 3 * * *', label: 'Daily, 03:00' },
-    { expr: '0 23 * * *', label: 'Daily, 23:00' },
-    { expr: '0 2 * * 0', label: 'Weekly, Sunday 02:00' },
-    { expr: '*/15 * * * *', label: 'Every 15 minutes (expensive — see below)' },
-];
-
-/** Matches a saved expression back to a preset, for the select's initial value. */
-export function presetFor(expression) {
-    return SCHEDULE_PRESETS.find((p) => p.expr === expression) ?? null;
-}
-
 /** "3 minutes ago" / "in 2 hours" — for the last/next run columns. */
 export function relativeFromNow(iso, now = Date.now()) {
     if (!iso) return null;
