@@ -159,6 +159,27 @@ class SyncProgressTest extends TestCase
         $this->getJson("/api/devices/{$this->device->id}/sync-progress")->assertStatus(401);
     }
 
+    /**
+     * 2026-10-21: a read of an empty terminal finished before the screen's first poll,
+     * so it never saw "running" and waited forever. The run now names its command.
+     */
+    public function test_a_finished_run_names_the_command_that_started_it(): void
+    {
+        $command = \App\Models\DeviceCommand::create([
+            'tenant_id' => $this->device->tenant_id, 'device_id' => $this->device->id,
+            'command' => \App\Models\DeviceCommand::SYNC_ATTENDANCE, 'status' => \App\Models\DeviceCommand::STATUS_SUCCEEDED,
+        ]);
+        $run = $this->newRun();
+        $run->forceFill(['device_command_id' => $command->id, 'status' => AttendanceSyncRun::STATUS_SUCCEEDED, 'finished_at' => now(), 'records_read' => 0])->save();
+
+        $this->getJson("/api/devices/{$this->device->id}/sync-progress", $this->auth())
+            ->assertOk()
+            ->assertJsonPath('data.running', false)
+            ->assertJsonPath('data.status', AttendanceSyncRun::STATUS_SUCCEEDED)
+            ->assertJsonPath('data.device_command_id', $command->id)
+            ->assertJsonPath('data.counts.read', 0);
+    }
+
     private function newRun(): AttendanceSyncRun
     {
         return AttendanceSyncRun::create([

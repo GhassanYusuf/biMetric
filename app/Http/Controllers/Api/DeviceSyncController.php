@@ -215,6 +215,13 @@ class DeviceSyncController extends Controller
         return ApiResponse::success([
             'running' => $run->status === AttendanceSyncRun::STATUS_RUNNING,
             'run_id' => $run->id,
+            /*
+             * The command that started this run, so a screen can tell ITS read from the
+             * previous one without having to catch it "running". A read of an empty
+             * terminal (IT-Office after a punch clear, 2026-10-21) finishes in under a
+             * second — before the first poll — and the screen waited on it forever.
+             */
+            'device_command_id' => $run->device_command_id === null ? null : (int) $run->device_command_id,
             'status' => $run->status,
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->finished_at?->toIso8601String(),

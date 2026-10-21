@@ -25,12 +25,12 @@ const MAX_FAILURES = 5;
  * @returns {{progress: object|null, counts: object|null, status: string|null, stalled: boolean}}
  */
 export function useSyncProgress(deviceId, active) {
-    const [state, setState] = useState({ progress: null, counts: null, status: null, stalled: false });
+    const [state, setState] = useState({ progress: null, counts: null, status: null, commandId: null, stalled: false });
     const failures = useRef(0);
 
     const reset = useCallback(() => {
         failures.current = 0;
-        setState({ progress: null, counts: null, status: null, stalled: false });
+        setState({ progress: null, counts: null, status: null, commandId: null, stalled: false });
     }, []);
 
     useEffect(() => {
@@ -49,6 +49,8 @@ export function useSyncProgress(deviceId, active) {
                     progress: data?.progress ?? null,
                     counts: data?.counts ?? null,
                     status: data?.status ?? null,
+                    // Which queued command this run belongs to (see sync-progress).
+                    commandId: data?.device_command_id ?? null,
                     stalled: false,
                 });
             } catch {

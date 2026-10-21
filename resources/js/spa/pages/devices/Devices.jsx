@@ -103,6 +103,8 @@ export default function Devices() {
         setBusy((b) => ({ ...b, [device.id]: key }));
         try {
             const res = await api.post(`/devices/${device.id}/${action}`, body);
+            // The read's command id, so the completion effect knows its run when it sees it.
+            if (queued) queuedCommand.current[device.id] = res.data?.id ?? null;
             // "Queued" is not an outcome; the completion effect below reports that.
             if (queued) toast.info(res.message);
             else toast.success(res.message);
@@ -226,7 +228,7 @@ export default function Devices() {
      * operator watching progress does not care which button started it.
      */
     const syncingId = Object.keys(busy).find((id) => SYNCING_KEYS.includes(busy[id]));
-    const { progress, status, stalled } = useSyncProgress(syncingId ? Number(syncingId) : null, !!syncingId);
+    const { progress, status, commandId, stalled } = useSyncProgress(syncingId ? Number(syncingId) : null, !!syncingId);
 
     /*
      * Finish a queued read.
@@ -236,8 +238,13 @@ export default function Devices() {
      * actually seen 'running' before treating a terminal status as ours, or the bar
      * would clear the instant it appeared. Once the worker's run ends (or the
      * progress feed is lost), refetch the row and release it.
+     *
+     * OR the run carries the command this screen queued. A read of an empty terminal
+     * finishes before the first poll, so 'running' is never seen; matching the command
+     * is what releases it (2026-10-21: IT-Office after a punch clear spun forever).
      */
     const sawRunning = useRef(false);
+    const queuedCommand = useRef({}); // device id → command id of the read it queued
     const handled = useRef(null);
     useEffect(() => {
         if (!syncingId) {
@@ -249,7 +256,8 @@ export default function Devices() {
 
         // Terminal AttendanceSyncRun statuses — see the model. NOT 'completed'.
         const done = status === 'succeeded' || status === 'partial' || status === 'failed';
-        const ended = sawRunning.current && done;
+        const ours = commandId != null && commandId === queuedCommand.current[syncingId];
+        const ended = (sawRunning.current || ours) && done;
         if (!ended && !stalled) return;
         if (handled.current === syncingId) return; // fire once per run
 
@@ -268,7 +276,7 @@ export default function Devices() {
     // `busy` is read for the finishing action's key only; the handled ref keeps a
     // busy change from firing this twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [status, stalled, syncingId, load, toast, settle]);
+    }, [status, commandId, stalled, syncingId, load, toast, settle]);
 
     const presentationProps = {
         rows,
