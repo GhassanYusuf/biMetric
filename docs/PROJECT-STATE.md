@@ -145,9 +145,10 @@ pushed to Good Wheels; corrected 2026-10-21, after which the never-reissue rule 
 requested number may take over a retired one when nobody holds it, nothing was punched
 under it after the last holder left, and its roster entry is not someone else's claim.
 Automatic numbering is unchanged. Syed is now 770280340 on Good Wheels, read back
-(DC-026). **Owner to answer:** 315 punches under user 8 on Good Wheels, 2024-07-28 →
-2025-04-21, are attributed to nobody — if user 8 was always Syed, extend his mapping
-back and run `attendance:reattribute 5 --dry-run` first. The employee form now
+(DC-026). 315 punches under user 8 on Good Wheels, 2024-07-28 → 2025-04-21, are
+attributed to nobody: owner says user 8 was **someone else** back then, so they are not
+Syed's and stay unattributed. Who that was is unknown (owner/HR, if it matters for
+those months' records). The employee form now
 offers the F18 user-ID move too (`idMoveMethod()` in `devices/parts.jsx`, the server's
 rule: in place, or re-add), shows the hint whenever a terminal's ID differs from the
 Personnel ID, and **always asks before a re-add even with auto-push on** (auto-push is

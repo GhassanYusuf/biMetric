@@ -129,10 +129,15 @@ Template:
     by time (`EmployeeDeviceMap::inForceAt`, `AttendanceSyncService::employeeAt`,
     `attendance:reattribute`). So a new holder's mapping starting now cannot reach the
     old holder's punches — the blanket rule was stricter than the data model needs.
-  - Separate finding, not acted on: 315 punches under user 8 on Good Wheels
-    (2024-07-28 → 2025-04-21) are unattributed — Syed's mapping to 8 starts 2026-10-21
-    08:34. No punches under 8 since April 2025. Owner to confirm whether user 8 was
-    always Syed before anything is credited.
+  - Separate finding: 315 punches under user 8 on Good Wheels (2024-07-28 →
+    2025-04-21) are unattributed — Syed's mapping to 8 ran only 2026-10-21 08:34 →
+    11:35. No punches under 8 since April 2025, and nothing in the system records who
+    user 8 was before 2026-10-21 (a terminal's attendance log carries the number only).
+    **Owner, 2026-10-21: "User 8 was someone else back then."** So they are NOT Syed's
+    and are left unattributed. The terminal record had been reused for Syed (renamed or
+    re-enrolled at the keypad). If the former worker is ever identified, give them a
+    closed mapping on Good Wheels pin 8 ending before 2026-10-21 08:34, then run
+    `attendance:reattribute 5 --dry-run` first.
 - **Root cause:** the never-reissue rule predates time-boxed attribution and refused even
   a number whose previous holder's history is fully closed.
 - **Fix:** `DeviceIdentityResolver::pinReusableFor()`, used by `assertPinFreeFor()` and
@@ -151,7 +156,7 @@ Template:
   8 closed 11:35:55.623, 770280340 opened 11:35:55.643. Asif still 850256461 on the
   terminal; his 6 punches under 770280340 still credited to him.
 - **Evidence:** audit_logs for employees 1748 and 1803; employee_device_maps 2962, 2987.
-- **Status:** FIXED — still owed (owner): whether the 315 unattributed punches under user 8 (2024-07-28 → 2025-04-21) are Syed's.
+- **Status:** FIXED. The 315 old punches under user 8 are someone else's (owner) and stay unattributed until that person is identified.
 - **Keywords:** never reissued, already in use, or was in the past, PinInUseException, assertPinFreeFor, pinReusableFor, wrong CPR, Personnel ID typed on wrong employee, moveByReadding, re-add, Good Wheels
 
 ### DC-025 — Employee deleted by Personnel ID over the API is still on three terminals and can still punch
