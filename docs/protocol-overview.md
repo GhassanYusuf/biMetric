@@ -466,6 +466,13 @@ Erases every attendance record; the user, card and template tables are untouched
 
 The 16- and 8-byte layouts are DOCUMENTED only; this hardware always sends 40.
 
+### Emptying the user table — `DELETE_USER` (18) per uid (2.16.0, never run)
+
+`UserService::deleteAll()` deletes every user one `DELETE_USER` (18, CONFIRMED on the
+F18 for single users) at a time, then re-reads the user table, which must be empty.
+`CMD_CLEAR_DATA` (14) might do it in one command, but it is DOCUMENTED only and what it
+clears on this firmware has never been observed — not used.
+
 **Verify method values — DOCUMENTED from the vendor (2026-10-11).** Stored verbatim;
 decoded only for display (`resources/js/spa/pages/attendance/parts.jsx`). Source: the
 `VerifyType` dictionary in ZKAccess 3.5.5's `Languages/language_en-US.xml` (owner's

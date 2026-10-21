@@ -243,6 +243,19 @@ class FakeBiometricDriver implements BiometricDeviceDriver
         return $held;
     }
 
+    /** How many deleteAllUsers() calls were made. */
+    public int $wipes = 0;
+
+    public function deleteAllUsers(Device $device): int
+    {
+        $this->wipes++;
+        $removed = count($this->roster);
+        $this->deletes = [...$this->deletes, ...array_map(fn (DeviceUser $u) => $u->userId, $this->roster)];
+        $this->roster = [];
+
+        return $removed;
+    }
+
     public function deleteUser(Device $device, string $userId): void
     {
         $this->roster = array_values(array_filter(

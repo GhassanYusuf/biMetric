@@ -150,6 +150,8 @@ export const COMMAND_LABELS = {
     rebuild_device: 'Rebuild: back up and plan',
     rebuild_person: 'Rebuild: update a person',
     rebuild_remove: 'Rebuild: remove an unlinked record',
+    clear_attendance: 'Clear punches',
+    wipe_device: 'Wipe terminal',
 };
 
 export function commandLabel(command) {

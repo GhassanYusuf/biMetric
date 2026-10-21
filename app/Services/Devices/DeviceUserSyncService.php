@@ -1115,6 +1115,137 @@ class DeviceUserSyncService
     }
 
     /**
+     * Empties the terminal of EVERY user — the owner's wipe (2026-10-21, CLAUDE.md
+     * rule 22, the one exception to rule 19's "save everything first").
+     *
+     *   1. Users linked to an employee: their card, keypad password and fingers go into
+     *      the system first (the same steps as removeEmployee()'s copy, for everyone in
+     *      one read), and are CHECKED there — every finger slot the terminal holds for
+     *      them has a stored template, every card a card-history row. Anything missing,
+     *      or fingers the terminal would not report, and nothing is deleted.
+     *   2. Users linked to nobody: deleted with nothing kept (owner's choice for this
+     *      feature only).
+     *   3. $beforeDelete runs once the copy is proven — DeviceWipeService's punch step,
+     *      so an irreversible punch erase never happens ahead of a refusal here.
+     *   4. Every user deleted (deleteAllUsers: read back empty), then our records follow
+     *      the terminal: live mappings closed, slot markers gone, cards revoked as removed
+     *      with the user, roster entries kept as reservations.
+     *
+     * Not gated on isWritable(): the wipe deletes unlinked users by design, so an
+     * unadopted terminal holding strangers is a normal starting point here.
+     *
+     * @param  callable|null  $beforeDelete  runs after the copy is checked, before the delete
+     * @return array{removed:int, linked:int, unlinked:int}
+     */
+    public function wipeUsers(Device $device, ?callable $beforeDelete = null): array
+    {
+        $capabilities = $this->driver->capabilities($device);
+        $capabilities->require(Capability::DEVICE_WIPE);
+
+        $users = $this->driver->readUsers($device, true);
+        $employeeByPin = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->live()
+            ->pluck('employee_id', 'device_user_id')
+            ->all();
+
+        /** @var array<string,int> $linked pin => employee id, for users on the terminal */
+        $linked = [];
+        foreach ($users as $user) {
+            if (isset($employeeByPin[$user->userId])) {
+                $linked[$user->userId] = (int) $employeeByPin[$user->userId];
+            }
+        }
+
+        try {
+            foreach ($users as $user) {
+                $employeeId = $linked[$user->userId] ?? null;
+                if ($employeeId === null) {
+                    continue;
+                }
+                // Kept on the mapping so a re-add can put an admin back as an admin.
+                EmployeeDeviceMap::query()->where('device_id', $device->id)->where('device_user_id', $user->userId)
+                    ->live()->update(['device_privilege' => $user->privilege]);
+                $this->capturePassword($device, $employeeId, $user);
+                if ($user->hasCard() && ! $user->cardLooksLikeSentinel()) {
+                    $this->recordCard($device, $employeeId, $user);
+                    Employee::query()->whereKey($employeeId)->where(fn ($q) => $q->whereNull('card_number')->orWhere('card_number', ''))
+                        ->first()?->update(['card_number' => $user->cardNumber]);
+                }
+            }
+
+            if ($linked !== [] && $capabilities->supports(Capability::TEMPLATE_BLOB_READ)) {
+                $vault = app(FingerprintVault::class);
+                $vault->assertReady();
+                $vault->capture($device, $this->driver->readTemplates($device));
+            }
+        } catch (\Throwable $e) {
+            throw new \DomainException("Nothing was wiped from {$device->name}: the linked employees' cards and fingerprints could not be saved to the system first ({$e->getMessage()}).");
+        }
+
+        $missing = [];
+        foreach ($users as $user) {
+            $employeeId = $linked[$user->userId] ?? null;
+            if ($employeeId === null) {
+                continue;
+            }
+            if ($user->fingerSlots === null) {
+                // Rule 10: "unknown" is not "none" — their fingers cannot be shown saved.
+                $missing[] = "{$user->userId} (fingers not readable)";
+
+                continue;
+            }
+            foreach ($user->fingerSlots as $slot) {
+                $stored = BiometricTemplate::query()->where('employee_id', $employeeId)->where('finger_slot', $slot)
+                    ->whereNotNull('template_sha1')->exists();
+                if (! $stored) {
+                    $missing[] = "{$user->userId} finger {$slot}";
+                }
+            }
+            if ($user->hasCard() && ! $user->cardLooksLikeSentinel()
+                && ! AccessCard::query()->where('employee_id', $employeeId)->where('card_number', $user->cardNumber)->exists()) {
+                $missing[] = "{$user->userId} card";
+            }
+        }
+        if ($missing !== []) {
+            throw new \DomainException(sprintf(
+                'Nothing was wiped from %s: %d credential(s) of linked employees are not in the system yet (%s).',
+                $device->name,
+                count($missing),
+                implode(', ', array_slice($missing, 0, 10)),
+            ));
+        }
+
+        if ($beforeDelete !== null) {
+            $beforeDelete();
+        }
+
+        $removed = $this->driver->deleteAllUsers($device);
+
+        foreach (EmployeeDeviceMap::query()->where('device_id', $device->id)->live()->get() as $map) {
+            $map->close('Wiped from device');
+        }
+        // Slot markers only; stored copies outlive the terminal (rule 19, step 3).
+        BiometricTemplate::query()
+            ->where('device_id', $device->id)
+            ->whereNull('template_sha1')
+            ->delete();
+        AccessCard::query()
+            ->where('device_id', $device->id)
+            ->where('status', AccessCard::ACTIVE)
+            ->update(['status' => AccessCard::REVOKED, 'revoked_at' => now(), 'revoke_reason' => AccessCard::REASON_REMOVED_WITH_USER]);
+        DeviceRosterEntry::query()
+            ->where('device_id', $device->id)
+            ->update([
+                'claim_status' => DeviceRosterEntry::IGNORED,
+                'claimed_employee_id' => null,
+                'ignore_reason' => 'Wiped from the terminal '.now()->toDateString().'; PIN kept reserved',
+            ]);
+
+        return ['removed' => $removed, 'linked' => count($linked), 'unlinked' => count($users) - count($linked)];
+    }
+
+    /**
      * Rule 19, step 1: copies the person's card and fingers off this terminal into
      * the system, or refuses the removal. A credential the terminal cannot read at all
      * (a capability, not a failure) is skipped — there was never anything to copy.

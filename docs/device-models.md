@@ -1,6 +1,6 @@
 # Device models — how each one does each action
 
-**Last updated: 2026-10-18**
+**Last updated: 2026-10-21**
 
 Required by **CLAUDE.md rule 21** (owner, 2026-10-11): *"each device, a different
 model, has its own method of achieving the same required action. Know all models and
@@ -67,6 +67,7 @@ The reference model: `CapabilitySet::defaults()` is the F18. Calibrated on IT RO
 | Password | write / keep | same `USER_WRQ` record; `save()` keeps the device's when not given (2.13.0 — before, every write erased it). The app writes it on every push. **C since 2026-10-20 (library 2.15.0):** `tools/zkprobe/user-password-write.php` — a test user's password written and read back, kept through a name write, roster unchanged — twice on IT ROOM, Camelot and Good Wheels (`traces-2026-10-20/user-password-write-01..04.json`) | C |
 | Punches | count | `GET_FREE_SIZES` (50), `FreeSizesCodec` — `records` equalled a full read on IT ROOM, Camelot and Good Wheels, 2026-10-18 | C |
 | Punches | **clear** | `AttendanceClearService` → `CLEAR_ATTLOG` (15) in one session with the count before and after (`AttendanceService::clearAll($expected)`, 2.14.0); refused unless a full read matched the count and every record decoded and was stored. `attendance.clear`. Never run (2026-10-18) | I |
+| Everyone | **wipe** | `DeviceWipeService` (CLAUDE.md rule 22): linked employees' card, password and fingers saved and checked, punches saved-then-cleared or erased (the operator's answer), then `UserService::deleteAll()` — `DELETE_USER` (18) per uid, table read back empty (2.16.0; not `CLEAR_DATA` 14, DOCUMENTED only). `device.wipe`. Built 2026-10-21, never run | I |
 
 **Per-unit notes.** Camelot answers `CONNECT` with `ACK_UNAUTH` even with comm key 0;
 it needs `CMD_AUTH` (DC-002), and its public link is flaky, so reads go through the
@@ -96,6 +97,7 @@ first run.
 | Attendance | read | **windowed** (`PREPARE_BUFFER` 1503 / `READ_BUFFER` 1504); the push path loses the tail (DC-001) | C |
 | Attendance | count | `GET_FREE_SIZES` — 8,430, equal to a full read, 2026-10-18 | C |
 | Attendance | clear | never run on an F22; the F18's method is not inherited (2.14.0 sets it UNKNOWN) | U |
+| Everyone | wipe | never run on an F22; the F18's wipe is not inherited (2.16.0 sets it UNKNOWN) | U |
 | Privilege | set | the F18's `setPrivilege()`, same record. **C since 2026-10-20:** test user 14 then 0, read back, name and password kept, others unchanged, twice on On The Road (`user-privilege-write-01/02.json`) | C |
 
 **Password (2026-10-12):** read **C** (On The Road's one password equal to the system's copy). **Write / keep C since 2026-10-20:** a test user's password written and read back twice, kept through a name write, roster unchanged (`user-password-write-03/04.json`).
@@ -120,6 +122,7 @@ C3 / PullSDK access panel, **not** a standalone terminal (DC-003). `src/C3/Model
 | Password | write / keep | `Personnel::add/update` `Password`; an edit carries the row's own over. The app writes it on every push. **C since 2026-10-20:** test user's password written and read back twice, kept through a name write, 315 users before and after, on Glass Door and Entrance (`user-password-write-05/06.json`) | C |
 | Privilege | set | the `user` row has a `Privilege` field; nothing writes it, and a panel has no menu to grant | N |
 | Attendance | count / clear | `GET_DATA_COUNT` (0x0A) exists, never sent; clearing `transaction` is not implemented (2026-10-18) | N |
+| Everyone | wipe | not implemented on C3 panels (`device.wipe` N, 2.16.0) | N |
 
 ---
 

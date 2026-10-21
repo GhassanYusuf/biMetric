@@ -13,6 +13,7 @@ import DevicesDesktop from './DevicesDesktop';
 import DevicesMobile from './DevicesMobile';
 import DeviceFormModal from './DeviceFormModal';
 import SyncRangeModal from './SyncRangeModal';
+import WipeDeviceModal from './WipeDeviceModal';
 import { FULL_RESYNC_CONFIRM, adoptConfirm, clearPunchesConfirm } from './parts';
 
 // Actions that QUEUE a device read rather than returning a result inline. The POST
@@ -35,6 +36,7 @@ export default function Devices() {
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(null); // device object, or {} for "new"
     const [rangeFor, setRangeFor] = useState(null); // device awaiting a date range
+    const [wipeFor, setWipeFor] = useState(null); // device awaiting the wipe's answers
     const [busy, setBusy] = useState({}); // { [deviceId]: 'test' | 'sync' | 'import' }
     const { flash, resultOf, outcomeOf } = useActionResult();
 
@@ -185,6 +187,40 @@ export default function Devices() {
      * the outcome is the command's own message: either what was cleared, or why
      * nothing was.
      */
+    /**
+     * Removes every user and punch from the terminal (2026-10-21, DeviceWipeService,
+     * CLAUDE.md rule 22). The dialog asks whether to save the punches and for the
+     * terminal's name; a 422 is thrown back to it for its fields. Queued, so the row
+     * stays busy until the command FINISHES and the toast is the command's own message:
+     * what was removed, or why nothing was.
+     */
+    async function wipeDevice(device, answers) {
+        const res = await api.post(`/devices/${device.id}/wipe`, answers); // 422 → dialog fields
+        setWipeFor(null);
+        toast.info(res.message);
+
+        const key = 'wipe';
+        setBusy((b) => ({ ...b, [device.id]: key }));
+        try {
+            const done = await waitForCommand(res.data.id);
+            if (done === null) {
+                toast.info(`Still working on ${device.name} — the result will appear in its command history.`);
+            } else if (done.status === 'succeeded') {
+                toast.success(done.message);
+                settle(device.id, key, 'success');
+            } else {
+                toast.error(done.message ?? `${device.name} was not wiped.`);
+                settle(device.id, key, 'error');
+            }
+            await load();
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : `Could not reach ${device.name}.`);
+            settle(device.id, key, 'error');
+        } finally {
+            setBusy((b) => ({ ...b, [device.id]: undefined }));
+        }
+    }
+
     async function clearPunches(device) {
         if (!(await confirm(clearPunchesConfirm(device)))) return;
 
@@ -300,6 +336,7 @@ export default function Devices() {
         onAdopt: adoptDevice,
         onImport: (d) => runAction(d, 'import-employees'),
         onClearPunches: clearPunches,
+        onWipe: (d) => setWipeFor(d),
     };
 
     const Presentation = deviceClass === 'desktop' ? DevicesDesktop : DevicesMobile;
@@ -316,6 +353,22 @@ export default function Devices() {
                     device={editing.id ? editing : null}
                     onSubmit={saveDevice}
                     onClose={() => setEditing(null)}
+                />
+            )}
+            {wipeFor && (
+                <WipeDeviceModal
+                    device={wipeFor}
+                    onSubmit={async (answers) => {
+                        try {
+                            await wipeDevice(wipeFor, answers);
+                        } catch (err) {
+                            if (!(err instanceof ApiError && err.errors)) {
+                                toast.error(err instanceof ApiError ? err.message : `Could not reach ${wipeFor.name}.`);
+                            }
+                            throw err;
+                        }
+                    }}
+                    onClose={() => setWipeFor(null)}
                 />
             )}
             {rangeFor && (

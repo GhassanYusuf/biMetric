@@ -27,15 +27,16 @@ class DeviceModelMethodologyTest extends TestCase
         'template.blob.read', 'template.upload', 'template.delete',
         'password.read', 'password.write', // the keypad password, 2026-10-12
         'user.privilege', // admin / normal user, 2026-10-18
+        'device.wipe', // every user removed, 2026-10-21 (rule 22)
     ];
 
     /** model => levels, in ACTIONS order. c/i/u/n = confirmed/implemented/unknown/not_implemented. */
     private const PINNED = [
-        'standalone:F18' => 'c c c n c c c c i i c c c', // password read C 2026-10-12, write C 2026-10-20; privilege C 2026-10-20
-        'standalone:F22' => 'c c c u c i u c i u c c c', // template.upload I since 2026-10-11 (On The Road); password write and privilege C 2026-10-20
-        'standalone:K40' => 'i u u u i u u i u u i u u', // any model without a file
-        'c3:inBIO460' => 'c i i n u i n c i n c c n', // password write C 2026-10-20 (Glass Door)
-        'c3:TF1700' => 'c i i n u i n c i n c c n', // password write C 2026-10-20 (Entrance)
+        'standalone:F18' => 'c c c n c c c c i i c c c i', // password read C 2026-10-12, write C 2026-10-20; privilege C 2026-10-20; wipe I 2026-10-21
+        'standalone:F22' => 'c c c u c i u c i u c c c u', // template.upload I since 2026-10-11 (On The Road); password write and privilege C 2026-10-20; wipe never run on an F22
+        'standalone:K40' => 'i u u u i u u i u u i u u u', // any model without a file
+        'c3:inBIO460' => 'c i i n u i n c i n c c n n', // password write C 2026-10-20 (Glass Door)
+        'c3:TF1700' => 'c i i n u i n c i n c c n n', // password write C 2026-10-20 (Entrance)
     ];
 
     private static function levelsFor(string $key): string

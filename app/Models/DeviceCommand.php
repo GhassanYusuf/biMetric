@@ -51,6 +51,10 @@ class DeviceCommand extends Model
     // 2026-10-18). Users, cards and fingerprints stay.
     public const CLEAR_ATTENDANCE = 'clear_attendance';
 
+    // Remove every user and punch from the terminal (DeviceWipeService, 2026-10-21,
+    // CLAUDE.md rule 22). Payload: save_punches (bool).
+    public const WIPE_DEVICE = 'wipe_device';
+
     protected $fillable = [
         'tenant_id', 'device_id', 'command', 'payload', 'status',
         'attempts', 'max_attempts', 'available_at', 'started_at', 'finished_at',

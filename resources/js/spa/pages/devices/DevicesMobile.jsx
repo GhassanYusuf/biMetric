@@ -8,7 +8,7 @@ import { SyncProgressRow } from './DevicesDesktop';
 export default function DevicesMobile({
     rows, busy, resultOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe,
 }) {
     return (
         <div className="space-y-4">
@@ -112,6 +112,12 @@ export default function DevicesMobile({
                                         {canUpdate && can(d, 'attendance.clear') && (
                                             <Button variant="secondary" className="col-span-3 text-xs text-rose-600" disabled={!!running} loading={running === 'clear-attendance'} result={resultOf(`${d.id}:clear-attendance`)} onClick={() => onClearPunches(d)}>
                                                 Clear punches from terminal…
+                                            </Button>
+                                        )}
+                                        {/* Same gate and words as the desktop menu item (rules 5, 9 and 22). */}
+                                        {canUpdate && can(d, 'device.wipe') && (
+                                            <Button variant="secondary" className="col-span-3 text-xs text-rose-600" disabled={!!running} loading={running === 'wipe'} result={resultOf(`${d.id}:wipe`)} onClick={() => onWipe(d)}>
+                                                Wipe terminal…
                                             </Button>
                                         )}
                                         {canUpdate && !d.is_writable && (d.unclaimed_roster_entries ?? 0) === 0 && d.is_active && (

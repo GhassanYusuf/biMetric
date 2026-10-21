@@ -188,6 +188,37 @@ without destroying anything only the terminal held.
 
 ---
 
+## The terminal wipe (2026-10-21) — the one exception to this procedure
+
+**Devices → Wipe terminal…** (`DeviceWipeService`, `WIPE_DEVICE`) IS a literal wipe:
+every user and every punch leaves the terminal. It is the exception CLAUDE.md rule 22
+records, by the owner's decision for this feature only. In order:
+
+1. **Users linked to an employee** — card (card history, and the employee record when
+   it has none), keypad password, privilege (on the closed mapping) and fingers
+   (`FingerprintVault`) saved, then CHECKED: every finger slot the terminal holds for
+   them has a stored template, every card a card-history row. A gap — or fingers the
+   terminal will not report — and **nothing is wiped**.
+2. **Punches** — the dialog asks, with no default, "Save this terminal's punches to
+   the system first?". **Yes**: `AttendanceClearService` reads and stores every one,
+   then clears; any it cannot store and **nothing is wiped**. **No**: erased **without
+   being saved** (exception 1).
+3. **Users linked to no employee** — deleted with **nothing kept** (exception 2). Their
+   numbers stay reserved (roster entries kept, ignored).
+4. **Every user removed** (`deleteAllUsers`, read back empty), then the terminal read
+   again: 0 users and 0 punches, or the command fails and says what is left.
+
+Our records follow: every live mapping on the terminal is closed ("Wiped from device"),
+slot markers deleted, active cards revoked as removed with the user. Stored fingerprint
+copies are NOT deleted — they outlive the terminal (step 3 above), so a linked
+employee pushed to a terminal afterwards gets their card and fingers back as usual.
+
+F18 only (`device.wipe` IMPLEMENTED there; UNKNOWN on the F22 and models without a
+file; NOT_IMPLEMENTED on C3 and CSL), never run on hardware when built. The operator
+types the terminal's name, checked by the server too. `devices.update`.
+
+---
+
 ## Checked mechanically
 
 `tests/Unit/CredentialPreservationTest.php`: only `removeEmployee()` deletes a terminal

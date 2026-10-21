@@ -85,6 +85,38 @@ class CredentialPreservationTest extends TestCase
         $this->assertStringContainsString("'zkt-test'", $temp, 'it only ever deletes the user it created');
     }
 
+    /**
+     * The wipe (2026-10-21, CLAUDE.md rule 22) empties a terminal in one call. It is the
+     * one deleter allowed to skip saving UNLINKED users — the owner's choice for that
+     * feature only — so it must still live in DeviceUserSyncService, and still save and
+     * check the LINKED employees' cards and fingers before the delete.
+     */
+    public function test_only_the_wipe_empties_a_terminal_and_it_saves_linked_credentials_first(): void
+    {
+        $offenders = [];
+        foreach (self::appFiles() as $file) {
+            if (str_contains($file, 'Services/Devices/ZktecoDriver.php')
+                || str_contains($file, 'Services/Devices/DeviceDriverManager.php')
+                || str_contains($file, 'Services/Devices/C3/')
+                || str_contains($file, 'Services/Devices/Csl/')) {
+                continue;
+            }
+            if (preg_match('/->deleteAllUsers\(/', self::read($file)) && $file !== self::SYNC) {
+                $offenders[] = $file;
+            }
+        }
+        $this->assertSame([], $offenders, 'Only DeviceUserSyncService::wipeUsers() may empty a terminal.');
+        $this->assertSame(1, preg_match_all('/->deleteAllUsers\(/', self::read(self::SYNC)));
+
+        $body = self::method(self::read(self::SYNC), 'wipeUsers');
+        $delete = strpos($body, '->deleteAllUsers(');
+        foreach (['recordCard(', '->capture(', 'whereNotNull(\'template_sha1\')'] as $step) {
+            $at = strpos($body, $step);
+            $this->assertNotFalse($at, "wipeUsers() must call {$step}");
+            $this->assertLessThan($delete, $at, "{$step} must come BEFORE the delete");
+        }
+    }
+
     public function test_freeing_a_number_saves_the_record_and_fingers_before_it_deletes(): void
     {
         $body = self::method(self::read(self::SYNC), 'releaseUnlinkedNumber');

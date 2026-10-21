@@ -7,7 +7,7 @@ mechanically it is, by `tests/Unit/FrontendConventionsTest.php`,
 `tests/Unit/CredentialPreservationTest.php`, `tests/Unit/DeviceCasebookTest.php` and
 `tests/Unit/DeviceModelMethodologyTest.php`, all of which run with `php artisan test`.
 
-Rules 1-7 govern the frontend. Rules 8-13, 15-17 and 19-21 govern the biometric device
+Rules 1-7 govern the frontend. Rules 8-13, 15-17 and 19-22 govern the biometric device
 layer and apply to every future change that touches it. Rule 14 governs how the
 state of the work is handed to the next session, on this machine or any other.
 
@@ -793,3 +793,32 @@ done per model so that every action WORKS on every model — each by its own rou
 The test cannot check that the methodology is TRUE for a model — only that every model
 has one and that no level moved silently. Keeping it true is discipline, with the
 casebook as the evidence.
+
+---
+
+## 22. The terminal wipe is the one exception to rule 19 — for that feature only
+
+Owner's decision, 2026-10-21: "go with my answers for this feature only." **Devices →
+Wipe terminal** removes every user and every punch from one terminal, and it does NOT
+follow rule 19 in two places, by the owner's explicit choice:
+
+1. **Users linked to no employee are deleted with nothing kept** — no backup of their
+   fingerprints or card.
+2. **Punches are erased unsaved when the operator answers "No"** to "Save this
+   terminal's punches to the system first?" — the question is always asked, never
+   defaulted. "Yes" saves every punch first and refuses the whole wipe if any cannot be.
+
+Everything else in rule 19 still holds inside the wipe: **users linked to an employee**
+have their card, keypad password and fingers saved into the system and CHECKED there
+before anything is deleted, or nothing is wiped; every irreversible step comes after
+every check that can refuse; the terminal is read back and must hold 0 users and
+0 punches (rule 10). The operator types the terminal's name to confirm.
+
+**The exception does not spread.** No other path may delete a user, a finger, a card or
+a punch without saving it first, and this feature may not be used as the model for one.
+`DeviceUserSyncService::wipeUsers()` is the only caller of `deleteAllUsers()`, and
+`tests/Unit/CredentialPreservationTest.php` checks that, and that it saves and checks the
+linked employees' credentials before the delete. F18 only until another model has run it
+(`device.wipe`, rule 15). Procedure: `docs/credential-preservation.md`, "The terminal
+wipe".
+

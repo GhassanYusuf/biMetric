@@ -9,7 +9,7 @@ import { can } from './parts';
 export default function DevicesDesktop({
     rows, busy, outcomeOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe,
 }) {
     const showActions = canSync || canUpdate || canDelete;
     const failing = rows.filter((d) => d.last_sync_status === 'error').length;
@@ -186,6 +186,17 @@ export default function DevicesDesktop({
                                                         loading: running === 'clear-attendance',
                                                         disabled: !!running,
                                                         onSelect: () => onClearPunches(d),
+                                                    },
+                                                    // Rule 22: every user and punch removed. Same gate
+                                                    // style — devices.update and the model's own level.
+                                                    canUpdate && can(d, 'device.wipe') && {
+                                                        key: 'wipe',
+                                                        label: 'Wipe terminal…',
+                                                        description: 'Remove every person and punch. Linked employees\' fingers and cards are saved first.',
+                                                        tone: 'danger',
+                                                        loading: running === 'wipe',
+                                                        disabled: !!running,
+                                                        onSelect: () => onWipe(d),
                                                     },
                                                     canUpdate && {
                                                         key: 'edit',

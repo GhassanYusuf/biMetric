@@ -411,6 +411,53 @@ class DeviceSyncController extends Controller
         );
     }
 
+    /**
+     * Queues WIPE_DEVICE (2026-10-21, CLAUDE.md rule 22): remove every user and punch
+     * from the terminal. `save_punches` is the operator's answer to "save the punches
+     * to the system first?" — no default, it must be asked. `confirm_name` must be the
+     * terminal's name exactly: the server, not only the dialog, makes sure the person
+     * meant THIS terminal. devices.update, like Clear punches.
+     */
+    public function wipe(Request $request, Device $device): JsonResponse
+    {
+        $this->authorize('update', $device);
+
+        $data = $request->validate([
+            'save_punches' => ['required', 'boolean'],
+            'confirm_name' => ['required', 'string'],
+        ]);
+
+        if (trim($data['confirm_name']) !== $device->name) {
+            $message = "Type the terminal's name exactly — {$device->name} — to wipe it.";
+
+            return ApiResponse::error($message, ['confirm_name' => [$message]], 422);
+        }
+
+        if ($error = $this->capabilityRefusal($device, DeviceCommand::WIPE_DEVICE)) {
+            return ApiResponse::error($error, ['command' => [$error]], 422);
+        }
+
+        $pending = DeviceCommand::query()
+            ->where('device_id', $device->id)
+            ->where('command', DeviceCommand::WIPE_DEVICE)
+            ->whereIn('status', [DeviceCommand::STATUS_QUEUED, DeviceCommand::STATUS_RUNNING])
+            ->first();
+
+        if ($pending !== null) {
+            return ApiResponse::success(new DeviceCommandResource($pending), "A wipe is already queued on {$device->name}.");
+        }
+
+        // One attempt: a refusal is a decision, and a failure part-way must reach a person.
+        $command = $this->bus->dispatch($device, DeviceCommand::WIPE_DEVICE, ['save_punches' => (bool) $data['save_punches']], maxAttempts: 1);
+
+        return ApiResponse::success(
+            new DeviceCommandResource($command),
+            $data['save_punches']
+                ? "Queued: save {$device->name}'s punches and linked employees' credentials, then remove everyone and every punch from it."
+                : "Queued: save linked employees' credentials, then remove everyone from {$device->name} and erase its punches unsaved.",
+        );
+    }
+
     private function capabilityRefusal(Device $device, string $command): ?string
     {
         $required = match ($command) {
@@ -420,6 +467,7 @@ class DeviceSyncController extends Controller
             DeviceCommand::RECONCILE_USERS => Capability::USER_READ,
             DeviceCommand::SYNC_TIME => Capability::SET_TIME,
             DeviceCommand::CLEAR_ATTENDANCE => Capability::ATTENDANCE_CLEAR,
+            DeviceCommand::WIPE_DEVICE => Capability::DEVICE_WIPE,
             default => null, // health/info/probe are always available
         };
 

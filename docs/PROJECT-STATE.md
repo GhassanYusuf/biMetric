@@ -137,6 +137,18 @@ was then deleted at the owner's request, so code 1000 is free there again. The e
 was then proven live on IT ROOM (test employee 1804, 09:17 UTC: removed in 8 s, record
 deleted on confirmation, read back). The "Test" employee note under the password feature no longer applies.
 
+### Wipe terminal — BUILT 2026-10-21 on `wipe-terminal`, never run on hardware
+
+Owner: a Devices action that removes every fingerprint and card, asks whether to save
+the punches, and saves a linked user's fingers or card only when the system lacks them.
+Owner's answers, **for this feature only** (CLAUDE.md **rule 22**, the one exception to
+rule 19): the terminal is emptied of users; "don't save" erases the punches unsaved;
+users linked to no employee are deleted with nothing kept; F18 only. Devices → Actions
+→ **Wipe terminal…** (`DeviceWipeService`, `DeviceUserSyncService::wipeUsers()`,
+`WIPE_DEVICE`, `POST /api/devices/{id}/wipe` with `save_punches` and `confirm_name`),
+library **2.16.0** (`device.wipe`, `UserService::deleteAll()`). First real run: on a
+test F18, with 2–3 test employees on it (one finger the system lacks, one card).
+
 ### A Personnel ID may take over a closed-off terminal number — 2026-10-21 on `delete-by-code`
 
 Syed Wajid Abbas's CPR (770280340) had been typed onto Muhammad Asif on 2026-10-11 and

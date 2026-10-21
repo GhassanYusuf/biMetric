@@ -240,6 +240,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('device-commands/{command}/cancel', [DeviceSyncController::class, 'cancel']);
     Route::post('devices/{device}/commands', [DeviceSyncController::class, 'dispatchCommand']);
     Route::post('devices/{device}/clear-attendance', [DeviceSyncController::class, 'clearAttendance']);
+    // Remove every user and punch from the terminal (2026-10-21, CLAUDE.md rule 22).
+    Route::post('devices/{device}/wipe', [DeviceSyncController::class, 'wipe']);
     Route::get('devices/{device}/status-history', [DeviceSyncController::class, 'statusHistory']);
 
     /*

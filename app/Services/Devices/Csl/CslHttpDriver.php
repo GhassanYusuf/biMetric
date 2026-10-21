@@ -268,6 +268,11 @@ class CslHttpDriver implements BiometricDeviceDriver
         );
     }
 
+    public function deleteAllUsers(Device $device): int
+    {
+        throw new UnsupportedCommandException("{$device->name} (CSL web portal) does not support a wipe through this driver.");
+    }
+
     /** The CSL portal exposes no clock this driver reads. Null = "not read" (rule 10). */
     public function readClock(Device $device): ?\DateTimeImmutable
     {
@@ -343,6 +348,7 @@ class CslHttpDriver implements BiometricDeviceDriver
             Capability::RESTART => Capability::NOT_IMPLEMENTED,
             Capability::ATTENDANCE_REALTIME => Capability::NOT_IMPLEMENTED,
             Capability::ATTENDANCE_CLEAR => Capability::NOT_IMPLEMENTED,
+            Capability::DEVICE_WIPE => Capability::NOT_IMPLEMENTED,
             Capability::CARD_READ => Capability::NOT_IMPLEMENTED,
             Capability::CARD_WRITE => Capability::NOT_IMPLEMENTED,
             Capability::CARD_ENROLL => Capability::NOT_IMPLEMENTED,

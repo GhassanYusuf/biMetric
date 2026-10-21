@@ -76,10 +76,20 @@ exists(string $userId): bool
 save(string $userId, string $name, ?int $privilege = null, ?int $cardNumber = null): DeviceUser
 ensureExists(string $userId, string $name, ?int $cardNumber = null): DeviceUser
 delete(string $userId): void
+deleteAll(): int                                     // every user, read back empty (2.16.0, device.wipe)
 setCard(string $userId, ?int $cardNumber): DeviceUser
 renumber(string $fromUserId, string $toUserId): DeviceUser   // EXPERIMENTAL, 2.7.0
 softDisable(string $userId): DeviceUser
 ```
+
+### `deleteAll()` — empty the terminal of users (2.16.0)
+
+One `DELETE_USER` (18) per uid, then the user table read back: it must be empty, or
+`VerificationException` with the remaining user ids in `context()['remaining']`. A
+record that would not decode has no uid to address, so any such record makes it refuse
+(`ProtocolException`) **before** deleting anything; a refused delete mid-way says how
+many went (`context()['deleted']`). Saving anything first is the caller's job.
+IMPLEMENTED on the F18 (`device.wipe`), never run on hardware when released.
 
 ### `renumber()` — change a user id without losing the record
 

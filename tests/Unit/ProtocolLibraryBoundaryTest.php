@@ -187,6 +187,10 @@ class ProtocolLibraryBoundaryTest extends TestCase
             // Clear a terminal's punches (2026-10-18): asks for attendance.clear and
             // refuses with ProtocolException; reaches hardware only through the contract.
             'app/Services/Devices/AttendanceClearService.php',
+            // Wipe a terminal (2026-10-21, rule 22): asks for device.wipe and
+            // attendance.clear, refuses with ProtocolException, reports a dropped delete
+            // as VerificationException; reaches hardware only through the contract.
+            'app/Services/Devices/DeviceWipeService.php',
             /*
              * Adoption: reads an existing terminal's roster before it is writable.
              * Names Capability to gate the read and DeviceUser to receive what

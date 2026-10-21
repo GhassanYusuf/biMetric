@@ -273,6 +273,15 @@ interface BiometricDeviceDriver
     public function clearAttendance(Device $device, int $expectedRecords): int;
 
     /**
+     * REMOVES EVERY USER from the terminal — records, fingerprints, cards and passwords
+     * with them. Call only through DeviceWipeService, which saves what the owner's wipe
+     * procedure keeps first (CLAUDE.md rule 22). The user table is read back and must
+     * be empty, or it throws. Returns how many were removed. Gated by device.wipe.
+     * Added 2026-10-21.
+     */
+    public function deleteAllUsers(Device $device): int;
+
+    /**
      * The terminal's clock as it shows it (LOCAL time in the device's zone), or null
      * when this family has no way to read it — "not read", never midnight (rule 10).
      * Added 2026-10-11 so the clock can be read on every family, each its own way.

@@ -396,6 +396,18 @@ class ZktecoDriver implements BiometricDeviceDriver
         return $this->run($device, fn (ProtocolDevice $d) => $d->attendance()->clearAll($expectedRecords));
     }
 
+    /**
+     * DELETE_USER (18) per uid, then the user table read back empty — one session
+     * (UserService::deleteAll, library 2.16.0). IMPLEMENTED on the F18, never run on
+     * hardware before 2026-10-21; first run on the test F18 "IT-Office".
+     */
+    public function deleteAllUsers(Device $device): int
+    {
+        $this->capabilities($device)->require(Capability::DEVICE_WIPE);
+
+        return $this->run($device, fn (ProtocolDevice $d) => $d->users()->deleteAll());
+    }
+
     /*
      * Adds stored fingerprints to a user the terminal already holds (2026-10-11,
      * owner's request: "store it in the webapp and whenever needed write it to a
