@@ -68,7 +68,7 @@ class DeviceWipeService
             ));
         }
 
-        $device->forceFill(['attendance_watermark' => null])->save();
+        $device->forceFill(['attendance_watermark' => null, 'terminal_punch_count' => 0, 'terminal_punch_counted_at' => now()])->save();
 
         $raw = ['users' => $users, 'punches' => $punches, 'save_punches' => $savePunches];
         AuditLog::create([

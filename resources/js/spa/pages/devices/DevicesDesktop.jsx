@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { ActionMenu, Badge, Button, EmptyState, PageHeader, ProgressBar, TableShell, Thead } from '../../shared/ui';
-import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, relativeTime } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, devicePunches, relativeTime } from './parts';
 import { describeProgress } from '../../shared/useSyncProgress';
 import { can } from './parts';
 
@@ -35,14 +35,15 @@ export default function DevicesDesktop({
                         <th className="px-5 py-3 text-left">Protocol</th>
                         <th className="px-5 py-3 text-left">Status</th>
                         <th className="px-5 py-3 text-left">Last sync</th>
-                        <th className="px-5 py-3 text-right">Punches</th>
+                        <th className="px-5 py-3 text-right">Device punches</th>
+                        <th className="px-5 py-3 text-right">System punches</th>
                         {showActions && <th className="px-5 py-3" />}
                     </tr>
                 </Thead>
                 <tbody className="divide-y divide-slate-100">
                     {rows.length === 0 && (
                         <tr>
-                            <td colSpan={7}>
+                            <td colSpan={8}>
                                 <EmptyState
                                     title="No devices yet"
                                     hint="Add a terminal by IP address to start pulling punches into attendance."
@@ -81,7 +82,14 @@ export default function DevicesDesktop({
                                     )}
                                 </td>
                                 <td className="px-5 py-3.5 text-slate-600">{relativeTime(d.last_synced_at)}</td>
-                                <td className="px-5 py-3.5 text-right font-medium tabular-nums text-slate-700">
+                                {/* On the terminal vs stored here — they differ after a clear or a wipe. */}
+                                <td className="px-5 py-3.5 text-right tabular-nums" title={devicePunches(d).title}>
+                                    <span className={devicePunches(d).known ? 'font-medium text-slate-700' : 'text-slate-500'}>{devicePunches(d).text}</span>
+                                    {devicePunches(d).known && (
+                                        <div className="text-[11px] font-normal text-slate-500">{relativeTime(d.terminal_punch_counted_at)}</div>
+                                    )}
+                                </td>
+                                <td className="px-5 py-3.5 text-right font-medium tabular-nums text-slate-700" title="Punches from this terminal stored in the system">
                                     {(d.attendance_logs_count ?? 0).toLocaleString()}
                                 </td>
                                 {showActions && (
@@ -228,7 +236,7 @@ export default function DevicesDesktop({
                             */}
                             {syncing && (
                                 <tr>
-                                    <td colSpan={showActions ? 7 : 6} className="bg-violet-50/40 px-5 pb-3.5">
+                                    <td colSpan={showActions ? 8 : 7} className="bg-violet-50/40 px-5 pb-3.5">
                                         <SyncProgressRow progress={syncProgress} stalled={syncStalled} />
                                     </td>
                                 </tr>

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader } from '../../shared/ui';
-import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, can, relativeTime } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, can, devicePunches, relativeTime } from './parts';
 import { SyncProgressRow } from './DevicesDesktop';
 
 // Mobile devices: stacked cards, actions as a full-width row of large tap
@@ -50,8 +50,11 @@ export default function DevicesMobile({
                                     {!d.is_active && <Badge tone="amber">Disabled</Badge>}
                                     {/* Same signal as the desktop row — rule 5. */}
                                     <AdoptionBadge device={d} />
-                                    <span className="ml-auto text-xs tabular-nums text-slate-500">
-                                        {(d.attendance_logs_count ?? 0).toLocaleString()} punches
+                                    {/* Both counts, as the desktop columns — rule 5. */}
+                                    <span className="ml-auto text-right text-xs tabular-nums text-slate-500">
+                                        <span title={devicePunches(d).title}>{devicePunches(d).text} on device</span>
+                                        {' · '}
+                                        {(d.attendance_logs_count ?? 0).toLocaleString()} in system
                                     </span>
                                 </div>
 

@@ -45,6 +45,7 @@ class DeviceHealthService
             $result = $this->driver->ping($device);
 
             $this->recordSuccess($device, (int) round($result['latency_ms']), $result['device_time']);
+            $this->recordTerminalPunchCount($device);
 
             /*
              * Clock drift matters more than it looks: the device stamps every punch
@@ -160,6 +161,25 @@ class DeviceHealthService
     }
 
     /** Marks a device as having answered, and logs a transition if the state changed. */
+    /**
+     * The terminal's own punch count, for the devices list's "Device punches" column
+     * (2026-10-21). One GET_FREE_SIZES on the ZKTeco family; null from a driver that
+     * cannot say (C3, CSL), which leaves the stored value alone rather than writing a
+     * 0 nobody read (rule 10). A failure here never fails the health check.
+     */
+    private function recordTerminalPunchCount(Device $device): void
+    {
+        try {
+            $count = $this->driver->attendanceRecordCount($device);
+        } catch (DeviceException) {
+            return;
+        }
+
+        if ($count !== null) {
+            $device->forceFill(['terminal_punch_count' => $count, 'terminal_punch_counted_at' => now()])->save();
+        }
+    }
+
     private function recordSuccess(Device $device, int $latencyMs, ?\DateTimeImmutable $deviceTime): void
     {
         $previous = $device->health_status;

@@ -113,7 +113,8 @@ class AttendanceClearService
 
             $cleared = $this->driver->clearAttendance($device, $held);
 
-            $device->forceFill(['attendance_watermark' => null])->save();
+            // Read back 0 by the driver in the same session (the clear's own check).
+            $device->forceFill(['attendance_watermark' => null, 'terminal_punch_count' => 0, 'terminal_punch_counted_at' => now()])->save();
 
             Log::channel('device')->info('Attendance log cleared', [
                 'device_id' => $device->id,

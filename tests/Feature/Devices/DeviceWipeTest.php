@@ -107,6 +107,8 @@ class DeviceWipeTest extends TestCase
         $this->assertStringContainsString('2 user(s) removed (1 linked', $result['message']);
         $this->assertStringContainsString('saved to the system and cleared', $result['message']);
         $this->assertNull($this->device->fresh()->attendance_watermark);
+        // "Device punches" reads 0 from here; "System punches" still counts the 2 saved.
+        $this->assertSame(0, $this->device->fresh()->terminal_punch_count);
     }
 
     /** Owner's choice: "don't save" erases the punches without reading them in. */

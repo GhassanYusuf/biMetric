@@ -30,7 +30,15 @@ class DeviceResource extends JsonResource
             'last_synced_at' => $this->last_synced_at?->toIso8601String(),
             'last_sync_status' => $this->last_sync_status,
             'last_sync_error' => $this->last_sync_error,
+            // SYSTEM punches: what this app has stored for the terminal.
             'attendance_logs_count' => $this->whenCounted('attendanceLogs'),
+            /*
+             * DEVICE punches: what the terminal itself holds, as it last said (2026-10-21).
+             * Null = never counted — not 0 (rule 10). The two differ after a clear or a
+             * wipe, which is the point of showing both.
+             */
+            'terminal_punch_count' => $this->terminal_punch_count === null ? null : (int) $this->terminal_punch_count,
+            'terminal_punch_counted_at' => $this->terminal_punch_counted_at?->toIso8601String(),
 
             /*
              * ADOPTION — whether this terminal will accept a write at all.

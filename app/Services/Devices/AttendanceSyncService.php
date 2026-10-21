@@ -168,6 +168,16 @@ class AttendanceSyncService
                 unset($updates['attendance_watermark']);
             }
 
+            /*
+             * The terminal's own punch count (2026-10-21): the ZKTeco terminals and the C3
+             * panels always send their WHOLE log, range or not, so what was read is what
+             * the terminal holds. Not for the CSL portal, whose reads are its own windows.
+             */
+            if ($device->protocol !== Device::PROTOCOL_CSL_HTTP) {
+                $updates['terminal_punch_count'] = $result['read'];
+                $updates['terminal_punch_counted_at'] = now();
+            }
+
             $device->forceFill($updates)->save();
 
             $run->forceFill([

@@ -135,6 +135,8 @@ class Device extends Model
             'last_seen_at' => 'datetime',
             'capabilities_probed_at' => 'datetime',
             'attendance_watermark' => 'datetime',
+            'terminal_punch_count' => 'integer',
+            'terminal_punch_counted_at' => 'datetime',
             'capabilities_cache' => 'array',
             'consecutive_failures' => 'integer',
             'last_latency_ms' => 'integer',

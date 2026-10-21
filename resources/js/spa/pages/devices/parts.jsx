@@ -43,6 +43,24 @@ export function SyncBadge({ status }) {
     return <Badge tone="slate">Never synced</Badge>;
 }
 
+/**
+ * "Device punches": what the terminal itself holds, as it last said (2026-10-21) — next
+ * to "System punches", what this app has stored for it. The three states stay apart
+ * (rule 10): a count, never counted ("—"), and a terminal that cannot report one ("?").
+ */
+export function devicePunches(device) {
+    if (device.terminal_punch_count != null) {
+        return {
+            text: device.terminal_punch_count.toLocaleString(),
+            title: `As the terminal reported ${relativeTime(device.terminal_punch_counted_at)}`,
+            known: true,
+        };
+    }
+    return device.protocol === 'csl_http'
+        ? { text: '?', title: 'This terminal does not report how many punches it holds', known: false }
+        : { text: '—', title: 'Not counted yet — the next health check or punch read will count it', known: false };
+}
+
 export function relativeTime(iso) {
     if (!iso) return 'never';
     const then = new Date(iso);
