@@ -77,6 +77,15 @@ pusher skips them), so the restore in step 3 happens only once the date is clear
 they are added back. A declined or failed removal leaves them on that terminal; the form
 then opens with it already moved off, so the next save offers it again.
 
+**A delete by Personnel ID** (2026-10-21, `DELETE /api/v1/employees/by-code/{code}` and
+the same method at `/api/employees/by-code/{code}`) is a fourth way into that delete, not
+a new one: `EmployeeOffboarding::remove(..., true)` queues `REMOVE_USER` per live mapping,
+each run through `removeEmployee()`, and the employee row — with its stored copies — is
+deleted only after every terminal has confirmed. Unlike a resignation, the copies go with
+the employee (step 3: only with its employee or terminal), so a delete is final.
+Casebook DC-025 is why it always clears terminals: the first version deleted the record
+only and left the person enrolled on three.
+
 **A record linked to no employee** (a leftover test record holding someone's number)
 is removed only by `DeviceUserSyncService::releaseUnlinkedNumber()` — the red push
 row's buttons (2026-10-11). Its record and every fingerprint on it are saved encrypted

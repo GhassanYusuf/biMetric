@@ -163,7 +163,48 @@ class EmployeeController extends Controller
     {
         $this->authorize('delete', $employee);
 
-        $outcome = $this->offboarding->remove($employee, $request->boolean('remove_from_devices'));
+        return $this->offboard($employee, $request->boolean('remove_from_devices'));
+    }
+
+    /**
+     * Delete by Personnel ID (`employee_code`), from the system AND every terminal
+     * (owner, 2026-10-21: "an endpoint to delete an employee from the system and from
+     * the biometric terminals … for the integration with another system"). Also routed
+     * as the SPA's `DELETE /api/employees/by-code/{code}`, so the two cannot differ.
+     *
+     * Always takes the person off the terminals. It is not optional here because a
+     * record-only delete by code did exactly the wrong thing on 2026-10-21 (casebook
+     * DC-025): the record went, the terminals kept user 1000, and the system had no
+     * way left to find it. Removing the record alone remains `DELETE /employees/{id}`.
+     *
+     * The code is matched EXACTLY, as text: "000659843" and "659843" are different
+     * people's codes. Unique per company and tenant-scoped, so it finds at most one
+     * person, in the caller's own company.
+     */
+    public function destroyByCode(string $code): JsonResponse
+    {
+        $employee = Employee::query()->where('employee_code', $code)->first();
+
+        if ($employee === null) {
+            return ApiResponse::error("No employee has Personnel ID {$code}.", [], 404);
+        }
+
+        $this->authorize('delete', $employee);
+
+        return $this->offboard($employee, true);
+    }
+
+    /**
+     * Delete, optionally taking the person off their terminals first (EmployeeOffboarding).
+     * 200 when the row is gone; 202 when it is kept, inactive, until every terminal
+     * confirms — or because a terminal could not be written to. `data` names who it was:
+     * the caller addressed them by a number, and the row may no longer exist to look up.
+     */
+    private function offboard(Employee $employee, bool $fromDevices): JsonResponse
+    {
+        $who = ['id' => $employee->id, 'employee_code' => $employee->employee_code, 'name' => $employee->fullName()];
+
+        $outcome = $this->offboarding->remove($employee, $fromDevices);
 
         $meta = [
             'deleted' => $outcome['deleted'],
@@ -172,14 +213,14 @@ class EmployeeController extends Controller
         ];
 
         if ($outcome['deleted']) {
-            return ApiResponse::success(null, 'Employee removed.', $meta);
+            return ApiResponse::success($who, 'Employee removed.', $meta);
         }
 
         $message = $outcome['pending']
             ? 'Removal from the terminals is queued. The employee is deactivated now and deleted once every terminal confirms.'
             : 'No terminal could be written to, so the employee was deactivated but NOT deleted — they may still be enrolled on a terminal.';
 
-        return ApiResponse::success(null, $message, $meta, 202);
+        return ApiResponse::success($who, $message, $meta, 202);
     }
 
     /** Queues one employee onto one terminal. */

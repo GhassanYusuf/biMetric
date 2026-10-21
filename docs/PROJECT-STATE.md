@@ -23,7 +23,7 @@ cannot see:
 | **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It has been a git repository since 2026-09-14 (all work committed through `v2.15.0`, 2026-10-21) but has **no remote**: its only copy is this box's disk. This is still the worst of the three. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| App repo not pushed — **and this server CANNOT push** | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. As of 2026-10-21 **everything is committed, locally only**, on three branches: **`employees`** (`41181b2`, through the Cron jobs screen), and two branched from it — **`password-feature`** (keypad passwords and Device role) and **`export-employees`** (`5bfafe7`, the employee list export). The library is committed too (`ada8f15`, tag `v2.15.0`, 2.10.0–2.15.0). **No branch has been pushed**; `origin/main` is still the first commit, and local `main` is 4 commits ahead of it. A push on 2026-10-21 failed with *Host key verification failed*: this box has **no SSH key and no `gh`** (`~/.ssh` holds only `authorized_keys`), so it has never been able to push. Owner chose 2026-10-21 to push all branches at once once access exists — an SSH key added on GitHub, or an HTTPS token the owner types in. Merging into `main` is the owner's call. |
+| App repo not pushed — **and this server CANNOT push** | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. As of 2026-10-21 **everything is committed, locally only**, on four branches: **`employees`** (`41181b2`, through the Cron jobs screen), two branched from it — **`password-feature`** (`3143511`, keypad passwords and Device role) and **`export-employees`** (`5bfafe7`, the employee list export) — and **`delete-by-code`**, branched from `password-feature`, which is what this server runs. The library is committed too (`ada8f15`, tag `v2.15.0`, 2.10.0–2.15.0). **No branch has been pushed**; `origin/main` is still the first commit, and local `main` is 4 commits ahead of it. A push on 2026-10-21 failed with *Host key verification failed*: this box has **no SSH key and no `gh`** (`~/.ssh` holds only `authorized_keys`), so it has never been able to push. Owner chose 2026-10-21 to push all branches at once once access exists — an SSH key added on GitHub, or an HTTPS token the owner types in. Merging into `main` is the owner's call. |
 | ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. On 2026-09-24 the working tree (2.7.0–2.9.0) was committed as `2180866` on `main`; **not tagged**. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
@@ -119,6 +119,23 @@ normal user, Enroller/Not set untouched) — never when unchanged, because real 
 differ per terminal. Per-room roles stay on the Enrollment dialog's Make administrator.
 DC-022 closed. The owner's test employee "Test" (1802) is an administrator on IT ROOM
 with a password — remove that when testing is over (owner).
+
+### Delete by Personnel ID, system AND terminals — BUILT 2026-10-21 on `delete-by-code`; user 1000 still on three terminals
+
+Owner, for an integration: "an endpoint to delete an employee from the system and from
+the biometric terminals". `DELETE /api/v1/employees/by-code/{code}` (integration token,
+`employees:write`), same method at `DELETE /api/employees/by-code/{code}` (signed-in
+user). Queues removal from every terminal (card and fingers saved first), deactivates
+at once, deletes the record once every terminal confirms. Docs: `integration-api.md`.
+
+Why it always clears terminals: the first version (same morning) deleted the record
+only. The owner deleted "Test User" (employee 1802, Personnel ID 1000) with it at
+08:12 UTC and could still punch — casebook **DC-025**, OPEN. **User 1000 is still on IT
+ROOM (as an administrator, with a keypad password), Entrance and On The Road.** The
+system no longer knows them, so the new endpoint cannot reach them. **Owner to decide:**
+let the system remove user 1000 from the three terminals (save first, check the name,
+delete, read back), or remove it at the terminals / in ZKAccess. Not yet run against a
+real terminal: the endpoint's first real use is a write, on a test employee (owner).
 
 ### Employee list export, PDF or Excel — BUILT 2026-10-21, committed on its own branch (not pushed)
 
@@ -762,6 +779,9 @@ may be wrong for that model — needs read-only research first (owner to decide)
 Built the employee list export (see "Where we stopped") on `export-employees`.
 Committed `password-feature` and the library (`ada8f15`, `v2.15.0`). Push to GitHub
 failed — no SSH key on this box; owner will push all branches at once.
+Then, on `delete-by-code`: delete by Personnel ID — first record-only, which left
+"Test User" (code 1000) on three terminals (DC-025, OPEN), then rebuilt to clear the
+terminals too, for the owner's integration.
 
 ### 2026-10-20 — Keypad passwords and terminal roles from the system, on every terminal
 

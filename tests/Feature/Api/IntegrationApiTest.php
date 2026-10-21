@@ -286,6 +286,86 @@ class IntegrationApiTest extends TestCase
         $this->assertNull(Employee::withoutGlobalScopes()->find($e->id));
     }
 
+    /**
+     * Owner, 2026-10-21 (casebook DC-025): delete by Personnel ID takes the person off
+     * every terminal, then deletes the record once each terminal has confirmed.
+     */
+    public function test_delete_by_code_removes_from_terminals_then_the_record(): void
+    {
+        Queue::fake();
+        $device = $this->device();
+        // A terminal that CAN write users (an F18, as IT ROOM), so the real path runs.
+        $device->forceFill(['adoption_status' => 'adopted', 'protocol' => Device::PROTOCOL_BINARY, 'model' => 'F18'])->save();
+        $this->assertNull($device->fresh()->userWriteRefusal());
+        $e = $this->employee('Leaver By Code', '1000');
+        Tenancy::set($this->tenant->id);
+        EmployeeDeviceMap::create(['employee_id' => $e->id, 'device_id' => $device->id, 'device_user_id' => '1000']);
+        Tenancy::clear();
+
+        $res = $this->as(['employees:write'])->deleteJson('/api/v1/employees/by-code/1000')
+            ->assertStatus(202)
+            ->assertJsonPath('data.id', $e->id)
+            ->assertJsonPath('data.employee_code', '1000')
+            ->assertJsonPath('meta.deleted', false);
+
+        $this->assertFalse((bool) Employee::withoutGlobalScopes()->find($e->id)->is_active, 'Off the door list at once.');
+
+        $res->assertJsonCount(1, 'meta.device_commands')->assertJsonPath('meta.skipped_devices', []);
+        Queue::assertPushed(ProcessDeviceCommand::class);
+        $this->assertNotNull(Employee::withoutGlobalScopes()->find($e->id), 'Kept until the terminal confirms.');
+
+        Tenancy::set($this->tenant->id);
+        $command = DeviceCommand::query()->first();
+        $this->assertSame(DeviceCommand::REMOVE_USER, $command->command);
+        $command->markSucceeded('Removed.');
+        Tenancy::clear();
+
+        $this->assertNull(Employee::withoutGlobalScopes()->find($e->id));
+    }
+
+    /** A terminal that cannot be written to: reported as skipped, and the record is KEPT. */
+    public function test_delete_by_code_keeps_the_record_when_a_terminal_cannot_be_written(): void
+    {
+        Queue::fake();
+        $device = $this->device(); // protocol `zkteco`: cannot write users
+        $e = $this->employee('Stuck By Code', '1003');
+        Tenancy::set($this->tenant->id);
+        EmployeeDeviceMap::create(['employee_id' => $e->id, 'device_id' => $device->id, 'device_user_id' => '1003']);
+        Tenancy::clear();
+
+        $this->as(['employees:write'])->deleteJson('/api/v1/employees/by-code/1003')
+            ->assertStatus(202)
+            ->assertJsonPath('meta.deleted', false)
+            ->assertJsonPath('meta.skipped_devices.0.device_name', 'Front door');
+
+        $kept = Employee::withoutGlobalScopes()->find($e->id);
+        $this->assertNotNull($kept, 'Never delete a person a terminal could not be cleared of.');
+        $this->assertFalse((bool) $kept->is_active);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_delete_by_code_on_no_terminal_deletes_at_once(): void
+    {
+        Queue::fake();
+        $e = $this->employee('Nowhere', '1001');
+
+        $this->as(['employees:write'])->deleteJson('/api/v1/employees/by-code/1001')
+            ->assertOk()->assertJsonPath('meta.deleted', true)->assertJsonPath('data.name', 'Nowhere');
+
+        $this->assertNull(Employee::withoutGlobalScopes()->find($e->id));
+        Queue::assertNothingPushed();
+    }
+
+    public function test_delete_by_code_is_exact_and_needs_the_write_ability(): void
+    {
+        $e = $this->employee('Exact', '1002');
+
+        $this->as(['employees:write'])->deleteJson('/api/v1/employees/by-code/01002')->assertNotFound();
+        $this->as(['employees:read'])->deleteJson('/api/v1/employees/by-code/1002')->assertForbidden();
+
+        $this->assertNotNull(Employee::withoutGlobalScopes()->find($e->id));
+    }
+
     public function test_a_failed_removal_keeps_the_employee(): void
     {
         Queue::fake();

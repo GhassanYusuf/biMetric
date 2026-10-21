@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-20**
+**Last updated: 2026-10-21**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | OPEN |
 | DC-024 | 2026-10-18 to 2026-10-20 | Good Wheels, On The Road, Camelot, IT ROOM | The 5-minute health check never ran: it threw before queueing, then skipped every terminal | FIXED |
 | DC-023 | 2026-10-18 | all six | Punches were never read automatically: nothing ran the scheduler | MONITORING |
 | DC-022 | 2026-10-12 to 2026-10-20 | all six | Keypad passwords: never pushed, never read — and erased by every standalone write | FIXED |
@@ -99,6 +100,54 @@ Template:
 ---
 
 ## Entries
+
+### DC-025 — Employee deleted by Personnel ID over the API is still on three terminals and can still punch
+
+- **Date:** 2026-10-21
+- **Devices:** IT ROOM (F18, 192.168.7.62), Entrance (TF1700, 192.168.7.60), On The Road (F22, 192.168.7.63)
+- **Direction:** software → device (a delete that never reached the device)
+- **Symptom:** Owner, from Postman: deleted the test employee with
+  `DELETE /api/employees/by-code/{code}` (built the same morning), got success, the
+  employee is gone from the screens — "but I still can punch in the device".
+- **What was done:** read-only so far.
+  - 08:12:02 UTC the owner (user 12) deleted employee **1802 "Test User"**, Personnel ID
+    **1000** (audit_logs 6764). Read-only reconstruction from audit_logs: on IT ROOM
+    since 2026-10-20 as an **administrator with a keypad password** and finger 3; pushed
+    to Entrance 2026-10-21 06:33 UTC and On The Road 06:41 UTC, finger 3 each.
+  - The delete cascaded `employee_device_maps` and the stored template, so the system
+    no longer knows the person or where they were. The three terminals still hold user
+    1000 — an unclaimed administrator on IT ROOM.
+  - No terminal written yet. Removal of user 1000 from the three terminals awaits the
+    owner's go-ahead (rule 16).
+  - Owner asked for an endpoint that deletes from the system AND the terminals, for an
+    integration. Built the same day (below). It cannot clean up user 1000: that person
+    no longer exists in the system to address.
+  - Dead end in the first test of it: the integration tests' fixture terminal
+    (`protocol: zkteco`, no model) cannot write users, so a delete test against it only
+    ever exercised the "skipped" branch. The existing `remove_from_devices` test has the
+    same blind spot. The new test uses an F18-model binary terminal and asserts the
+    queued `REMOVE_USER` path.
+- **Root cause:** `destroyByCode()` (`EmployeeController`, commit `4f89663`) copied
+  `destroy()`: it deletes the record only. The screen's Delete warns about exactly this
+  in its confirmation; the API said nothing and answered 200. The integration API
+  already has the right behaviour (`DELETE /api/v1/employees/{id}?remove_from_devices=1`,
+  `EmployeeOffboarding`: queue removals that save card and fingers first, deactivate,
+  delete once every terminal confirms) — the new endpoint did not use it.
+- **Fix:** `DELETE /api/v1/employees/by-code/{code}` (integration API, `employees:write`)
+  and the same method at `DELETE /api/employees/by-code/{code}`:
+  `Api\V1\EmployeeController::destroyByCode()` → `EmployeeOffboarding::remove(..., true)`
+  — queues `REMOVE_USER` per live mapping (each through `removeEmployee()`, card and
+  fingers saved first), deactivates at once, deletes the row once every terminal
+  confirms; a terminal it cannot write keeps the row. The record-only
+  `destroyByCode()` on the SPA controller was removed. Tests: `IntegrationApiTest`
+  (`test_delete_by_code_*`, 4), `ApiFlowTest` (by-code, 3). Docs:
+  `integration-api.md`, `api-endpoints.md`, `credential-preservation.md`.
+- **Verified:** in tests only so far (706 passing). Not yet run against a terminal: the first real use is a write and needs a test employee on a terminal (owner).
+- **Evidence:** audit_logs 6764 (delete), 6711-onward history of employee 1802.
+- **Status:** OPEN — the endpoint is fixed in code; user 1000 is still on IT ROOM (as an
+  administrator), Entrance and On The Road until the owner approves removing it or removes
+  it at the terminals.
+- **Keywords:** delete by code, by-code, employee_code, orphan terminal user, still punches, unlinked, remove_from_devices, EmployeeOffboarding, cascade employee_device_maps
 
 ### DC-024 — The 5-minute health check never ran: it threw before queueing, then skipped every terminal
 

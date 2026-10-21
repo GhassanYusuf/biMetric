@@ -71,6 +71,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'tenant', 'throttle:integration
         Route::post('employees', [EmployeeController::class, 'store'])->name('api.v1.employees.store');
         Route::put('employees/by-external-id/{externalId}', [EmployeeController::class, 'upsert'])->name('api.v1.employees.upsert');
         Route::match(['put', 'patch'], 'employees/{employee}', [EmployeeController::class, 'update'])->whereNumber('employee')->name('api.v1.employees.update');
+        // Personnel ID, system AND terminals (2026-10-21). Fixed path, before `{employee}`.
+        Route::delete('employees/by-code/{code}', [EmployeeController::class, 'destroyByCode'])->name('api.v1.employees.destroy-by-code');
         Route::delete('employees/{employee}', [EmployeeController::class, 'destroy'])->whereNumber('employee')->name('api.v1.employees.destroy');
         Route::post('employees/{employee}/photo', [SpaEmployeeController::class, 'uploadPhoto'])->name('api.v1.employees.photo.store');
         Route::delete('employees/{employee}/photo', [SpaEmployeeController::class, 'removePhoto'])->name('api.v1.employees.photo.destroy');

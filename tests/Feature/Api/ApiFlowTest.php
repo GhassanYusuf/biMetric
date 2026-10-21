@@ -151,7 +151,10 @@ class ApiFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.id', $id)
             ->assertJsonPath('data.employee_code', '99901')
-            ->assertJsonPath('message', 'Employee Code Delete (99901) removed.');
+            ->assertJsonPath('data.name', 'Code Delete')
+            // On no terminal, so nothing to queue: deleted at once.
+            ->assertJsonPath('meta.deleted', true)
+            ->assertJsonPath('meta.device_commands', []);
 
         $this->actingWithToken($token)->getJson("/api/employees/{$id}")->assertStatus(404);
         // Gone, so a second delete says so rather than succeeding again.

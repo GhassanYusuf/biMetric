@@ -266,36 +266,6 @@ class EmployeeController extends Controller
         return ApiResponse::success(null, 'Employee removed.');
     }
 
-    /**
-     * Delete by Personnel ID (`employee_code`) instead of the database id (owner,
-     * 2026-10-21: callers such as a Postman collection know the code, not the row id).
-     *
-     * The code is matched EXACTLY, as text: "000659843" and "659843" are different
-     * people's codes, and a numeric comparison would let one delete the other. It is
-     * unique per company (`tenant_id` + `employee_code`) and the tenant scope applies,
-     * so it can only ever find one person, in the caller's own company.
-     *
-     * Same rule as destroy(): the record only. The person stays on any terminal they
-     * are enrolled on — taking them off is the Remove-from-terminal action, or the
-     * integration API's `?remove_from_devices=1`.
-     */
-    public function destroyByCode(string $code): JsonResponse
-    {
-        $employee = Employee::query()->where('employee_code', $code)->first();
-
-        if ($employee === null) {
-            return ApiResponse::error("No employee has Personnel ID {$code}.", [], 404);
-        }
-
-        $this->authorize('delete', $employee);
-
-        $deleted = ['id' => $employee->id, 'employee_code' => $employee->employee_code, 'name' => $employee->fullName()];
-        $employee->delete();
-
-        // Says WHO was removed: a delete addressed by a typed number should confirm the name.
-        return ApiResponse::success($deleted, "Employee {$deleted['name']} ({$deleted['employee_code']}) removed.");
-    }
-
     /** Per-day attendance breakdown + payroll hours for one employee. */
     public function attendanceSummary(Request $request, Employee $employee, AttendanceSummaryService $summary): JsonResponse
     {

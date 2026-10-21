@@ -85,6 +85,7 @@ enrollment **session id**), not a result. See §5.
 | PUT | `/employees/by-external-id/{externalId}` | **Upsert.** `201` + `meta.created=true` or `200` + `meta.created=false`. The URL's id wins over any `external_id` in the body. |
 | PATCH / PUT | `/employees/{id}` | **Partial** — send only what changed. |
 | DELETE | `/employees/{id}` | Record only, unless `?remove_from_devices=1` — see below. |
+| DELETE | `/employees/by-code/{code}` | By **Personnel ID** (`employee_code`), from the system **and every terminal** — always, no flag. See below. |
 | POST / DELETE | `/employees/{id}/photo` | multipart `photo`. |
 | GET | `/employees/next-code` | |
 | GET | `/employees/{id}/attendance-summary` | `from`, `to`. |
@@ -143,6 +144,28 @@ If a removal **fails** (after its retries) or a terminal cannot be written to
 (`meta.skipped_devices`), the row is **kept, inactive**, and you are told via the
 `device_command.finished` webhook / the command row. Fix the terminal and call DELETE
 again. Without the flag the call just deletes the record and is `200`.
+
+**By Personnel ID — `DELETE /employees/by-code/{code}`** (2026-10-21). The same delete,
+addressed by `employee_code` instead of `id`, and it **always** takes the person off the
+terminals: there is no record-only form, because a record-only delete by code is how
+casebook DC-025 left a deleted employee able to punch on three terminals.
+
+- `{code}` is matched exactly as text: `0099902` does not find `99902`.
+- `200` + `meta.deleted=true` — on no terminal, deleted at once.
+- `202` + `meta.deleted=false` — removals queued (`meta.device_commands`), the employee
+  is inactive now and deleted once every terminal confirms; or a terminal could not be
+  written to (`meta.skipped_devices`) and the record is kept, inactive.
+- `404` — no employee in your company has that code. `403` — no `employees:write`.
+- `data` is `{id, employee_code, name}` of who it was, so the caller can confirm the
+  number addressed the person it meant.
+
+Each terminal removal saves the person's card and fingerprints into the system before
+deleting (`DeviceUserSyncService::removeEmployee()`, rule 19); a terminal it cannot
+save from is not cleared, and the record stays.
+
+The same method answers `DELETE /api/employees/by-code/{code}` for a signed-in user
+(`employees.delete`), so the screen-side and integration routes cannot behave
+differently.
 
 ## 4. Terminals, enrollment and commands
 

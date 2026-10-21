@@ -322,22 +322,18 @@ that the employee has no fingerprints.
 
 ## Employees
 
-### `DELETE /api/employees/by-code/{code}` — delete by Personnel ID (2026-10-21)
+### `DELETE /api/employees/by-code/{code}` — delete by Personnel ID, system AND terminals (2026-10-21)
 
 `{code}` is the **Personnel ID** (`employee_code`), not the database `id` that
-`DELETE /api/employees/{employee}` takes. Matched exactly as text — `0099902` does
-not find `99902`. Unique per company, and only your own company is searched.
+`DELETE /api/employees/{employee}` takes. It removes the person from **every terminal
+they are on** (card and fingers saved first, rule 19), deactivates them at once, and
+deletes the record once every terminal confirms. Answers `200` (on no terminal, deleted),
+`202` (removals queued, or a terminal could not be written and the record is kept),
+`404` (no such code in your company), `403` (no `employees.delete`).
 
-| Answer | When |
-|---|---|
-| 200 | Deleted. `data` = `{id, employee_code, name}` of who was removed; the message names them. |
-| 404 | No employee in your company has that Personnel ID (or it was already deleted). |
-| 403 | No `employees.delete`. |
-
-Like `DELETE /api/employees/{employee}`, this deletes the **record only** and cannot
-be undone: the person stays on any terminal they are enrolled on. To take them off
-the terminals, remove them from each terminal first, or use the integration API's
-`DELETE /api/v1/employees/{id}?remove_from_devices=1`.
+It is the integration API's `DELETE /api/v1/employees/by-code/{code}`, routed here too —
+full description in `docs/integration-api.md`. First built the same morning as a
+record-only delete; that left a deleted employee on three terminals (casebook DC-025).
 
 ### Identity — national ID (removed)
 

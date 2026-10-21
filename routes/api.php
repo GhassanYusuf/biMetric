@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ScheduledJobController;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\V1\EmployeeController as IntegrationEmployeeController;
 use App\Http\Controllers\Api\WaiverController;
 use Illuminate\Support\Facades\Route;
 
@@ -130,8 +131,9 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
      */
     Route::get('employees/duplicate-groups', [DuplicateScanController::class, 'index']);
     Route::post('employees/merge/preview', [DuplicateScanController::class, 'preview']);
-    // Delete by Personnel ID (employee_code) rather than the database id (2026-10-21).
-    Route::delete('employees/by-code/{code}', [EmployeeController::class, 'destroyByCode']);
+    // Delete by Personnel ID (employee_code), from the system AND every terminal
+    // (2026-10-21, casebook DC-025). The integration API's method, so the two are one.
+    Route::delete('employees/by-code/{code}', [IntegrationEmployeeController::class, 'destroyByCode']);
 
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
     Route::get('employees/{employee}/duplicates', [DuplicateScanController::class, 'forEmployee']);
