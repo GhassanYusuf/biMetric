@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | OPEN |
+| DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | FIXED |
 | DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | FIXED |
 | DC-024 | 2026-10-18 to 2026-10-20 | Good Wheels, On The Road, Camelot, IT ROOM | The 5-minute health check never ran: it threw before queueing, then skipped every terminal | FIXED |
 | DC-023 | 2026-10-18 | all six | Punches were never read automatically: nothing ran the scheduler | MONITORING |
@@ -144,9 +144,14 @@ Template:
   case added). Docs: `device-identity-and-adoption.md`. 710 tests pass. Real data,
   read-only: `assertPinFreeFor(Good Wheels, Syed, 770280340)` now allows it; 0 punches
   under 770280340 since Asif left it.
-- **Verified:** — (the move on Good Wheels is the owner's push, next)
+- **Verified:** on Good Wheels. Owner pushed Syed from the Push dialog at 11:35:55 UTC
+  (F18 re-add). Read back 11:39 UTC: 19 users (unchanged); user 8 gone; **770280340 =
+  SYED WAJID ABBAS**, same uid 35, card **7632845** (the system's card, written by the
+  push), finger slot 0 with the **same template hash** as before (`bc715568cb7b`). Mapping
+  8 closed 11:35:55.623, 770280340 opened 11:35:55.643. Asif still 850256461 on the
+  terminal; his 6 punches under 770280340 still credited to him.
 - **Evidence:** audit_logs for employees 1748 and 1803; employee_device_maps 2962, 2987.
-- **Status:** OPEN — until Syed is moved on Good Wheels and read back.
+- **Status:** FIXED — still owed (owner): whether the 315 unattributed punches under user 8 (2024-07-28 → 2025-04-21) are Syed's.
 - **Keywords:** never reissued, already in use, or was in the past, PinInUseException, assertPinFreeFor, pinReusableFor, wrong CPR, Personnel ID typed on wrong employee, moveByReadding, re-add, Good Wheels
 
 ### DC-025 — Employee deleted by Personnel ID over the API is still on three terminals and can still punch

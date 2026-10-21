@@ -137,6 +137,20 @@ saved first, verified by re-read). Side effect: **1000 stays reserved on IT ROOM
 itself has not yet run against a real terminal: its first use is a write, on a test
 employee (owner). The "Test" employee note under the password feature no longer applies.
 
+### A Personnel ID may take over a closed-off terminal number — 2026-10-21 on `delete-by-code`
+
+Syed Wajid Abbas's CPR (770280340) had been typed onto Muhammad Asif on 2026-10-11 and
+pushed to Good Wheels; corrected 2026-10-21, after which the never-reissue rule refused
+770280340 to Syed for good. Changed (`DeviceIdentityResolver::pinReusableFor()`): a
+requested number may take over a retired one when nobody holds it, nothing was punched
+under it after the last holder left, and its roster entry is not someone else's claim.
+Automatic numbering is unchanged. Syed is now 770280340 on Good Wheels, read back
+(DC-026). **Owner to answer:** 315 punches under user 8 on Good Wheels, 2024-07-28 →
+2025-04-21, are attributed to nobody — if user 8 was always Syed, extend his mapping
+back and run `attendance:reattribute 5 --dry-run` first. Also open: the employee form
+does not offer an F18 user-ID move (it checks only `user.renumber`); the row's Push
+does — fix offered, not done.
+
 ### Employee list export, PDF or Excel — BUILT 2026-10-21, committed on its own branch (not pushed)
 
 Owner: "if I select all employees, export all of them in PDF or Excel; if I select one
