@@ -219,11 +219,15 @@ Template:
   `destroyByCode()` on the SPA controller was removed. Tests: `IntegrationApiTest`
   (`test_delete_by_code_*`, 4), `ApiFlowTest` (by-code, 3). Docs:
   `integration-api.md`, `api-endpoints.md`, `credential-preservation.md`.
-- **Verified:** the cleanup on hardware (step 3 above). The new endpoint in tests only (706 passing); its first live run is a write on a test employee (owner).
+- **Verified:** the cleanup on hardware (step 3 above), and the endpoint live on IT ROOM.
+  The owner created a test employee (1804, Personnel ID 1000, IT ROOM user 3 — 1000 was
+  reserved there) and sent `DELETE /api/v1/employees/by-code/1000`: 09:17:39 UTC
+  `remove_user` command 1491 queued and the employee deactivated; 09:17:47.703 "Test
+  removed from IT ROOM." (1 attempt); 09:17:47.743 employee deleted by
+  `EmployeeOffboarding::commandFinished()`. Re-read 11:56 UTC: 7 users, user 3 gone,
+  nobody else missing.
 - **Evidence:** audit_logs 6764 (delete), 6711-onward history of employee 1802.
-- **Status:** FIXED — user 1000 removed from all three terminals and verified; the
-  endpoint now clears terminals. Still owed (owner): one live run of the endpoint on a
-  test employee.
+- **Status:** FIXED — user 1000 removed from all three terminals, and the endpoint proven live on IT ROOM.
 - **Keywords:** delete by code, by-code, employee_code, orphan terminal user, still punches, unlinked, remove_from_devices, EmployeeOffboarding, cascade employee_device_maps
 
 ### DC-024 — The 5-minute health check never ran: it threw before queueing, then skipped every terminal

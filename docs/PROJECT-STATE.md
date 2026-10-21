@@ -134,8 +134,8 @@ only. The owner deleted "Test User" (employee 1802, Personnel ID 1000) with it a
 1000 was removed from IT ROOM, Entrance and On The Road at 09:03 UTC (record and finger
 saved first, verified by re-read). Side effect: **1000 stays reserved on IT ROOM**
 (roster entry 1433, `ignored`) — clear it if the code is to be reused. The endpoint
-itself has not yet run against a real terminal: its first use is a write, on a test
-employee (owner). The "Test" employee note under the password feature no longer applies.
+was then proven live on IT ROOM (test employee 1804, 09:17 UTC: removed in 8 s, record
+deleted on confirmation, read back). The "Test" employee note under the password feature no longer applies.
 
 ### A Personnel ID may take over a closed-off terminal number — 2026-10-21 on `delete-by-code`
 
