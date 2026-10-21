@@ -222,6 +222,32 @@ class FingerprintPushTest extends TestCase
         $this->assertStringContainsString('cannot take a fingerprint from this app', $result['message']);
     }
 
+    /**
+     * DC-027: the terminal CAN take fingers, but the library refused the write for
+     * another reason (its template table would not read). The result must say that —
+     * not "cannot take a fingerprint", which sent the owner looking at the wrong thing.
+     */
+    public function test_a_refused_finger_write_on_a_capable_terminal_gives_the_real_reason(): void
+    {
+        $driver = new class extends FakeBiometricDriver
+        {
+            public function uploadTemplates(\App\Models\Device $device, string $userId, array $templates): array
+            {
+                throw new \Promoseven\Biometric\Exception\UnsupportedCommandException('The fingerprint table would not decode, so the write could not be checked. Nothing was written.');
+            }
+        };
+        $driver->capabilityOverrides = $this->driver->capabilityOverrides;
+        $driver->roster = [];
+        $driver->templates = $this->driver->templates;
+        $driver->templateDigests = $this->driver->templateDigests;
+        $this->app->instance(\App\Contracts\BiometricDeviceDriver::class, $driver);
+
+        $result = app(\App\Services\Devices\DeviceUserSyncService::class)->pushEmployee($this->f18, $this->employee);
+
+        $this->assertStringNotContainsString('cannot take a fingerprint', $result['message']);
+        $this->assertStringContainsString('would not decode', $result['message']);
+    }
+
     public function test_a_number_someone_else_once_held_is_never_given_back(): void
     {
         $other = Employee::create(['tenant_id' => $this->tenant->id, 'name' => 'Former holder', 'employee_code' => '777', 'is_active' => true]);

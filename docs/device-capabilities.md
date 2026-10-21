@@ -86,7 +86,7 @@ flag that should drop**, not a new one.
 | `card.read` | One card per user |
 | `card.write` | Writing 0 clears it |
 | `fingerprint.enroll` | The *trigger* is confirmed; a completed capture is not — see below |
-| `template.table.read` | The 22,066-byte table on the reference device. **An EMPTY table arrives as 0 bytes** (F18 IT-Office, 192.168.7.64, 2026-10-21, after a wipe; control Good Wheels 28,610 bytes / 33 templates — `traces-2026-10-21/empty-template-table-01.json`). Since library 2.16.1 that reads as "no fingers" for every user, not "unknown" — before, a wiped or new terminal could never receive its first finger (casebook DC-027). |
+| `template.table.read` | The 22,066-byte table on the reference device. **An EMPTY table arrives as 0 bytes** (F18 IT-Office, 192.168.7.64, 2026-10-21, after a wipe; control Good Wheels 28,610 bytes / 33 templates — `traces-2026-10-21/empty-template-table-01.json`). Since library 2.16.1 (read) and 2.16.2 (write, `TemplateCodec::isEmptyTable()`) that is an empty table — "no fingers" for every user, and a first finger can be written. Before, a wiped or new terminal could never receive one (casebook DC-027). Reproduced in a second run (`-02.json`). |
 | `template.slot.probe` | Per-slot occupancy check |
 | `attendance.read` | |
 

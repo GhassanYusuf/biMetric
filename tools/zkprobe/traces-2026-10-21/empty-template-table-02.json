@@ -1,0 +1,63 @@
+{
+    "label": "empty-template-table",
+    "host": "multiple",
+    "started_at": "2026-10-21T15:12:50+00:00",
+    "devices": [
+        {
+            "device_id": 5,
+            "name": "Good Wheels",
+            "host": "46.184.163.106",
+            "model": "F18/ID",
+            "read_at": "2026-10-21T15:12:50+00:00",
+            "users_raw_bytes": 1372,
+            "users_decoded": 19,
+            "templates_raw_bytes": 28610,
+            "templates_prefix_hex": "be6f0000",
+            "templates_declared_body": 28606,
+            "templates_decoded": 33,
+            "is_empty_table": false
+        },
+        {
+            "device_id": 11,
+            "name": "On The Road",
+            "host": "192.168.7.63",
+            "model": "F22/ID",
+            "read_at": "2026-10-21T15:12:52+00:00",
+            "users_raw_bytes": 724,
+            "users_decoded": 10,
+            "templates_raw_bytes": 17268,
+            "templates_prefix_hex": "70430000",
+            "templates_declared_body": 17264,
+            "templates_decoded": 15,
+            "is_empty_table": false
+        },
+        {
+            "device_id": 12,
+            "name": "Camelot",
+            "host": "87.237.196.60",
+            "model": "F18",
+            "read_at": "2026-10-21T15:12:54+00:00",
+            "users_raw_bytes": 1732,
+            "users_decoded": 24,
+            "templates_raw_bytes": 46040,
+            "templates_prefix_hex": "d4b30000",
+            "templates_declared_body": 46036,
+            "templates_decoded": 37,
+            "is_empty_table": false
+        },
+        {
+            "device_id": 16,
+            "name": "IT-Office",
+            "host": "192.168.7.64",
+            "model": "F18",
+            "read_at": "2026-10-21T15:12:56+00:00",
+            "users_raw_bytes": 220,
+            "users_decoded": 3,
+            "templates_raw_bytes": 0,
+            "templates_prefix_hex": "",
+            "templates_declared_body": null,
+            "templates_decoded": 0,
+            "is_empty_table": true
+        }
+    ]
+}

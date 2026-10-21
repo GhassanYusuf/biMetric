@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | FIXED |
+| DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | OPEN |
 | DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | FIXED |
 | DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | FIXED |
 | DC-024 | 2026-10-18 to 2026-10-20 | Good Wheels, On The Road, Camelot, IT ROOM | The 5-minute health check never ran: it threw before queueing, then skipped every terminal | FIXED |
@@ -121,18 +121,39 @@ Template:
     template read returned **0 bytes**; control Good Wheels 28,610 bytes, prefix
     `be6f0000` (28,606), 33 templates. `BulkReader` returns `''` only for the device's
     own "nothing to send"; a failed transfer throws.
+  - **First fix incomplete.** Library 2.16.1 fixed the READ (`UserService::all()`):
+    IT-Office then reported Ghassan's fingers as `[]`. The owner pushed again at 14:32
+    UTC: card fine, still no finger, no `fingerprints_pushed` audit. Read-only, each
+    `FingerprintPusher::pushOne()` condition passed (active, writable, template.upload,
+    linked, 2 copies). The WRITE refused: `TemplateService::addTemplates()` asks
+    `TemplateCodec::isEmptyTable()`, which knew only the 4-byte zero header, so the
+    0-byte table read as "would not decode" → `UnsupportedCommandException`. Dead end
+    worth recording: 2.16.1 added a second empty-table check inside `UserService`
+    instead of fixing `isEmptyTable()` — two definitions for one question.
+  - The refusal reached the operator as "IT-Office cannot take a fingerprint from this
+    app" — `FingerprintPusher::restoreOnto()` worded every `UnsupportedCommandException`
+    that way, true or not.
+  - Second read-only probe run (`empty-template-table-02.json`, 34 min after the
+    first): IT-Office 0 bytes again, `isEmptyTable` true; Good Wheels, Camelot, On The
+    Road non-empty, false.
 - **Root cause:** library ≤ 2.16.0 treated an empty template table as "unknown". Every
   wiped or brand-new terminal was therefore unable to receive a first finger from the
   system, on every model using `UserService::all()`.
-- **Fix:** library **2.16.1** — `''` or a 4-byte length of 0 is an empty table: `[]`
-  for every user; bytes that decode to nothing stay `null`. `UserFingerSlotsTest` (4).
+- **Fix:** library **2.16.1** (read) and **2.16.2** (write): `TemplateCodec::isEmptyTable()`
+  accepts `''` as well as a zero header and is the one definition, used by
+  `UserService::all()`, `TemplateService::addTemplates()` and the ID-move paths; bytes
+  that decode to nothing stay unknown. App: `restoreOnto()` says "cannot take a
+  fingerprint" only when the model lacks template.upload, otherwise the real reason.
+  Tests: `UserFingerSlotsTest` (4), `TemplateAddTest` (first finger on an empty
+  terminal), `TemplateCodecTest` (the definition), `FingerprintPushTest` (real reason).
 - **Verified:** read-only through the fixed library: IT-Office → Ghassan `[]` (was
   `null`); Good Wheels 19/19, Camelot 24/24, On The Road 8/8 users' finger slots
   identical to the system's previous read (rule 15 re-confirmation; IT ROOM, the usual
   F18 reference, was offline — Camelot is the F18 control). Not yet: Ghassan's fingers
-  actually written to IT-Office — the owner's next push.
-- **Evidence:** `tools/zkprobe/traces-2026-10-21/empty-template-table-01.json`.
-- **Status:** FIXED — the write itself to be confirmed by the owner's push.
+  actually written to IT-Office — the owner's next push after 2.16.2.
+- **Evidence:** `tools/zkprobe/traces-2026-10-21/empty-template-table-01.json`, `-02.json`.
+- **Status:** OPEN — fixed in code (2.16.2); FIXED once a push writes Ghassan's fingers
+  to IT-Office and they read back.
 - **Keywords:** fingerprint not pushed, empty template table, 0 bytes, fingerSlots null, unknown fingers, FingerprintPusher skipped, its fingers would not decode, wiped terminal, new terminal, UserService::all, slotsByUserId
 
 ### DC-026 — A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal

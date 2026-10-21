@@ -238,8 +238,16 @@ class FingerprintPusher
             }
 
             $result = $this->pushOne($employee, $device);
-        } catch (UnsupportedCommandException) {
-            return "Their stored fingerprints were not written: {$device->name} cannot take a fingerprint from this app, so they must enrol there.";
+        } catch (UnsupportedCommandException $e) {
+            /*
+             * "Cannot take a fingerprint" only when that is TRUE — the model lacks
+             * template.upload. The library also throws this type for a template table it
+             * could not read; that said "cannot" for IT-Office's empty table (DC-027,
+             * 2026-10-21) and sent the owner looking at the wrong thing.
+             */
+            return $this->driver->capabilities($device)->supports(Capability::TEMPLATE_UPLOAD)
+                ? "Their stored fingerprints were not written: {$e->getMessage()}"
+                : "Their stored fingerprints were not written: {$device->name} cannot take a fingerprint from this app, so they must enrol there.";
         } catch (\Throwable $e) {
             return "Their stored fingerprints were not written: {$e->getMessage()}";
         }

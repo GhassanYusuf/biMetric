@@ -55,6 +55,8 @@ foreach (Device::query()->whereIn('id', array_slice($argv, 1))->orderBy('id')->g
                 'templates_prefix_hex' => bin2hex(substr($templates, 0, 4)),
                 'templates_declared_body' => strlen($templates) >= 4 ? unpack('V', substr($templates, 0, 4))[1] : null,
                 'templates_decoded' => count(TemplateCodec::decode($templates)),
+                // What the library's ONE definition of an empty table answers (2.16.2).
+                'is_empty_table' => TemplateCodec::isEmptyTable($templates),
             ];
         });
         fwrite(STDERR, json_encode(array_diff_key($entry, ['name' => 1, 'host' => 1])) . "\n");
