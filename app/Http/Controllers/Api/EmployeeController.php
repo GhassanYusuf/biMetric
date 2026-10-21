@@ -341,6 +341,8 @@ class EmployeeController extends Controller
             // Also make each terminal's user ID equal the employee code. Explicit, never
             // implied by a push: it changes the number attendance is recorded under.
             'to_employee_code' => ['sometimes', 'boolean'],
+            // Apply the Device role too (2026-10-20). Sent only when the save changed it.
+            'apply_role' => ['sometimes', 'boolean'],
         ]);
 
         $devices = Device::query()->whereIn('id', $data['device_ids'])->orderBy('name')->get();
@@ -354,7 +356,7 @@ class EmployeeController extends Controller
         // outcome worth paying to avoid.
         set_time_limit(180);
 
-        $result = $propagator->push($employee, $devices, (bool) ($data['to_employee_code'] ?? false));
+        $result = $propagator->push($employee, $devices, (bool) ($data['to_employee_code'] ?? false), (bool) ($data['apply_role'] ?? false));
 
         return ApiResponse::success($result, $this->describePropagation($employee, $result));
     }

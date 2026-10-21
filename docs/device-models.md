@@ -54,7 +54,8 @@ The reference model: `CapabilitySet::defaults()` is the F18. Calibrated on IT RO
 | User ID | delete | `DELETE_USER` (18) — takes card and fingers with it, so `removeEmployee()` saves them first | C |
 | Name | write | `USER_WRQ` on the same uid | C |
 | Privilege | keep | in the same record; `save()` keeps it, a re-created record gets it back (`privilegeToRestore`) | C |
-| Privilege | **set** (admin / normal user) | `UserService::setPrivilege()` (2.14.0): same `USER_WRQ` record with 14 or 0, name / card / password kept, privilege read back. `user.privilege`. Never run (2026-10-18) | I |
+| Privilege | **set** (admin / normal user) | `UserService::setPrivilege()` (2.14.0): same `USER_WRQ` record with 14 or 0, name / card / password kept, privilege read back. `user.privilege`. **C since 2026-10-20 (library 2.15.0):** `tools/zkprobe/user-privilege-write.php` — a test user made 14 then 0, each read back, name and password kept, every other user unchanged — twice on IT ROOM, Camelot and Good Wheels (`traces-2026-10-20/user-privilege-write-01/02.json`); and the owner's "Test" on IT ROOM 0 → 14 at 12:51 UTC | C |
+| Privilege | set **from the form's Device role** (2026-10-20) | `EmployeeDevicePropagator::applyRole()` → the same `setPrivilege()`: Admin / Super admin → 14, User → 0, Enroller / Not set → untouched. Only when the save CHANGED the role (`apply_role`), only where `user.privilege` is **C** (`Device::canSetPrivilegeOnSave()`); elsewhere the result says it was held back. Real roles differ per terminal, so an unchanged role never levels them | follows `user.privilege` |
 | Card | read | field in the user record (one card per user; `0xFFFFFFFF` = probably none) | C |
 | Card | write / clear | `UserService::setCard` (record rewrite, 0 clears), read back | C |
 | Card | enroll (tap) | card-scan capture | I |
@@ -63,7 +64,7 @@ The reference model: `CapabilitySet::defaults()` is the F18. Calibrated on IT RO
 | Fingerprint | write | `TemplateService::addTemplates()` — `SAVE_USERTEMPS` with the device's own record, add-only, read back. Write CONFIRMED on IT ROOM 2026-10-11; a real finger match not yet observed | I |
 | Fingerprint | delete one | `DELETE_USERTEMP` (19), table read before/after | I |
 | Password | read | password(8)@3 of the user record — equal to the system's copy on IT ROOM and Camelot, 2026-10-12 | C |
-| Password | write / keep | same `USER_WRQ` record; `save()` keeps the device's when not given (2.13.0 — before, every write erased it). The app writes only once this is C | I |
+| Password | write / keep | same `USER_WRQ` record; `save()` keeps the device's when not given (2.13.0 — before, every write erased it). The app writes it on every push. **C since 2026-10-20 (library 2.15.0):** `tools/zkprobe/user-password-write.php` — a test user's password written and read back, kept through a name write, roster unchanged — twice on IT ROOM, Camelot and Good Wheels (`traces-2026-10-20/user-password-write-01..04.json`) | C |
 | Punches | count | `GET_FREE_SIZES` (50), `FreeSizesCodec` — `records` equalled a full read on IT ROOM, Camelot and Good Wheels, 2026-10-18 | C |
 | Punches | **clear** | `AttendanceClearService` → `CLEAR_ATTLOG` (15) in one session with the count before and after (`AttendanceService::clearAll($expected)`, 2.14.0); refused unless a full read matched the count and every record decoded and was stored. `attendance.clear`. Never run (2026-10-18) | I |
 
@@ -95,9 +96,9 @@ first run.
 | Attendance | read | **windowed** (`PREPARE_BUFFER` 1503 / `READ_BUFFER` 1504); the push path loses the tail (DC-001) | C |
 | Attendance | count | `GET_FREE_SIZES` — 8,430, equal to a full read, 2026-10-18 | C |
 | Attendance | clear | never run on an F22; the F18's method is not inherited (2.14.0 sets it UNKNOWN) | U |
-| Privilege | set | never run on an F22 | U |
+| Privilege | set | the F18's `setPrivilege()`, same record. **C since 2026-10-20:** test user 14 then 0, read back, name and password kept, others unchanged, twice on On The Road (`user-privilege-write-01/02.json`) | C |
 
-**Password (2026-10-12):** read **C** (On The Road's one password equal to the system's copy); write / keep **I**, as on the F18 — the same record, and the app writes it only once this is C.
+**Password (2026-10-12):** read **C** (On The Road's one password equal to the system's copy). **Write / keep C since 2026-10-20:** a test user's password written and read back twice, kept through a name write, roster unchanged (`user-password-write-03/04.json`).
 
 ## inBIO460 — Glass Door
 
@@ -116,7 +117,7 @@ C3 / PullSDK access panel, **not** a standalone terminal (DC-003). `src/C3/Model
 | Attendance | read | `transaction` table, CRC-32 verified | C |
 | Clock | read / set | GET_PARAM "DateTime" / DATETIME (0x03) "DateTime=<packed>" — read 650 s slow, set and read back exact 2026-10-11 (DC-019) | C |
 | Password | read | `Password` field of the `user` row — all 4 equal to the system's copies, 2026-10-12 | C |
-| Password | write / keep | `Personnel::add/update` `Password`; an edit carries the row's own over. The app writes only once this is C | I |
+| Password | write / keep | `Personnel::add/update` `Password`; an edit carries the row's own over. The app writes it on every push. **C since 2026-10-20:** test user's password written and read back twice, kept through a name write, 315 users before and after, on Glass Door and Entrance (`user-password-write-05/06.json`) | C |
 | Privilege | set | the `user` row has a `Privilege` field; nothing writes it, and a panel has no menu to grant | N |
 | Attendance | count / clear | `GET_DATA_COUNT` (0x0A) exists, never sent; clearing `transaction` is not implemented (2026-10-18) | N |
 

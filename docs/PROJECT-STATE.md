@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-10-20**
+**Last updated: 2026-10-21**
 
 ---
 
@@ -20,10 +20,10 @@ cannot see:
 
 | Blocker | State on 2026-09-13 |
 |---|---|
-| **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It is still **not a git repository**: no history, no tags, no remote. **The windowed-read protocol fix lives only there**, on this box's filesystem, outside every repository. This is still the worst of the three. |
+| **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It has been a git repository since 2026-09-14 (all work committed through `v2.15.0`, 2026-10-21) but has **no remote**: its only copy is this box's disk. This is still the worst of the three. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| App repo not pushed | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. Everything through 2026-10-20 is **committed** on branch **`employees`** (branched from `camelot`) — **locally only**. The 2026-09-25 → 2026-10-19 working tree was committed in one go on 2026-10-19 by Yousif; the rest of 2026-10-19 and 2026-10-20 went in as four commits on 2026-10-20 (Users screen, statement selection, health-check fix, Cron jobs); the library at `/var/biometric-protocol` (2.10.0–2.14.0) was **not** part of that and is still uncommitted there. No branch has been pushed; `origin/main` is still the first commit. `employees` is not merged into `main`. Pushing and merging are the owner's call. |
+| App repo not pushed — **and this server CANNOT push** | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. As of 2026-10-21 **everything is committed, locally only**, on three branches: **`employees`** (`41181b2`, through the Cron jobs screen), and two branched from it — **`password-feature`** (keypad passwords and Device role) and **`export-employees`** (`5bfafe7`, the employee list export). The library is committed too (`ada8f15`, tag `v2.15.0`, 2.10.0–2.15.0). **No branch has been pushed**; `origin/main` is still the first commit, and local `main` is 4 commits ahead of it. A push on 2026-10-21 failed with *Host key verification failed*: this box has **no SSH key and no `gh`** (`~/.ssh` holds only `authorized_keys`), so it has never been able to push. Owner chose 2026-10-21 to push all branches at once once access exists — an SSH key added on GitHub, or an HTTPS token the owner types in. Merging into `main` is the owner's call. |
 | ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. On 2026-09-24 the working tree (2.7.0–2.9.0) was committed as `2180866` on `main`; **not tagged**. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
@@ -48,8 +48,8 @@ Projects/
 2026-09-14 the live library sits at `/var/biometric-protocol/` — the path the
 composer path repository has always pointed at — and
 `vendor/promoseven/biometric-protocol` is a symlink to it. So composer works. But
-that directory is **not a git repository and has no remote**, so it is still the
-only copy of the library in existence, backed up by nothing. See the blockers
+that repository **has no remote**, so it is still the only copy of the library in
+existence, backed up by nothing. See the blockers
 above before touching composer.
 
 ---
@@ -103,6 +103,40 @@ stays off — the clock-then-read job is the daily read the owner asked for.
 **The 5-minute health check never worked until 2026-10-20** (DC-024): `->tap()` on a
 model threw before queueing, and the stuck rows made every later run skip all four
 ZKTeco terminals. Fixed and committed 2026-10-20 (`413374c`); first working run 07:45 UTC.
+
+### Keypad passwords and terminal roles written from the system — DONE 2026-10-20, committed 2026-10-21 (not pushed)
+
+Branch **`password-feature`** (from `employees` at `41181b2`), committed 2026-10-21, plus library
+**2.14.1 / 2.15.0** in `/var/biometric-protocol` (committed `ada8f15`, tag `v2.15.0`, no remote). Owner:
+"apply the changes of writing password from the system to all … also the admin and
+normal user thing". Every terminal was proven with a temporary "zkt-test" user, twice
+(probes `tools/zkprobe/user-password-write.php`, new `user-privilege-write.php`; traces
+`tools/zkprobe/traces-2026-10-20/`): `password.write` CONFIRMED on F18, F22, inBIO460,
+TF1700; `user.privilege` CONFIRMED on F18 and F22 (C3 panels have no admin to grant).
+A push now writes the employee's keypad password everywhere, and the form's **Device
+role** is applied on a save when CHANGED (Admin/Super admin → administrator, User →
+normal user, Enroller/Not set untouched) — never when unchanged, because real roles
+differ per terminal. Per-room roles stay on the Enrollment dialog's Make administrator.
+DC-022 closed. The owner's test employee "Test" (1802) is an administrator on IT ROOM
+with a password — remove that when testing is over (owner).
+
+### Employee list export, PDF or Excel — BUILT 2026-10-21, committed on its own branch (not pushed)
+
+Owner: "if I select all employees, export all of them in PDF or Excel; if I select one
+of the companies, export that company's employees". Employees screen → **Export** →
+PDF / Excel. Exports exactly what the screen lists, every page of it: the tree node
+(all / company / department and below / unassigned), search, terminal and status. The
+filters moved out of `EmployeeController::index` into `EmployeeRosterQuery`, shared by
+both, so the file cannot list different people from the screen. `EmployeeRoster` builds
+the rows; `pdf.employee-roster` (landscape) and `EmployeeRosterWorkbook` (a column per
+terminal) write them. A terminal whose fingers were never read prints "?", never 0
+(rule 10). `GET /api/exports/employees[/excel]`, `employees.view`. Real roster: 236
+current staff → 16 pages in ~3 s; PROMOSEVEN alone 141.
+
+It is on branch **`export-employees`** (`5bfafe7`, from `41181b2`), **not** on
+`password-feature`: the two are separate branches that both touch `Employees.jsx` and
+`EmployeeController.php` (different hunks), so merging both into one line should need no
+hand-resolution, but that has not been tried.
 
 ### Cron jobs screen — BUILT and committed 2026-10-20
 
@@ -718,6 +752,24 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-21 — Employee list export; everything committed; push blocked by no credentials
+
+Owner asked how to make "Test" admin on IT ROOM but not Entrance: the Enrollment
+dialog's per-terminal Make administrator; the TF1700 has no role from the system
+(`user.privilege` N on C3). Raised, not started: the TF1700's own user table HAS
+`Privilege` (9) and `SuperAuthorize` (10), unlike the inBIO460, so "a panel has no admin"
+may be wrong for that model — needs read-only research first (owner to decide).
+Built the employee list export (see "Where we stopped") on `export-employees`.
+Committed `password-feature` and the library (`ada8f15`, `v2.15.0`). Push to GitHub
+failed — no SSH key on this box; owner will push all branches at once.
+
+### 2026-10-20 — Keypad passwords and terminal roles from the system, on every terminal
+
+On `password-feature`: write probes on IT ROOM (owner: IT ROOM only), then on all six
+(owner: "apply … to all devices"); per-model levels promoted in library 2.15.0 with pins;
+the form's Device role made to work (it was stored only). See "Where we stopped".
+Committed 2026-10-21.
+
 ### 2026-10-20 — A second clock set and read at 10:00, then the Cron jobs screen
 
 Owner asked for a second punch read at 10:00 Bahrain with the clock set first. Done

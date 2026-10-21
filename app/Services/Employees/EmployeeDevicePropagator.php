@@ -73,7 +73,7 @@ class EmployeeDevicePropagator
      * @param  Collection<int, Device>|iterable<Device>  $devices
      * @return array{written:list<array{device_id:int,device_name:string,pin:string,message:string,restored:list<string>}>, skipped:list<array{device_id:int,device_name:string,reason:string}>, failed:list<array{device_id:int,device_name:string,error:string}>}
      */
-    public function push(Employee $employee, iterable $devices, bool $toEmployeeCode = false): array
+    public function push(Employee $employee, iterable $devices, bool $toEmployeeCode = false, bool $applyRole = false): array
     {
         $written = [];
         $skipped = [];
@@ -191,11 +191,29 @@ class EmployeeDevicePropagator
                     $notes[] = 'Name not written: this panel\'s names are managed in ZKAccess.';
                 }
 
-                if ($idProblem !== null) {
+                /*
+                 * The Device role, when the save CHANGED it (owner, 2026-10-20: "make it
+                 * really work"). Only then: real roles differ per terminal (Ghassan is an
+                 * administrator on Camelot only), so a save that left the field alone must
+                 * never level them. Through setPrivilege() — the per-terminal button's
+                 * path — which reads the role back and audits it (rule 10).
+                 */
+                $roleProblem = null;
+                if ($applyRole) {
+                    try {
+                        if (($said = $this->applyRole($device, $employee)) !== '') {
+                            $notes[] = $said;
+                        }
+                    } catch (\Throwable $e) {
+                        $roleProblem = 'the role was not changed: '.$e->getMessage();
+                    }
+                }
+
+                if ($idProblem !== null || $roleProblem !== null) {
                     $failed[] = [
                         'device_id' => $device->id,
                         'device_name' => $device->name,
-                        'error' => 'Name written, but '.$idProblem,
+                        'error' => 'Name written, but '.implode(' Also, ', array_filter([$idProblem, $roleProblem])),
                     ];
 
                     continue;
@@ -229,6 +247,29 @@ class EmployeeDevicePropagator
         }
 
         return ['written' => $written, 'skipped' => $skipped, 'failed' => $failed];
+    }
+
+    /** One sentence for the result row; throws when the terminal refused or read back wrong. */
+    private function applyRole(Device $device, Employee $employee): string
+    {
+        $admin = $employee->terminalAdmin();
+        $role = fn (bool $a) => $a ? 'an administrator' : 'a normal user';
+
+        if ($admin === null) {
+            return $employee->privilege === 'enroller'
+                ? "Device role not changed on {$device->name}: Enroller has no equivalent on this terminal."
+                : '';
+        }
+        if (! $device->canSetPrivilegeOnSave()) {
+            return "Device role not changed on {$device->name}: changing a role from a save has not been proven on this terminal yet — use Make administrator in the employee's details.";
+        }
+
+        $held = $this->identity->activeMap($device, $employee)?->device_privilege;
+        if ($held !== null && ($held > 0) === $admin) {
+            return "Already {$role($admin)} on {$device->name}.";
+        }
+
+        return $this->users->setPrivilege($device, $employee, $admin)['message'];
     }
 
     /**

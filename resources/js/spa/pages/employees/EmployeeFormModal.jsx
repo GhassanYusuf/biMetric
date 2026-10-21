@@ -270,8 +270,9 @@ export default function EmployeeFormModal({
      * writes everything.
      *
      * The keypad password counts only where the model's password.write is CONFIRMED
-     * (2026-10-12); the server holds the write back everywhere else. The device role
-     * is not sent to terminals, so it cannot make one out of date.
+     * (2026-10-12); the server holds the write back everywhere else. The Device role
+     * counts when this form CHANGED it, where user.privilege is CONFIRMED (2026-10-20);
+     * the server applies it only then (EmployeeDevicePropagator::applyRole).
      */
     const initialCard = employee?.card_number && employee.card_number !== CARD_EMPTY_MARKER ? String(employee.card_number) : '';
     const cardChanged = form.card_number.trim() !== initialCard;
@@ -283,12 +284,26 @@ export default function EmployeeFormModal({
     const sameName = (held, name) => held != null && (held === name || (held.length >= 24 && name.startsWith(held)));
     const passwordChanged = passwordTouched.current && form.device_password !== '';
     const passwordWritable = (id) => devices.find((d) => d.id === id)?.capabilities?.['password.write']?.confirmed === true;
+    const roleChanged = isEdit ? (form.privilege || null) !== (employee.privilege ?? null) : !!form.privilege;
+    const roleWritable = (id) => devices.find((d) => d.id === id)?.capabilities?.['user.privilege']?.confirmed === true;
+    // Admin / Super admin → administrator, User → normal user; Enroller and Not set touch nothing.
+    const roleReachesTerminals = ['user', 'admin', 'superadmin'].includes(form.privilege);
+    const roleTerminals = onTerminals.filter(roleWritable).map((id) => devices.find((d) => d.id === id)?.name).filter(Boolean);
+    const roleHint = !roleChanged
+        ? 'Changing it changes the role on their terminals: Admin and Super admin become administrator, User a normal user.'
+        : !roleReachesTerminals
+            ? 'Enroller and Not set leave the terminals as they are.'
+            : roleTerminals.length > 0
+                ? `Saving makes them ${form.privilege === 'user' ? 'a normal user' : 'an administrator'} on ${roleTerminals.join(', ')}.`
+                : 'None of their terminals has had a role change proven yet, so the terminals keep their roles — use Make administrator in the details.';
     function outOfDate(id) {
         const t = enrolled.find((e) => e.id === id);
         if (!t || nameChanged || cardChanged) return true; // newly added, or edited here
         // A new keypad password, where this terminal's model has had a password write
         // read back (password.write CONFIRMED). Elsewhere a push would not write it.
         if (passwordChanged && passwordWritable(id)) return true;
+        // A changed Device role, where a role change has been read back on this terminal.
+        if (roleChanged && roleReachesTerminals && roleWritable(id)) return true;
         if (renumberOnly.includes(id)) return true;          // its user ID moves to the new code
         if (writableIds.includes(id)) {
             if (!sameName(t.held, form.name.trim())) return true;
@@ -808,10 +823,13 @@ export default function EmployeeFormModal({
                                         <TextField id="employee-birthday" type="date" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} error={err('birthday')} />
                                     </Row>
                                     <Row label="Device role" htmlFor="employee-privilege">
-                                        <SelectField id="employee-privilege" value={form.privilege} onChange={(e) => set('privilege', e.target.value)} error={err('privilege')}>
-                                            {isEdit && <option value="">Not set</option>}
-                                            {PRIVILEGES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                                        </SelectField>
+                                        <div>
+                                            <SelectField id="employee-privilege" value={form.privilege} onChange={(e) => set('privilege', e.target.value)} error={err('privilege')}>
+                                                {isEdit && <option value="">Not set</option>}
+                                                {PRIVILEGES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                                            </SelectField>
+                                            <p className="mt-1 text-xs text-slate-500">{roleHint}</p>
+                                        </div>
                                     </Row>
                                 </div>
 

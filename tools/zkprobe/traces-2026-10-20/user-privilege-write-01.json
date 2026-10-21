@@ -1,0 +1,188 @@
+{
+    "label": "user-privilege-write",
+    "host": "46.184.163.106,192.168.7.63,87.237.196.60,192.168.7.62",
+    "started_at": "2026-10-20T13:20:28+00:00",
+    "question": "Does setUserPrivilege() read back 14 then 0 on a test user, keeping its name and password, with every other user unchanged?",
+    "devices": [
+        {
+            "device_id": 5,
+            "name": "Good Wheels",
+            "host": "46.184.163.106",
+            "model": "F18/ID",
+            "steps": [
+                {
+                    "at": "2026-10-20T13:20:29+00:00",
+                    "step": "roster before",
+                    "users": 18,
+                    "admins": 1
+                },
+                {
+                    "at": "2026-10-20T13:20:38+00:00",
+                    "step": "test user added",
+                    "user_id": "8"
+                },
+                {
+                    "at": "2026-10-20T13:20:42+00:00",
+                    "step": "made administrator and read back",
+                    "user_id": "8",
+                    "privilege": 14,
+                    "expected": 14,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:20:46+00:00",
+                    "step": "made normal user and read back",
+                    "user_id": "8",
+                    "privilege": 0,
+                    "expected": 0,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:20:51+00:00",
+                    "step": "roster after",
+                    "users": 18,
+                    "unchanged": true
+                }
+            ],
+            "roster_unchanged": true,
+            "verdict": "user.privilege reads back"
+        },
+        {
+            "device_id": 11,
+            "name": "On The Road",
+            "host": "192.168.7.63",
+            "model": "F22/ID",
+            "steps": [
+                {
+                    "at": "2026-10-20T13:20:52+00:00",
+                    "step": "roster before",
+                    "users": 10,
+                    "admins": 2
+                },
+                {
+                    "at": "2026-10-20T13:21:00+00:00",
+                    "step": "test user added",
+                    "user_id": "1"
+                },
+                {
+                    "at": "2026-10-20T13:21:04+00:00",
+                    "step": "made administrator and read back",
+                    "user_id": "1",
+                    "privilege": 14,
+                    "expected": 14,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:21:07+00:00",
+                    "step": "made normal user and read back",
+                    "user_id": "1",
+                    "privilege": 0,
+                    "expected": 0,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:21:11+00:00",
+                    "step": "roster after",
+                    "users": 10,
+                    "unchanged": true
+                }
+            ],
+            "roster_unchanged": true,
+            "verdict": "user.privilege reads back"
+        },
+        {
+            "device_id": 12,
+            "name": "Camelot",
+            "host": "87.237.196.60",
+            "model": "F18",
+            "steps": [
+                {
+                    "at": "2026-10-20T13:21:12+00:00",
+                    "step": "roster before",
+                    "users": 24,
+                    "admins": 2
+                },
+                {
+                    "at": "2026-10-20T13:21:21+00:00",
+                    "step": "test user added",
+                    "user_id": "7"
+                },
+                {
+                    "at": "2026-10-20T13:21:24+00:00",
+                    "step": "made administrator and read back",
+                    "user_id": "7",
+                    "privilege": 14,
+                    "expected": 14,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:21:29+00:00",
+                    "step": "made normal user and read back",
+                    "user_id": "7",
+                    "privilege": 0,
+                    "expected": 0,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:21:34+00:00",
+                    "step": "roster after",
+                    "users": 24,
+                    "unchanged": true
+                }
+            ],
+            "roster_unchanged": true,
+            "verdict": "user.privilege reads back"
+        },
+        {
+            "device_id": 15,
+            "name": "IT ROOM",
+            "host": "192.168.7.62",
+            "model": "F18",
+            "steps": [
+                {
+                    "at": "2026-10-20T13:21:34+00:00",
+                    "step": "roster before",
+                    "users": 8,
+                    "admins": 3
+                },
+                {
+                    "at": "2026-10-20T13:21:43+00:00",
+                    "step": "test user added",
+                    "user_id": "3"
+                },
+                {
+                    "at": "2026-10-20T13:21:47+00:00",
+                    "step": "made administrator and read back",
+                    "user_id": "3",
+                    "privilege": 14,
+                    "expected": 14,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:21:51+00:00",
+                    "step": "made normal user and read back",
+                    "user_id": "3",
+                    "privilege": 0,
+                    "expected": 0,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-10-20T13:21:56+00:00",
+                    "step": "roster after",
+                    "users": 8,
+                    "unchanged": true
+                }
+            ],
+            "roster_unchanged": true,
+            "verdict": "user.privilege reads back"
+        }
+    ]
+}

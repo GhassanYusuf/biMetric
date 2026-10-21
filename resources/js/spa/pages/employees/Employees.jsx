@@ -28,6 +28,8 @@ export default function Employees() {
     const lastToCode = useRef(false);
     // The card from the last save (digits, '' to remove, null = unchanged), for Retry.
     const lastCard = useRef(null);
+    // Whether the last save changed the Device role, so a Retry applies it again.
+    const lastApplyRole = useRef(false);
     /*
      * LIVE (CLAUDE.md rule 18). Any change to employees, their terminal mappings, cards
      * or fingerprint copies — by this operator, another one, or a background job —
@@ -311,13 +313,15 @@ export default function Employees() {
      * throwing here would leave the form open over a record that was already
      * written — so its failure is a toast, not an exception.
      */
-    async function propagate(employee, deviceIds, toEmployeeCode = false) {
+    async function propagate(employee, deviceIds, toEmployeeCode = false, applyRole = false) {
         if (!deviceIds?.length) return null;
 
         try {
             const res = await api.post(`/employees/${employee.id}/propagate`, {
                 device_ids: deviceIds,
                 to_employee_code: toEmployeeCode,
+                // The Device role, only when this save changed it (2026-10-20).
+                apply_role: applyRole,
             });
             /*
              * The message names every terminal written, failed and skipped with why,
@@ -458,8 +462,8 @@ export default function Employees() {
     }
 
     // Push → card (if changed) → read back, on the terminals the push reached.
-    async function putOnTerminals(employee, deviceIds, toCode, card) {
-        const pushed = await withCard(employee, await propagate(employee, deviceIds, toCode), card);
+    async function putOnTerminals(employee, deviceIds, toCode, card, applyRole = false) {
+        const pushed = await withCard(employee, await propagate(employee, deviceIds, toCode, applyRole), card);
         if (!pushed) return pushed;
         const reached = (pushed.written ?? []).map((w) => w.device_id);
         return { ...pushed, reads: reached.length ? await readBack(employee, reached) : [] };
@@ -516,7 +520,7 @@ export default function Employees() {
     /** One terminal again, from the form's result row. */
     async function retryPropagate(employee, deviceIds) {
         // A retry repeats the operator's last answers (user ID, card), not new defaults.
-        const result = await putOnTerminals(employee, deviceIds, lastToCode.current, lastCard.current);
+        const result = await putOnTerminals(employee, deviceIds, lastToCode.current, lastCard.current, lastApplyRole.current);
         await load(search, filters);
         return result;
     }
@@ -529,6 +533,8 @@ export default function Employees() {
      */
     async function createEmployee(payload, deviceIds, photo, card = null) {
         lastCard.current = card;
+        // A new person gets the role chosen for them, when one was.
+        lastApplyRole.current = !!payload.privilege;
         const res = await api.post('/employees', payload); // throws ApiError(422) for the form to show
         setRows((prev) => [res.data, ...prev]);
         const saved = await applyPhoto(res.data, photo);
@@ -536,7 +542,7 @@ export default function Employees() {
             setFormOpen(false);
             return null;
         }
-        const result = await putOnTerminals(saved, deviceIds, false, card);
+        const result = await putOnTerminals(saved, deviceIds, false, card, lastApplyRole.current);
         return { employee: saved, result };
     }
 
@@ -580,6 +586,9 @@ export default function Employees() {
 
     async function updateEmployee(payload, deviceIds, photo, card = null, removeFrom = []) {
         lastCard.current = card;
+        // Only a CHANGED role goes to the terminals: real roles differ per terminal, and
+        // a save that left the field alone must not level them (2026-10-20).
+        lastApplyRole.current = (payload.privilege ?? null) !== (editing.privilege ?? null);
         const res = await api.put(`/employees/${editing.id}`, payload); // 422 → inline errors
         setRows((prev) => prev.map((r) => (r.id === editing.id ? res.data : r)));
         const saved = await applyPhoto(res.data, photo);
@@ -665,7 +674,7 @@ export default function Employees() {
          */
         lastToCode.current = toCode;
 
-        const result = { ...(await putOnTerminals(saved, deviceIds, toCode, card)), removals };
+        const result = { ...(await putOnTerminals(saved, deviceIds, toCode, card, lastApplyRole.current)), removals };
         // The push changes what the terminals hold, which the roster reports. Refetch
         // rather than guessing — the commands run on a worker and land shortly after.
         await load(search, filters);

@@ -8,6 +8,7 @@ use Promoseven\Biometric\Capability\Capability;
 
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\AttendanceLog;
+use App\Models\AuditLog;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
@@ -935,6 +936,9 @@ class EmployeePropagationTest extends TestCase
     public function test_a_push_keeps_the_terminal_password_until_writing_one_is_confirmed(): void
     {
         $driver = new FakeBiometricDriver;
+        // Every model this project owns is CONFIRMED since 2026-10-20; the hold-back is
+        // for one that is not (a new model, a generic terminal).
+        $driver->capabilityOverrides = [Capability::PASSWORD_WRITE => Capability::IMPLEMENTED];
         $this->app->instance(BiometricDeviceDriver::class, $driver);
         Tenancy::set($this->tenant->id);
         $this->employee->update(['device_password' => '4321']);
@@ -944,6 +948,59 @@ class EmployeePropagationTest extends TestCase
 
         $this->assertCount(1, $driver->passwordsWritten);
         $this->assertNull(array_values($driver->passwordsWritten)[0], 'held back: null keeps the terminal\'s password');
+    }
+
+    /*
+     * The Device role on the form (2026-10-20, owner: "make it really work"). Applied
+     * only when the save changed it (apply_role), only where user.privilege is
+     * CONFIRMED, through setPrivilege() — read back and audited.
+     */
+    public function test_a_changed_device_role_is_applied_where_confirmed_and_audited(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [Capability::USER_PRIVILEGE => Capability::CONFIRMED];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        Tenancy::set($this->tenant->id);
+        $this->employee->update(['privilege' => 'superadmin']);
+        Tenancy::clear();
+
+        $res = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", ['device_ids' => [$this->adopted->id], 'apply_role' => true])->assertOk();
+
+        $this->assertSame([[array_values($driver->privilegeWrites)[0][0], true]], $driver->privilegeWrites, 'Super admin is an administrator on the terminal');
+        $this->assertStringContainsString('is now an administrator', $res->json('data.written.0.message'));
+        $this->assertTrue(AuditLog::withoutGlobalScopes()->where('action', 'device.privilege_changed')->exists());
+    }
+
+    public function test_a_save_that_did_not_change_the_role_never_touches_it(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [Capability::USER_PRIVILEGE => Capability::CONFIRMED];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        Tenancy::set($this->tenant->id);
+        $this->employee->update(['privilege' => 'user']);
+        Tenancy::clear();
+
+        // Real roles differ per terminal: a name-only save must not level them.
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", ['device_ids' => [$this->adopted->id]])->assertOk();
+
+        $this->assertSame([], $driver->privilegeWrites);
+    }
+
+    public function test_a_role_change_is_held_back_where_it_was_never_proven_and_says_so(): void
+    {
+        $driver = new FakeBiometricDriver;
+        // The F18 and F22 are CONFIRMED since 2026-10-20; the hold-back is for a model
+        // that is not (a new model, a generic terminal).
+        $driver->capabilityOverrides = [Capability::USER_PRIVILEGE => Capability::IMPLEMENTED];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        Tenancy::set($this->tenant->id);
+        $this->employee->update(['privilege' => 'admin']);
+        Tenancy::clear();
+
+        $res = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", ['device_ids' => [$this->adopted->id], 'apply_role' => true])->assertOk();
+
+        $this->assertSame([], $driver->privilegeWrites);
+        $this->assertStringContainsString('has not been proven on this terminal', $res->json('data.written.0.message'));
     }
 
     public function test_a_push_writes_the_password_once_the_model_has_confirmed_it(): void

@@ -61,7 +61,11 @@ class Employee extends Model
         'resigned_at',
     ];
 
-    /** The device-side privilege levels this app records. Stored, never pushed. */
+    /**
+     * The "Device role" on the form (ZKAccess's privilege names). Since 2026-10-20 a
+     * CHANGE to it is applied on the terminals (terminalAdmin(), EmployeeDevicePropagator);
+     * an unchanged one never is, because real roles differ per terminal.
+     */
     public const PRIVILEGES = ['user', 'enroller', 'admin', 'superadmin'];
 
     /** Employment types. A label only: no attendance rule reads it (owner, 2026-10-12). */
@@ -140,6 +144,21 @@ class Employee extends Model
     public function isResigned(): bool
     {
         return $this->resigned_at !== null;
+    }
+
+    /**
+     * What the form's Device role means on a terminal: true administrator (may open its
+     * menu), false normal user, null "leave the terminal as it is". The ZKTeco family
+     * this app writes has only those two (0 / 14), so Admin and Super admin are both an
+     * administrator there, and Enroller has no equivalent (owner, 2026-10-20).
+     */
+    public function terminalAdmin(): ?bool
+    {
+        return match ($this->privilege) {
+            'admin', 'superadmin' => true,
+            'user' => false,
+            default => null,
+        };
     }
 
     /**

@@ -983,3 +983,36 @@ host app writes passwords only where the level is CONFIRMED, so until
 `tools/zkprobe/user-password-write.php` (test user, owner's go-ahead) has run on a model,
 pushes there KEEP the terminal's password instead of writing the system's.
 
+**2026-10-20, IT ROOM (F18, 192.168.7.62), owner's go-ahead for IT ROOM only:** the
+probe ran twice (11:48:21, 11:48:54 UTC). Test user "zkt-test" on id 3: passwords 1357
+and 2468 written and **read back equal**; a name write with no password **kept** 2468
+(first hardware proof of the 2.13.0 keep fix); user deleted, roster 8 → 8 unchanged.
+Traces `tools/zkprobe/traces-2026-10-20/user-password-write-01.json`, `-02.json`.
+`password.write` is **CONFIRMED for IT ROOM only**, stored in that terminal's
+`capabilities_cache` (the same per-terminal mechanism as a fingerprint upload earned on
+one terminal) and kept across re-probes since library 2.14.1 put it in `unprobeable()`.
+The F18 MODEL level stays IMPLEMENTED: Camelot (same firmware) and Good Wheels (F18/ID,
+2021 firmware) have not been written, and the owner chose IT ROOM only.
+
+**`user.privilege` (set administrator / normal user), first hardware run, 2026-10-20
+12:51 UTC, IT ROOM (F18, 192.168.7.62):** `DeviceUserSyncService::setPrivilege()` on the
+owner's test employee "Test" (user 1000): privilege 0 → **14, read back 14**; a fresh roster
+read showed name "Test" and the keypad password kept. One run, so the level stays
+IMPLEMENTED: rule 16 wants it repeated (14 → 0 → 14) before IT ROOM is recorded as
+CONFIRMED, which is what lets the form's Device role apply on a save there.
+
+**Superseded the same day — every model, owner's go-ahead ("apply … to all devices, also
+the admin and normal user thing"), library 2.15.0:**
+- `password.write` **CONFIRMED on the F18, F22, inBIO460 and TF1700.** The password probe
+  ran twice on every terminal: Camelot, Good Wheels, On The Road (13:00 and 13:02 UTC,
+  `user-password-write-03/04.json`), Glass Door and Entrance (13:04 and 13:06 UTC,
+  `-05/06.json`), as on IT ROOM. All read back, all kept the password through a name
+  write, all rosters unchanged (315 on each C3). IT ROOM's per-terminal override was
+  cleared: the model level covers it.
+- `user.privilege` **CONFIRMED on the F18 and F22** (F22 was UNKNOWN; set IMPLEMENTED
+  first, from the shared record, then run). New probe `tools/zkprobe/user-privilege-write.php`
+  (test user made 14 then 0, each read back, name and password kept, every other user's
+  privilege unchanged) ran twice on IT ROOM, Camelot, Good Wheels and On The Road (13:20
+  and 13:22 UTC, `user-privilege-write-01/02.json`). C3 stays not_implemented: a panel
+  user has no terminal-menu administrator to grant.
+

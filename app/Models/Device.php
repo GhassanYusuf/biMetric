@@ -291,6 +291,16 @@ class Device extends Model
         return $this->supports(Capability::USER_DELETE) && $this->supports(Capability::USER_WRITE);
     }
 
+    /**
+     * Whether a save may change a person's administrator / normal-user role here on its
+     * own (2026-10-20). CONFIRMED only — as for the keypad password: a role change that
+     * rides a save is not a button the operator pressed knowingly against a warning.
+     */
+    public function canSetPrivilegeOnSave(): bool
+    {
+        return $this->capabilitySet()->level(Capability::USER_PRIVILEGE) === Capability::CONFIRMED;
+    }
+
     /** Whether a name/card can be written to a user here (a C3 panel: no, 2026-09-24). */
     public function canWriteUsers(): bool
     {
