@@ -16,6 +16,19 @@ export function can(device, capability) {
     return device?.capabilities?.[capability]?.usable === true;
 }
 
+/**
+ * How this terminal moves a person to a new user ID — the server's own rule
+ * (EmployeeDevicePropagator, CLAUDE.md rule 21), so a screen never promises a move the
+ * server will not make, or hides one it will: 'renumber' in place (the C3 panels);
+ * 'readd', deleting and re-adding them with card and fingerprints put back (the F18,
+ * which refuses an in-place move); null when it cannot.
+ */
+export function idMoveMethod(device) {
+    if (can(device, 'user.renumber')) return 'renumber';
+    if (can(device, 'user.delete') && can(device, 'user.write')) return 'readd';
+    return null;
+}
+
 export const PROTOCOL_LABELS = {
     binary: 'Binary (UDP/TCP 4370)',
     csl_http: 'CSL HTTP',

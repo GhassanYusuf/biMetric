@@ -147,9 +147,12 @@ under it after the last holder left, and its roster entry is not someone else's 
 Automatic numbering is unchanged. Syed is now 770280340 on Good Wheels, read back
 (DC-026). **Owner to answer:** 315 punches under user 8 on Good Wheels, 2024-07-28 →
 2025-04-21, are attributed to nobody — if user 8 was always Syed, extend his mapping
-back and run `attendance:reattribute 5 --dry-run` first. Also open: the employee form
-does not offer an F18 user-ID move (it checks only `user.renumber`); the row's Push
-does — fix offered, not done.
+back and run `attendance:reattribute 5 --dry-run` first. The employee form now
+offers the F18 user-ID move too (`idMoveMethod()` in `devices/parts.jsx`, the server's
+rule: in place, or re-add), shows the hint whenever a terminal's ID differs from the
+Personnel ID, and **always asks before a re-add even with auto-push on** (auto-push is
+ON; 14 people on the F18s had a mismatched ID: Camelot 11, Good Wheels 3). Not yet
+checked in a browser — no browser automation on the owner's side.
 
 ### Employee list export, PDF or Excel — BUILT 2026-10-21, committed on its own branch (not pushed)
 

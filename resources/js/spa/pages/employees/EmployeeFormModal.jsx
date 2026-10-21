@@ -7,7 +7,7 @@ import { useEscapeKey } from '../../shared/useEscapeKey';
 import TransferPicker from './TransferPicker';
 import { slotName } from './FingerPicker';
 import { formatDeviceError } from '../devices/statusParts';
-import { can as canDevice } from '../devices/parts';
+import { can as canDevice, idMoveMethod } from '../devices/parts';
 import { FixButton, useTerminalFix } from './TerminalFixes';
 import Combobox from '../../shared/Combobox';
 import { CountrySelect, PhoneField, phoneError } from '../../shared/CountryFields';
@@ -308,8 +308,10 @@ export default function EmployeeFormModal({
         if (writableIds.includes(id)) {
             if (!sameName(t.held, form.name.trim())) return true;
             const code = String(form.employee_code).trim();
+            // Its user ID is not the Personnel ID and it can move it, in place or by
+            // re-adding (the F18) — idMoveMethod, the server's rule (2026-10-21).
             if (t.pin != null && String(t.pin) !== code && /^\d{1,9}$/.test(code)
-                && canDevice(devices.find((d) => d.id === id), 'user.renumber')) return true;
+                && idMoveMethod(devices.find((d) => d.id === id))) return true;
             if (systemCard && String(t.card ?? '') !== systemCard) return true;
             if (t.fingers && storedFingers.some((slot) => !t.fingers.includes(slot))) return true;
         }
@@ -590,15 +592,21 @@ export default function EmployeeFormModal({
     // Terminals the resignation takes them off — what the save will do, said beside the date.
     const resignRemoves = resigned ? removeFrom.map(terminalName) : [];
 
-    // Which terminals a changed Personnel ID would move on, and which keep the old one.
+    /*
+     * Which terminals hold them under a user ID other than this Personnel ID, and
+     * whether the push moves it there. Shown whenever they differ — not only when the
+     * code was changed in this form: Syed's CPR was already right and Good Wheels still
+     * had him as 8, and nothing on the form said so (2026-10-21, DC-026).
+     */
     const newCode = String(form.employee_code).trim();
-    const idPlan = isEdit && /^\d{1,9}$/.test(newCode) && newCode !== String(employee.employee_code)
+    const idPlan = isEdit && /^\d{1,9}$/.test(newCode)
         ? enrolled.reduce((plan, t) => {
             if (t.pin == null || String(t.pin) === newCode) return plan;
             const label = `${t.name} (${t.pin})`;
-            (canDevice(devices.find((d) => d.id === t.id), 'user.renumber') ? plan.moves : plan.keeps).push(label);
+            const method = idMoveMethod(devices.find((d) => d.id === t.id));
+            (method === 'renumber' ? plan.moves : method === 'readd' ? plan.readds : plan.keeps).push(label);
             return plan;
-        }, { moves: [], keeps: [] })
+        }, { moves: [], readds: [], keeps: [] })
         : null;
 
     return (
@@ -674,6 +682,11 @@ export default function EmployeeFormModal({
                                                 {idPlan.moves.length > 0 && (
                                                     <span className="block text-slate-600">
                                                         Moves to this ID on {idPlan.moves.join(', ')} when you push — card and fingerprints kept.
+                                                    </span>
+                                                )}
+                                                {idPlan.readds.length > 0 && (
+                                                    <span className="block text-slate-600">
+                                                        Moves to this ID on {idPlan.readds.join(', ')} when you push, by re-adding them — card and fingerprints put back. You are asked first.
                                                     </span>
                                                 )}
                                                 {idPlan.keeps.length > 0 && (

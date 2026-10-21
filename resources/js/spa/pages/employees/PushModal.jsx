@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { can } from '../devices/parts';
+import { can, idMoveMethod } from '../devices/parts';
 import { Button, Card, InlineAlert } from '../../shared/ui';
 import { useEscapeKey } from '../../shared/useEscapeKey';
 import { FOCUS } from '../../shared/theme';
@@ -59,8 +59,9 @@ export default function PushModal({ employee, devices, onSubmit, onRetry, onClos
         if (codeIsPin && t.pin != null && String(t.pin) !== code) {
             // Each model moves an ID its own way (rule 21): in place, or — the F18 —
             // by re-adding with card, fingerprints and admin rights put back.
-            if (can(device, 'user.renumber')) return { ...t, note: `User ID ${t.pin} → ${code}, card and fingerprints kept.` };
-            if (can(device, 'user.delete')) return { ...t, note: `User ID ${t.pin} → ${code} by re-adding them, with card, fingerprints and admin rights put back.` };
+            const method = idMoveMethod(device);
+            if (method === 'renumber') return { ...t, note: `User ID ${t.pin} → ${code}, card and fingerprints kept.` };
+            if (method === 'readd') return { ...t, note: `User ID ${t.pin} → ${code} by re-adding them, with card, fingerprints and admin rights put back.` };
             return { ...t, note: `Keeps user ID ${t.pin} — this terminal cannot change an ID.`, noteTone: 'warn' };
         }
         return experimental ? { ...t, note: 'Name writes are new on this terminal — check the result.', noteTone: 'warn' } : t;

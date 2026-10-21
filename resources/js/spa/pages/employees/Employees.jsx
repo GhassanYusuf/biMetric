@@ -7,7 +7,7 @@ import { useDeviceClass } from '../../shared/useDeviceClass';
 import { useConfirm } from '../../shared/confirm';
 import { useToast } from '../../shared/toast';
 import { SkeletonTable } from '../../shared/ui';
-import { can as canDevice } from '../devices/parts';
+import { can as canDevice, idMoveMethod } from '../devices/parts';
 import EmployeesDesktop from './EmployeesDesktop';
 import EmployeesMobile from './EmployeesMobile';
 import EmployeeFormModal from './EmployeeFormModal';
@@ -576,9 +576,12 @@ export default function Employees() {
          */
         let idLine = '';
         if (String(map.device_user_id) !== code && /^\d{1,9}$/.test(code)) {
-            idLine = canDevice(device, 'user.renumber')
+            const method = idMoveMethod(device);
+            idLine = method === 'renumber'
                 ? ` User ID ${map.device_user_id} → ${code}, card and fingerprints kept.`
-                : ` Keeps user ID ${map.device_user_id} — this terminal cannot change an ID.`;
+                : method === 'readd'
+                    ? ` User ID ${map.device_user_id} → ${code} by re-adding them: removed, added under the new ID, card and fingerprints put back and checked.`
+                    : ` Keeps user ID ${map.device_user_id} — this terminal cannot change an ID.`;
         }
 
         return `${terminal} (user ID ${map.device_user_id}): ${name}.${idLine}`;
@@ -618,24 +621,33 @@ export default function Employees() {
             const map = (editing.enrollments ?? []).find((e) => e.device_id === id && e.is_live);
             return !map || String(map.device_user_id) !== code;
         });
-        const moving = toCode && (deviceIds ?? []).some((id) => {
+        const methodFor = (id) => {
             const map = (editing.enrollments ?? []).find((e) => e.device_id === id && e.is_live);
-            return map && String(map.device_user_id) !== code && canDevice(list.find((d) => d.id === id), 'user.renumber');
-        });
+            return map && String(map.device_user_id) !== code ? idMoveMethod(list.find((d) => d.id === id)) : null;
+        };
+        const moving = toCode && (deviceIds ?? []).some((id) => methodFor(id) === 'renumber');
+        // A re-add deletes them from the terminal before adding them back (the F18).
+        const readding = toCode && (deviceIds ?? []).some((id) => methodFor(id) === 'readd');
 
         /*
          * With the company setting employees.auto_push_on_save ON, the save pushes
          * without asking (the owner's choice, made knowingly — see toggleAutoPush);
          * the per-terminal result rows still say what each terminal did. OFF, the
-         * question below stays.
+         * question below stays. A RE-ADD IS ALWAYS ASKED (2026-10-21): it deletes the
+         * person from the terminal and adds them back, so it is not something a routine
+         * edit of a job title should set off unseen — 14 people on the F18s had an ID
+         * that differs from their Personnel ID when this went in.
          */
-        const push = deviceIds?.length > 0 && (autoPush || await confirm({
+        const push = deviceIds?.length > 0 && ((autoPush && !readding) || await confirm({
             title: `Push ${saved.name} to the terminals?`,
             body: [
                 'Saved. Pushing now changes this on each terminal:',
                 ...deviceIds.map((id) => describePush(editing, saved, id, list)),
                 ...(moving
                     ? ['Changing a user ID copies their record, card and fingerprints off the terminal, re-writes it under the new ID and checks everything; if a check fails, the original is put back. Punches under the old ID still count for them.']
+                    : []),
+                ...(readding
+                    ? ['Re-adding saves their card and fingerprints, removes them from the terminal, adds them under the new ID and writes the card and fingerprints back, then checks. It refuses before removing anything if it could not put them back. Punches under the old ID still count for them.']
                     : []),
                 ...(card == null
                     ? ['Fingerprints and card are not touched. Until you push, the terminals keep the old details.']
