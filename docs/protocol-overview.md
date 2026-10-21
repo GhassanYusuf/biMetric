@@ -279,7 +279,7 @@ This is the trap. The same F22, in one sitting:
 | Table | Request | `CMD_PREPARE_BUFFER` answer |
 |---|---|---|
 | Attendance | `CMD_ATTLOG_RRQ` | `ACK_OK`, size 326,124 — **supported** |
-| Templates | `CMD_DB_RRQ` + `FCT_FINGERTMP` | `ACK_OK`, size 18,486 — **supported** |
+| Templates | `CMD_DB_RRQ` + `FCT_FINGERTMP` | `ACK_OK`, size 18,486 — **supported**. An F18 with NO templates answers with **no data at all** (0 bytes; IT-Office 2026-10-21) — an empty table, not an unreadable one (library 2.16.1) |
 | Users | `CMD_USERTEMP_RRQ` | reply **4991** — **not supported** |
 
 So a caller **must negotiate per read**, not per device, and must treat a refusal

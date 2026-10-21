@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | FIXED |
 | DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | FIXED |
 | DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | FIXED |
 | DC-024 | 2026-10-18 to 2026-10-20 | Good Wheels, On The Road, Camelot, IT ROOM | The 5-minute health check never ran: it threw before queueing, then skipped every terminal | FIXED |
@@ -101,6 +102,38 @@ Template:
 ---
 
 ## Entries
+
+### DC-027 — A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown"
+
+- **Date:** 2026-10-21
+- **Devices:** IT-Office (F18, 192.168.7.64); controls Good Wheels (F18/ID, 46.184.163.106), Camelot (F18, 87.237.196.60), On The Road (F22, 192.168.7.63)
+- **Direction:** both — a read decided a write would not happen
+- **Symptom:** Owner pushed Ghassan to IT-Office right after the terminal was wiped:
+  "it gives success but his fingerprint did not work".
+- **What was done:** read-only investigation, then a library fix.
+  - Read-only: IT-Office held Ghassan (user 830108246, card 7566580, password) and no
+    templates; the system holds two of his fingers (slots 3, 6). No
+    `employee.fingerprints_pushed` in the audit log. His fingers read back `null`
+    (unknown), so `FingerprintPusher` skipped him ("its fingers would not decode").
+  - Cause in the library: `UserService::all(true)` made every user `null` when the
+    template table decoded to no records — empty and unreadable looked the same.
+  - Probe `tools/zkprobe/empty-template-table.php` (READ-ONLY, new): IT-Office's
+    template read returned **0 bytes**; control Good Wheels 28,610 bytes, prefix
+    `be6f0000` (28,606), 33 templates. `BulkReader` returns `''` only for the device's
+    own "nothing to send"; a failed transfer throws.
+- **Root cause:** library ≤ 2.16.0 treated an empty template table as "unknown". Every
+  wiped or brand-new terminal was therefore unable to receive a first finger from the
+  system, on every model using `UserService::all()`.
+- **Fix:** library **2.16.1** — `''` or a 4-byte length of 0 is an empty table: `[]`
+  for every user; bytes that decode to nothing stay `null`. `UserFingerSlotsTest` (4).
+- **Verified:** read-only through the fixed library: IT-Office → Ghassan `[]` (was
+  `null`); Good Wheels 19/19, Camelot 24/24, On The Road 8/8 users' finger slots
+  identical to the system's previous read (rule 15 re-confirmation; IT ROOM, the usual
+  F18 reference, was offline — Camelot is the F18 control). Not yet: Ghassan's fingers
+  actually written to IT-Office — the owner's next push.
+- **Evidence:** `tools/zkprobe/traces-2026-10-21/empty-template-table-01.json`.
+- **Status:** FIXED — the write itself to be confirmed by the owner's push.
+- **Keywords:** fingerprint not pushed, empty template table, 0 bytes, fingerSlots null, unknown fingers, FingerprintPusher skipped, its fingers would not decode, wiped terminal, new terminal, UserService::all, slotsByUserId
 
 ### DC-026 — A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal
 
