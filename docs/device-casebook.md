@@ -203,6 +203,13 @@ Template:
        what happened. The entry keeps **1000 reserved on IT ROOM** — a future employee
        given code 1000 would not be pushed there until it is cleared. To undo: set
        `claim_status` back, or delete row 1433, if the owner wants 1000 reusable.
+    5. **Owner, 2026-10-21: "make code 1000 free again on IT ROOM".** Checked first:
+       no employee with code 1000, no mapping on IT ROOM pin 1000, 1000 not on the
+       terminal; 9 unattributed punches under it (Test's, 2026-10-20 12:00 →
+       2026-10-21 08:14), which a new holder's window starting later cannot reach.
+       Row 1433 deleted 11:58:59 UTC (database only); the resolver then answers 1000 as
+       free on IT ROOM. The row as it was, to restore it if ever needed:
+       `{"id": "1433", "device_id": "15", "device_uid": 28, "device_user_id": "1000", "device_name": "Test", "device_privilege": 14, "fingerprint_slots": "[3]", "claim_status": "ignored", "first_seen_at": "2026-10-20 12:51:27.447", "last_seen_at": "2026-10-21 08:41:28.863"}`
   - First live run of a delete on the TF1700 (Entrance): succeeded and verified.
 - **Root cause:** `destroyByCode()` (`EmployeeController`, commit `4f89663`) copied
   `destroy()`: it deletes the record only. The screen's Delete warns about exactly this

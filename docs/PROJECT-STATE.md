@@ -132,8 +132,8 @@ Why it always clears terminals: the first version (same morning) deleted the rec
 only. The owner deleted "Test User" (employee 1802, Personnel ID 1000) with it at
 08:12 UTC and could still punch — casebook **DC-025**. With the owner's go-ahead, user
 1000 was removed from IT ROOM, Entrance and On The Road at 09:03 UTC (record and finger
-saved first, verified by re-read). Side effect: **1000 stays reserved on IT ROOM**
-(roster entry 1433, `ignored`) — clear it if the code is to be reused. The endpoint
+saved first, verified by re-read). IT ROOM's reservation of 1000 (roster entry 1433)
+was then deleted at the owner's request, so code 1000 is free there again. The endpoint
 was then proven live on IT ROOM (test employee 1804, 09:17 UTC: removed in 8 s, record
 deleted on confirmation, read back). The "Test" employee note under the password feature no longer applies.
 
