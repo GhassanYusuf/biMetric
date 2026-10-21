@@ -130,6 +130,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
      */
     Route::get('employees/duplicate-groups', [DuplicateScanController::class, 'index']);
     Route::post('employees/merge/preview', [DuplicateScanController::class, 'preview']);
+    // Delete by Personnel ID (employee_code) rather than the database id (2026-10-21).
+    Route::delete('employees/by-code/{code}', [EmployeeController::class, 'destroyByCode']);
 
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
     Route::get('employees/{employee}/duplicates', [DuplicateScanController::class, 'forEmployee']);

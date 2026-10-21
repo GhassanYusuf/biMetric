@@ -138,6 +138,57 @@ class ApiFlowTest extends TestCase
         $this->actingWithToken($operatorToken)->deleteJson("/api/employees/{$created}")->assertStatus(403);
     }
 
+    /** Owner, 2026-10-21: delete by Personnel ID (employee_code), not the row id. */
+    public function test_an_employee_can_be_deleted_by_personnel_id(): void
+    {
+        $token = $this->tokenFor('admin@acme.test');
+        $id = $this->actingWithToken($token)
+            ->postJson('/api/employees', ['name' => 'Code Delete', 'employee_code' => '99901'])
+            ->assertStatus(201)
+            ->json('data.id');
+
+        $this->actingWithToken($token)->deleteJson('/api/employees/by-code/99901')
+            ->assertOk()
+            ->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.employee_code', '99901')
+            ->assertJsonPath('message', 'Employee Code Delete (99901) removed.');
+
+        $this->actingWithToken($token)->getJson("/api/employees/{$id}")->assertStatus(404);
+        // Gone, so a second delete says so rather than succeeding again.
+        $this->actingWithToken($token)->deleteJson('/api/employees/by-code/99901')
+            ->assertStatus(404)
+            ->assertJsonPath('success', false);
+    }
+
+    /** The code is text: "0099902" must not find "99902", nor the other way round. */
+    public function test_delete_by_personnel_id_matches_the_code_exactly(): void
+    {
+        $token = $this->tokenFor('admin@acme.test');
+        $this->actingWithToken($token)->postJson('/api/employees', ['name' => 'Short', 'employee_code' => '99902'])->assertStatus(201);
+
+        $this->actingWithToken($token)->deleteJson('/api/employees/by-code/0099902')->assertStatus(404);
+        $this->actingWithToken($token)->getJson('/api/employees?search=99902')->assertJsonPath('meta.pagination.total', 1);
+    }
+
+    /** Another company's code is not found, and the delete permission still applies. */
+    public function test_delete_by_personnel_id_respects_tenant_and_permission(): void
+    {
+        $defaultTenant = Tenant::where('slug', 'default')->first();
+        Tenancy::set($defaultTenant->id);
+        Employee::create(['name' => 'Foreign', 'employee_code' => '77001']);
+        Tenancy::clear();
+
+        $admin = $this->tokenFor('admin@acme.test');
+        $this->actingWithToken($admin)->deleteJson('/api/employees/by-code/77001')->assertStatus(404);
+        Tenancy::set($defaultTenant->id);
+        $this->assertTrue(Employee::where('employee_code', '77001')->exists());
+        Tenancy::clear();
+
+        $this->actingWithToken($admin)->postJson('/api/employees', ['name' => 'Kept', 'employee_code' => '77002'])->assertStatus(201);
+        $operator = $this->tokenFor('operator@acme.test');
+        $this->actingWithToken($operator)->deleteJson('/api/employees/by-code/77002')->assertStatus(403);
+    }
+
     public function test_employee_crud_and_tenant_scoped_uniqueness(): void
     {
         $token = $this->tokenFor('admin@acme.test');

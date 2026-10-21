@@ -322,6 +322,23 @@ that the employee has no fingerprints.
 
 ## Employees
 
+### `DELETE /api/employees/by-code/{code}` — delete by Personnel ID (2026-10-21)
+
+`{code}` is the **Personnel ID** (`employee_code`), not the database `id` that
+`DELETE /api/employees/{employee}` takes. Matched exactly as text — `0099902` does
+not find `99902`. Unique per company, and only your own company is searched.
+
+| Answer | When |
+|---|---|
+| 200 | Deleted. `data` = `{id, employee_code, name}` of who was removed; the message names them. |
+| 404 | No employee in your company has that Personnel ID (or it was already deleted). |
+| 403 | No `employees.delete`. |
+
+Like `DELETE /api/employees/{employee}`, this deletes the **record only** and cannot
+be undone: the person stays on any terminal they are enrolled on. To take them off
+the terminals, remove them from each terminal first, or use the integration API's
+`DELETE /api/v1/employees/{id}?remove_from_devices=1`.
+
 ### Identity — national ID (removed)
 
 **National IDs were removed on 2026-09-27** at the owner's request: the column on the
