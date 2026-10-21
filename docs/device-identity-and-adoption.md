@@ -105,6 +105,17 @@ Mappings are **time-boxed** (`valid_from` / `valid_to`):
   their own claim (`pinWasOnlyEverTheirs()`); the entry becomes their claim again. A
   keypad-enrolled stranger at that PIN is still refused by the slot guard inside
   `saveUser()`. Before this, removing and re-adding Akram on IT Room put him on PIN 2.
+  **A PIN ASKED FOR may take over a retired one (2026-10-21, casebook DC-026):** Syed's
+  CPR was typed onto Asif, pushed to Good Wheels, corrected — and then refused to Syed
+  for good. Since punches resolve by time, a new mapping starting now cannot reach the
+  old holder's punches, so `assertPinFreeFor()` / `claim()` allow it when
+  `pinReusableFor()` holds: every other holder's mapping on that PIN is **closed**; **no
+  stored punch** under it is dated at or after the last of them ended (an unattributed
+  one in the gap, or a terminal clock far ahead, would fall into the new window); and
+  its roster entry is a removal's reservation or already this employee's. The entry
+  becomes their claim. Automatic allocation (`nextFreePin()`) is unchanged — it still
+  never hands out a used PIN; only an explicitly requested number (the Personnel ID)
+  takes one over.
 - `valid_from` is **null** for a mapping adopted off hardware. The person was already
   enrolled and we do not know since when; stamping the claim date would orphan every
   punch older than it. On the Glass Door panel that would have been 87,000 records.

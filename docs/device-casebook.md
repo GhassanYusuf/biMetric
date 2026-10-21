@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | OPEN |
 | DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | FIXED |
 | DC-024 | 2026-10-18 to 2026-10-20 | Good Wheels, On The Road, Camelot, IT ROOM | The 5-minute health check never ran: it threw before queueing, then skipped every terminal | FIXED |
 | DC-023 | 2026-10-18 | all six | Punches were never read automatically: nothing ran the scheduler | MONITORING |
@@ -100,6 +101,53 @@ Template:
 ---
 
 ## Entries
+
+### DC-026 — A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal
+
+- **Date:** 2026-10-21
+- **Devices:** Good Wheels (F18/ID, 46.184.163.106)
+- **Direction:** software → device
+- **Symptom:** Owner: Syed Wajid Abbas has his CPR 770280340 as Personnel ID but shows as
+  user 8 on Good Wheels. The Push dialog offered "User ID 8 → 770280340 by re-adding
+  them"; the push failed: "User ID 770280340 is already in use on Good Wheels, or was in
+  the past. User IDs are never reissued".
+- **What was done:** read-only investigation, then a code change.
+  - 11:17 UTC read of Good Wheels: 19 users; Syed = user 8 (uid 35), no card, 1 finger
+    (slot 0); 770280340 not on the terminal.
+  - History (audit_logs, employee_device_maps): 2026-10-11 07:23 Syed's CPR, last name
+    and job were typed onto **Muhammad Asif AKRAM** (employee 1748). 2026-10-18 09:38 a
+    push moved Asif on Good Wheels 16 → 770280340 (F18 re-add). 6 of Asif's punches were
+    recorded under 770280340 (2026-10-18 14:06 → 2026-10-21 04:59), credited to him.
+    2026-10-21 08:31 corrected: Asif back to 850256461, moved there on Good Wheels.
+    08:34 Syed created with 770280340.
+  - Correction of an earlier claim made in this session: the F18 re-add
+    (`moveByReadding`) HAS run end to end on Good Wheels — Asif, 2026-10-18 and
+    2026-10-21, both successful.
+  - The refusal came from `DeviceIdentityResolver::assertPinFreeFor()`: any PIN another
+    employee EVER held on a terminal was refused. Audited every lookup by
+    `device_user_id`: terminal-record ownership uses live mappings only; punches resolve
+    by time (`EmployeeDeviceMap::inForceAt`, `AttendanceSyncService::employeeAt`,
+    `attendance:reattribute`). So a new holder's mapping starting now cannot reach the
+    old holder's punches — the blanket rule was stricter than the data model needs.
+  - Separate finding, not acted on: 315 punches under user 8 on Good Wheels
+    (2024-07-28 → 2025-04-21) are unattributed — Syed's mapping to 8 starts 2026-10-21
+    08:34. No punches under 8 since April 2025. Owner to confirm whether user 8 was
+    always Syed before anything is credited.
+- **Root cause:** the never-reissue rule predates time-boxed attribution and refused even
+  a number whose previous holder's history is fully closed.
+- **Fix:** `DeviceIdentityResolver::pinReusableFor()`, used by `assertPinFreeFor()` and
+  `claim()`: an explicitly requested PIN may take over a retired one when every other
+  holder's mapping is closed, no stored punch under it is dated at or after the last
+  one ended, and its roster entry is a reservation or already this employee's (the entry
+  becomes their claim). `nextFreePin()` unchanged. Tests: `DeviceIdentityGuardTest` (3
+  new), `EmployeePropagationTest` (refusal test updated to a still-refused case, success
+  case added). Docs: `device-identity-and-adoption.md`. 710 tests pass. Real data,
+  read-only: `assertPinFreeFor(Good Wheels, Syed, 770280340)` now allows it; 0 punches
+  under 770280340 since Asif left it.
+- **Verified:** — (the move on Good Wheels is the owner's push, next)
+- **Evidence:** audit_logs for employees 1748 and 1803; employee_device_maps 2962, 2987.
+- **Status:** OPEN — until Syed is moved on Good Wheels and read back.
+- **Keywords:** never reissued, already in use, or was in the past, PinInUseException, assertPinFreeFor, pinReusableFor, wrong CPR, Personnel ID typed on wrong employee, moveByReadding, re-add, Good Wheels
 
 ### DC-025 — Employee deleted by Personnel ID over the API is still on three terminals and can still punch
 

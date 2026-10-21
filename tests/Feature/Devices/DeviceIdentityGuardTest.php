@@ -295,6 +295,80 @@ class DeviceIdentityGuardTest extends TestCase
         $this->assertSame('2', $fresh->device_user_id);
     }
 
+    /**
+     * Owner, 2026-10-21 (casebook DC-026): Syed's CPR was typed onto Asif, pushed to Good
+     * Wheels, then corrected. The number must still be able to go to Syed — and Asif's
+     * punches under it must stay Asif's.
+     */
+    public function test_a_personnel_id_given_to_the_wrong_person_can_go_to_the_right_one(): void
+    {
+        $device = $this->adoptedDeviceHolding([], 'Good Wheels');
+        $asif = $this->employee('Muhammad Asif', '850256461');
+        $syed = $this->employee('Syed Wajid Abbas', '770280340');
+        $this->heldUntil($device, $asif, '770280340', '2026-10-18 09:38:13', '2026-10-21 08:32:05');
+        DeviceRosterEntry::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $device->id, 'device_uid' => 29,
+            'device_user_id' => '770280340', 'device_name' => 'Muhammad Asif',
+            'claim_status' => DeviceRosterEntry::IGNORED, 'claimed_employee_id' => null,
+        ]);
+        $this->punch($device, '770280340', '2026-10-20 07:58:00', $asif);
+
+        $map = $this->resolver()->claim($device, $syed, '770280340');
+
+        $this->assertSame('770280340', $map->device_user_id);
+        $this->assertSame($syed->id, (int) $map->employee_id);
+        // Asif's punch stays Asif's; one from now on is Syed's.
+        $this->assertSame($asif->id, (int) EmployeeDeviceMap::inForceAt($device->id, '770280340', new \DateTimeImmutable('2026-10-20 07:58:00'))->value('employee_id'));
+        $this->assertSame($syed->id, (int) EmployeeDeviceMap::inForceAt($device->id, '770280340', now()->addMinute())->value('employee_id'));
+        // The reservation is Syed's now, so the slot guard recognises his record later.
+        $entry = DeviceRosterEntry::where('device_id', $device->id)->where('device_user_id', '770280340')->first();
+        $this->assertSame(DeviceRosterEntry::CLAIMED, $entry->claim_status);
+        $this->assertSame($syed->id, (int) $entry->claimed_employee_id);
+    }
+
+    public function test_a_number_someone_holds_now_is_never_taken_over(): void
+    {
+        $device = $this->adoptedDeviceHolding([]);
+        $holder = $this->employee('Holder', 'E-1');
+        $other = $this->employee('Other', 'E-2');
+        $this->resolver()->claim($device, $holder, '555');
+
+        $this->expectException(\App\Exceptions\PinInUseException::class);
+        $this->resolver()->claim($device, $other, '555');
+    }
+
+    /**
+     * A punch dated after the last holder left — a terminal clock far ahead, or one
+     * nobody was mapped to — would fall into the new holder's window. Refused.
+     */
+    public function test_a_number_with_a_punch_after_its_holder_left_is_not_taken_over(): void
+    {
+        $device = $this->adoptedDeviceHolding([]);
+        $leaver = $this->employee('Leaver', 'E-1');
+        $joiner = $this->employee('Joiner', 'E-2');
+        $this->heldUntil($device, $leaver, '777', '2026-01-01 00:00:00', '2026-06-01 00:00:00');
+        $this->punch($device, '777', '2030-01-30 09:00:00', null);
+
+        $this->expectException(\App\Exceptions\PinInUseException::class);
+        $this->resolver()->claim($device, $joiner, '777');
+    }
+
+    private function heldUntil(Device $device, Employee $employee, string $pin, string $from, string $to): void
+    {
+        EmployeeDeviceMap::create([
+            'tenant_id' => $this->tenant->id, 'employee_id' => $employee->id, 'device_id' => $device->id,
+            'device_user_id' => $pin, 'valid_from' => $from, 'valid_to' => $to, 'closed_reason' => 'Removed from device',
+        ]);
+    }
+
+    private function punch(Device $device, string $pin, string $at, ?Employee $employee): void
+    {
+        \App\Models\AttendanceLog::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $device->id, 'device_user_id' => $pin,
+            'employee_id' => $employee?->id, 'punched_at' => $at, 'status' => 0, 'verify_method' => 1,
+        ]);
+    }
+
     // ------------------------------------------------------ cross-device identity
 
     public function test_the_same_pin_on_two_devices_stays_two_different_people(): void

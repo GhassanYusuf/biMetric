@@ -629,9 +629,11 @@ class EmployeePropagationTest extends TestCase
     }
 
     /**
-     * A code somebody else ever held on this terminal is refused before the device is
-     * touched: handing it over would re-attribute that person's punches. Nothing is
-     * written to that terminal — not even the name — so it is never half-done.
+     * A code somebody else held on this terminal, whose history is NOT closed off — here
+     * a punch under it dated after they left — is refused before the device is touched:
+     * handing it over could move that punch to the new holder. Nothing is written to that
+     * terminal — not even the name — so it is never half-done. (Until 2026-10-21 any code
+     * anybody ever held was refused; see the test after this one.)
      */
     public function test_a_user_id_someone_else_held_is_refused_and_nothing_is_written(): void
     {
@@ -648,6 +650,10 @@ class EmployeePropagationTest extends TestCase
             'tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'employee_id' => $other->id,
             'device_user_id' => '501', 'valid_from' => now()->subYears(2), 'valid_to' => now()->subYear(),
         ]);
+        \App\Models\AttendanceLog::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'device_user_id' => '501',
+            'employee_id' => null, 'punched_at' => now()->subMonths(6), 'status' => 0, 'verify_method' => 1,
+        ]);
 
         $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
             'device_ids' => [$this->adopted->id],
@@ -656,6 +662,41 @@ class EmployeePropagationTest extends TestCase
 
         $this->assertSame([], $driver->renumbers);
         $this->assertSame([], $driver->writes);
+    }
+
+    /**
+     * Owner, 2026-10-21 (casebook DC-026): a code given to the wrong person and corrected
+     * goes to the right one. The former holder's period is closed and nothing was punched
+     * under it since, so the move goes ahead — and their punches stay theirs.
+     */
+    public function test_a_user_id_whose_former_holder_has_closed_history_is_moved_to(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [\Promoseven\Biometric\Capability\Capability::USER_RENUMBER => 'implemented'];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $this->onDevice($driver, '960802797');
+        $this->mapTo($this->adopted, '960802797');
+
+        $other = Employee::withoutGlobalScopes()->create([
+            'tenant_id' => $this->tenant->id, 'name' => 'Former', 'employee_code' => '900', 'is_active' => true,
+        ]);
+        EmployeeDeviceMap::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'employee_id' => $other->id,
+            'device_user_id' => '501', 'valid_from' => now()->subYears(2), 'valid_to' => now()->subYear(),
+        ]);
+        $theirs = \App\Models\AttendanceLog::create([
+            'tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'device_user_id' => '501',
+            'employee_id' => $other->id, 'punched_at' => now()->subYear()->subMonth(), 'status' => 0, 'verify_method' => 1,
+        ]);
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(1, 'data.written')->assertJsonCount(0, 'data.failed');
+
+        $this->assertSame([['960802797', '501']], $driver->renumbers);
+        $this->assertSame($other->id, (int) $theirs->fresh()->employee_id);
+        $this->assertSame($other->id, (int) EmployeeDeviceMap::inForceAt($this->adopted->id, '501', $theirs->punched_at)->value('employee_id'));
     }
 
     /** The device refusing the move (or losing a finger) leaves our records untouched. */

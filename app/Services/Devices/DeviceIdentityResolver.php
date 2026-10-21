@@ -4,6 +4,7 @@ namespace App\Services\Devices;
 
 use App\Exceptions\DeviceIdentityConflictException;
 use App\Exceptions\PinInUseException;
+use App\Models\AttendanceLog;
 use App\Models\Device;
 use App\Models\DeviceRosterEntry;
 use App\Models\Employee;
@@ -30,10 +31,15 @@ use Promoseven\Biometric\Value\DeviceUser;
  * So: a PIN is allocated once per (device, employee), recorded in employee_device_maps,
  * and never re-derived from anything. Nothing downstream may reconstruct it.
  *
- * RETIRED PINS ARE NEVER REISSUED. When a mapping is closed, the row stays with a
- * valid_to date. Attendance already collected under that PIN belongs to whoever held
- * it at the time, and handing the number to a new hire would silently re-attribute
- * their history.
+ * RETIRED PINS ARE NEVER REISSUED AUTOMATICALLY. When a mapping is closed, the row
+ * stays with a valid_to date. Attendance already collected under that PIN belongs to
+ * whoever held it at the time, so nextFreePin() never hands a used number out.
+ *
+ * A number ASKED FOR (the Personnel ID) may take over a retired one, once its history
+ * is closed off (owner, 2026-10-21: a CPR typed onto the wrong employee, corrected, and
+ * then refused to the right one for good — see pinReusableFor()). Punches resolve by
+ * the mapping in force at each punch's own time (EmployeeDeviceMap::inForceAt), so a
+ * new holder's window starting now cannot reach the previous holder's punches.
  */
 class DeviceIdentityResolver
 {
@@ -99,13 +105,16 @@ class DeviceIdentityResolver
         }
 
         $returning = $preferred !== null && $this->pinWasOnlyEverTheirs($device, $employee, $preferred);
+        // Taking over a retired number: its roster entry is theirs from now, like a
+        // returning holder's, or the slot guard would refuse their own record later.
+        $reissued = $preferred !== null && ! $returning && $this->pinReusableFor($device, $employee, $preferred);
 
         if ($preferred !== null && ! $returning) {
             $this->assertPinFreeFor($device, $employee, $preferred);
         }
         $pin = $preferred ?? $this->nextFreePin($device);
 
-        if ($returning) {
+        if ($returning || $reissued) {
             // Their reservation becomes their claim again, so the slot guard and the
             // next roster read recognise the record as theirs, not a stranger's.
             DeviceRosterEntry::query()
@@ -185,11 +194,13 @@ class DeviceIdentityResolver
     /**
      * Refuses a PIN this employee may not move to on this device.
      *
-     * Looser than "never used here" in exactly one way: a PIN this SAME employee
-     * held here before is allowed back, so correcting a code typo (100 → 1000 → 100)
-     * works. Attendance under that number already belongs to them, so nothing is
-     * re-attributed. A PIN anybody else ever held, or that sits unclaimed or claimed by
-     * someone else in the device's roster, is refused.
+     * Looser than "never used here" in two ways: a PIN this SAME employee held here
+     * before is allowed back, so correcting a code typo (100 → 1000 → 100) works; and
+     * a PIN others held whose history is closed off (pinReusableFor) may be taken over,
+     * so a code given to the wrong person can still go to the right one. Either way no
+     * punch is re-attributed. A PIN someone holds now, one with punches after its last
+     * holder left, or one sitting unclaimed or claimed by someone else in the device's
+     * roster, is refused.
      */
     public function assertPinFreeFor(Device $device, Employee $employee, string $pin): void
     {
@@ -219,6 +230,10 @@ class DeviceIdentityResolver
             && ! ($entry->claim_status === DeviceRosterEntry::CLAIMED && (int) $entry->claimed_employee_id === (int) $employee->id)
             && ! $this->pinWasOnlyEverTheirs($device, $employee, $pin);
 
+        if (($heldByOther || $rosterOther) && $this->pinReusableFor($device, $employee, $pin)) {
+            return;
+        }
+
         if ($heldByOther || $rosterOther) {
             // Releasable: the holder is a terminal record no employee was ever mapped to.
             $releasable = ! $heldByOther && $entry !== null
@@ -230,7 +245,7 @@ class DeviceIdentityResolver
                 .($entry !== null && $entry->device_name ? " (by \"{$entry->device_name}\")" : '')
                 .($releasable
                     ? ', a record not linked to any employee.'
-                    : ', or was in the past. User IDs are never reissued — attendance already recorded under that number belongs to whoever held it.'),
+                    : ', or was in the past and its history is not closed off — it is still held, or a punch under it is dated after the last holder left, so giving it to someone else could move that punch to them.'),
                 $pin,
                 $entry?->device_name,
                 $releasable,
@@ -272,6 +287,59 @@ class DeviceIdentityResolver
         return $entry === null
             || ($entry->claim_status === DeviceRosterEntry::CLAIMED && (int) $entry->claimed_employee_id === (int) $employee->id)
             || ($entry->claim_status === DeviceRosterEntry::IGNORED && $entry->claimed_employee_id === null);
+    }
+
+    /**
+     * True when a number other employees held here may be given to $employee now,
+     * without any punch changing hands (owner, 2026-10-21; casebook DC-026).
+     *
+     * Attendance resolves by the mapping in force at each punch's own time, so a new
+     * mapping starting now reaches only punches from now on. That is safe when:
+     *
+     *   1. another employee did hold it, and every one of those mappings is CLOSED —
+     *      nobody holds it now (a live holder is a person, not history);
+     *   2. no stored punch under it is dated at or after the last of them ended. Such a
+     *      punch is either unattributed in the gap or wrongly dated (a terminal clock
+     *      far ahead — Camelot has punches stamped 2030), and either could land in the
+     *      new holder's window on the next attendance:reattribute;
+     *   3. the terminal's roster entry for it, if any, is a removal's reservation or
+     *      already this employee's — never someone else's claim.
+     *
+     * The hardware is still checked at write time: saveUser()'s slot guard refuses if
+     * anybody is actually on the terminal under the number.
+     */
+    private function pinReusableFor(Device $device, Employee $employee, string $pin): bool
+    {
+        $others = EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $pin)
+            ->where('employee_id', '!=', $employee->id)
+            ->get(['valid_to']);
+
+        if ($others->isEmpty() || $others->contains(fn (EmployeeDeviceMap $m) => $m->valid_to === null)) {
+            return false;
+        }
+
+        $lastEnded = $others->max('valid_to');
+
+        $laterPunch = AttendanceLog::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $pin)
+            ->where('punched_at', '>=', $lastEnded)
+            ->exists();
+
+        if ($laterPunch) {
+            return false;
+        }
+
+        $entry = DeviceRosterEntry::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $pin)
+            ->first();
+
+        return $entry === null
+            || ($entry->claim_status === DeviceRosterEntry::IGNORED && $entry->claimed_employee_id === null)
+            || ($entry->claim_status === DeviceRosterEntry::CLAIMED && (int) $entry->claimed_employee_id === (int) $employee->id);
     }
 
     // ------------------------------------------------------------------ internals
