@@ -117,10 +117,10 @@ A push now writes the employee's keypad password everywhere, and the form's **De
 role** is applied on a save when CHANGED (Admin/Super admin → administrator, User →
 normal user, Enroller/Not set untouched) — never when unchanged, because real roles
 differ per terminal. Per-room roles stay on the Enrollment dialog's Make administrator.
-DC-022 closed. The owner's test employee "Test" (1802) is an administrator on IT ROOM
-with a password — remove that when testing is over (owner).
+DC-022 closed. The owner's test employee "Test" (1802, code 1000) was deleted and taken
+off every terminal on 2026-10-21 (DC-025).
 
-### Delete by Personnel ID, system AND terminals — BUILT 2026-10-21 on `delete-by-code`; user 1000 still on three terminals
+### Delete by Personnel ID, system AND terminals — BUILT 2026-10-21 on `delete-by-code`
 
 Owner, for an integration: "an endpoint to delete an employee from the system and from
 the biometric terminals". `DELETE /api/v1/employees/by-code/{code}` (integration token,
@@ -130,12 +130,12 @@ at once, deletes the record once every terminal confirms. Docs: `integration-api
 
 Why it always clears terminals: the first version (same morning) deleted the record
 only. The owner deleted "Test User" (employee 1802, Personnel ID 1000) with it at
-08:12 UTC and could still punch — casebook **DC-025**, OPEN. **User 1000 is still on IT
-ROOM (as an administrator, with a keypad password), Entrance and On The Road.** The
-system no longer knows them, so the new endpoint cannot reach them. **Owner to decide:**
-let the system remove user 1000 from the three terminals (save first, check the name,
-delete, read back), or remove it at the terminals / in ZKAccess. Not yet run against a
-real terminal: the endpoint's first real use is a write, on a test employee (owner).
+08:12 UTC and could still punch — casebook **DC-025**. With the owner's go-ahead, user
+1000 was removed from IT ROOM, Entrance and On The Road at 09:03 UTC (record and finger
+saved first, verified by re-read). Side effect: **1000 stays reserved on IT ROOM**
+(roster entry 1433, `ignored`) — clear it if the code is to be reused. The endpoint
+itself has not yet run against a real terminal: its first use is a write, on a test
+employee (owner). The "Test" employee note under the password feature no longer applies.
 
 ### Employee list export, PDF or Excel — BUILT 2026-10-21, committed on its own branch (not pushed)
 
@@ -781,7 +781,8 @@ Committed `password-feature` and the library (`ada8f15`, `v2.15.0`). Push to Git
 failed — no SSH key on this box; owner will push all branches at once.
 Then, on `delete-by-code`: delete by Personnel ID — first record-only, which left
 "Test User" (code 1000) on three terminals (DC-025, OPEN), then rebuilt to clear the
-terminals too, for the owner's integration.
+terminals too, for the owner's integration. User 1000 then removed from the three
+terminals with the owner's go-ahead and verified (DC-025 FIXED).
 
 ### 2026-10-20 — Keypad passwords and terminal roles from the system, on every terminal
 

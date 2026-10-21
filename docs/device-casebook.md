@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | OPEN |
+| DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | FIXED |
 | DC-024 | 2026-10-18 to 2026-10-20 | Good Wheels, On The Road, Camelot, IT ROOM | The 5-minute health check never ran: it threw before queueing, then skipped every terminal | FIXED |
 | DC-023 | 2026-10-18 | all six | Punches were never read automatically: nothing ran the scheduler | MONITORING |
 | DC-022 | 2026-10-12 to 2026-10-20 | all six | Keypad passwords: never pushed, never read — and erased by every standalone write | FIXED |
@@ -127,6 +127,25 @@ Template:
     ever exercised the "skipped" branch. The existing `remove_from_devices` test has the
     same blind spot. The new test uses an F18-model binary terminal and asserts the
     queued `REMOVE_USER` path.
+  - **Owner's go-ahead 2026-10-21; user 1000 removed from all three terminals.**
+    1. Read-only, 09:0x UTC: user 1000 on each was named "Test" with a keypad password —
+       IT ROOM uid 28 privilege **14**, Entrance uid 247, On The Road uid 20. No employee
+       held code 1000; no mapping (live or closed) on 1000 on any of the three.
+    2. Write, 09:03 UTC, `DeviceUserSyncService::releaseUnlinkedNumber($device, '1000',
+       null)` per terminal, the script re-checking the name was "Test" just before each
+       delete. Each saved the record and 1 fingerprint first, deleted, read back:
+       `removed-records/device-15-1000-20261021-090330.json.enc` (IT ROOM),
+       `device-14-1000-20261021-090337.json.enc` (Entrance),
+       `device-11-1000-20261021-090345.json.enc` (On The Road). Audit 6834–6836.
+       Run from a root shell, so the three files were chown'ed to www-data afterwards.
+    3. Independent re-read: 1000 absent everywhere; user counts IT ROOM 9→8, Entrance
+       316→315, On The Road 11→10 — exactly one removed from each.
+    4. Hand correction: IT ROOM's roster entry 1433 (pin 1000) was set `ignored` by the
+       method with the note "Removed by a device rebuild"; the note was rewritten to say
+       what happened. The entry keeps **1000 reserved on IT ROOM** — a future employee
+       given code 1000 would not be pushed there until it is cleared. To undo: set
+       `claim_status` back, or delete row 1433, if the owner wants 1000 reusable.
+  - First live run of a delete on the TF1700 (Entrance): succeeded and verified.
 - **Root cause:** `destroyByCode()` (`EmployeeController`, commit `4f89663`) copied
   `destroy()`: it deletes the record only. The screen's Delete warns about exactly this
   in its confirmation; the API said nothing and answered 200. The integration API
@@ -142,11 +161,11 @@ Template:
   `destroyByCode()` on the SPA controller was removed. Tests: `IntegrationApiTest`
   (`test_delete_by_code_*`, 4), `ApiFlowTest` (by-code, 3). Docs:
   `integration-api.md`, `api-endpoints.md`, `credential-preservation.md`.
-- **Verified:** in tests only so far (706 passing). Not yet run against a terminal: the first real use is a write and needs a test employee on a terminal (owner).
+- **Verified:** the cleanup on hardware (step 3 above). The new endpoint in tests only (706 passing); its first live run is a write on a test employee (owner).
 - **Evidence:** audit_logs 6764 (delete), 6711-onward history of employee 1802.
-- **Status:** OPEN — the endpoint is fixed in code; user 1000 is still on IT ROOM (as an
-  administrator), Entrance and On The Road until the owner approves removing it or removes
-  it at the terminals.
+- **Status:** FIXED — user 1000 removed from all three terminals and verified; the
+  endpoint now clears terminals. Still owed (owner): one live run of the endpoint on a
+  test employee.
 - **Keywords:** delete by code, by-code, employee_code, orphan terminal user, still punches, unlinked, remove_from_devices, EmployeeOffboarding, cascade employee_device_maps
 
 ### DC-024 — The 5-minute health check never ran: it threw before queueing, then skipped every terminal
