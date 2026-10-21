@@ -413,6 +413,82 @@ class ExportTest extends TestCase
         $this->assertStringNotContainsString('Mona Hassan', $text);
     }
 
+    // --- The employee list (Employees screen → Export) ---------------------
+
+    /** Owner, 2026-10-21: "all employees" exports everyone, as PDF or Excel. */
+    public function test_the_employee_list_exports_as_a_pdf_and_as_excel(): void
+    {
+        $pdf = $this->login('admin@acme.test')->get('/api/exports/employees');
+        $pdf->assertOk();
+        $this->assertSame('application/pdf', $pdf->headers->get('content-type'));
+        $this->assertStringStartsWith('%PDF-', $pdf->getContent());
+        $this->assertMatchesRegularExpression('/employees_\d{4}-\d{2}-\d{2}\.pdf/', $pdf->headers->get('content-disposition'));
+
+        $xlsx = $this->login('admin@acme.test')->get('/api/exports/employees/excel');
+        $xlsx->assertOk();
+        $this->assertMatchesRegularExpression('/employees_\d{4}-\d{2}-\d{2}\.xlsx/', $xlsx->headers->get('content-disposition'));
+        $text = $this->workbookText($xlsx);
+        $this->assertStringContainsString('All employees', $text);
+        $this->assertStringContainsString('Sara Ahmed', $text);
+        $this->assertStringContainsString('Yusuf Khalid', $text);
+        $this->assertStringContainsString('Mona Hassan', $text);
+    }
+
+    /**
+     * Owner, 2026-10-21: "if I selected one of the companies it should export that
+     * company's employees" — its departments' people included, nobody else's, and the
+     * same status filter as the screen (resigned left out unless asked for).
+     */
+    public function test_the_employee_list_for_a_company_holds_only_that_company(): void
+    {
+        Tenancy::set($this->acme->id);
+        $company = Department::create(['tenant_id' => $this->acme->id, 'name' => 'Acme Holding']);
+        Department::where('name', 'Engineering')->update(['parent_id' => $company->id]);
+        Employee::create(['tenant_id' => $this->acme->id, 'name' => 'Gone Person', 'employee_code' => '9901', 'department_id' => $company->id, 'is_active' => false, 'resigned_at' => '2026-10-01']);
+        Tenancy::clear();
+
+        $res = $this->login('admin@acme.test')->get("/api/exports/employees/excel?department_id={$company->id}&resigned=0");
+
+        $res->assertOk();
+        $text = $this->workbookText($res);
+        $this->assertStringContainsString('Company: Acme Holding', $text);
+        $this->assertStringContainsString('Sara Ahmed', $text);
+        $this->assertStringContainsString('Yusuf Khalid', $text);
+        $this->assertStringNotContainsString('Mona Hassan', $text);
+        $this->assertStringNotContainsString('Gone Person', $text);
+
+        $this->login('admin@acme.test')->get("/api/exports/employees?department_id={$company->id}")->assertOk();
+    }
+
+    /**
+     * Rule 10 in a file: a terminal whose fingerprints were never read prints "?", a
+     * real read prints its count — an unread terminal must not print as 0 fingers.
+     */
+    public function test_the_employee_list_never_prints_an_unread_terminal_as_zero_fingers(): void
+    {
+        Tenancy::set($this->acme->id);
+        $mona = Employee::where('employee_code', '2001')->firstOrFail();
+        $entrance = Device::create(['tenant_id' => $this->acme->id, 'name' => 'Entrance', 'ip_address' => '192.0.2.21', 'port' => 4370, 'protocol' => Device::PROTOCOL_BINARY, 'is_active' => true]);
+        $this->employee->deviceMaps()->create(['tenant_id' => $this->acme->id, 'device_id' => $this->device->id, 'device_user_id' => '1001', 'fingerprint_slots' => [1, 6]]);
+        $mona->deviceMaps()->create(['tenant_id' => $this->acme->id, 'device_id' => $entrance->id, 'device_user_id' => '2001', 'fingerprint_slots' => null]);
+        Tenancy::clear();
+
+        $text = $this->workbookText($this->login('admin@acme.test')->get('/api/exports/employees/excel'));
+
+        $this->assertStringContainsString('IT Room', $text);
+        $this->assertStringContainsString('Entrance', $text);
+        $this->assertStringContainsString('<v>2</v>', $text);
+        $this->assertStringContainsString('>?<', $text);
+    }
+
+    public function test_the_employee_list_export_needs_the_employees_permission(): void
+    {
+        $this->makeUser('staff@acme.test', 'employee', $this->acme);
+
+        $this->login('staff@acme.test')->getJson('/api/exports/employees')->assertStatus(403);
+        $this->login('staff@acme.test')->getJson('/api/exports/employees/excel')->assertStatus(403);
+    }
+
     /** Owner, 2026-10-19: "give me the option to select multiple department". */
     public function test_the_statement_covers_several_departments_at_once(): void
     {

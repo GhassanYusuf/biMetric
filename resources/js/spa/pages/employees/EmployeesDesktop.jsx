@@ -15,7 +15,7 @@ export default function EmployeesDesktop({
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
-    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport,
+    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -78,6 +78,8 @@ export default function EmployeesDesktop({
                   * picks a merge and the route's update+delete checks agree.
                   */}
                 <Button variant="secondary" onClick={() => onScan()}>Scan for duplicates</Button>
+                {/* Exports the list as filtered: all employees, or the tree's company. */}
+                <ActionMenu label="Export" className="min-h-[42px] px-4 text-sm" items={exportItems} />
                 {canReadDevice && (
                     <Button variant="secondary" loading={readingDevice} onClick={onReadFromDevice}>
                         {readingDevice ? 'Reading terminal…' : 'Read from device'}

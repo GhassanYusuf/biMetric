@@ -24,8 +24,8 @@ class PdfRenderer
 
     private const FOOTER_REPORT = ['bottom' => 25.5, 'right' => 27.0, 'size' => 5.6];
 
-    /** A laid-out, page-numbered A4 document. */
-    public function make(string $view, array $data, ?string $tenantName): DomPdf
+    /** A laid-out, page-numbered A4 document; landscape for a list wider than portrait holds. */
+    public function make(string $view, array $data, ?string $tenantName, string $orientation = 'portrait'): DomPdf
     {
         $tz = config('attendance.timezone');
 
@@ -34,7 +34,7 @@ class PdfRenderer
             'tenantName' => $tenantName,
             'timezone' => $tz,
             'generatedAt' => now($tz)->format('Y-m-d g:i A'),
-        ])->setPaper('a4')
+        ])->setPaper('a4', $orientation)
             // Embed only the glyphs used: DejaVu whole is ~800 KB per PDF.
             ->setOption('isFontSubsettingEnabled', true);
 

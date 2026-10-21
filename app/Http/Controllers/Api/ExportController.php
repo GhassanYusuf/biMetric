@@ -9,7 +9,10 @@ use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\EmployeeReportService;
 use App\Services\Attendance\PunchLogQuery;
+use App\Services\Employees\EmployeeRosterQuery;
 use App\Services\Reports\AttendanceReport;
+use App\Services\Reports\EmployeeRoster;
+use App\Services\Reports\EmployeeRosterWorkbook;
 use App\Services\Reports\MonthlyStatement;
 use App\Services\Reports\MonthlyStatementWorkbook;
 use App\Services\Reports\PdfRenderer;
@@ -23,8 +26,8 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * PDF exports: the punch log as filtered, one employee's attendance, and the
- * payroll summary.
+ * PDF exports: the punch log as filtered, one employee's attendance, the
+ * payroll summary, the reports, and the employee list (PDF and Excel).
  *
  * THREE RULES HOLD HERE, and they are the whole reason this is a controller of
  * its own rather than a `?format=pdf` branch in each existing one:
@@ -369,6 +372,53 @@ class ExportController extends Controller
         $name = str_replace('.pdf', '.xlsx', $this->filename('monthly-statement', ['from' => $statement['from'], 'to' => $statement['to']]));
 
         return response()->download($path, $name, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend();
+    }
+
+    /**
+     * The employee list as filtered on the Employees screen (owner, 2026-10-21): the
+     * tree's "All employees" exports everyone, a company or department exports that
+     * branch, and search, terminal and status narrow it as they narrow the screen.
+     * Same permission as the list. A roster is one short row per person — 362 people
+     * is ~10 pages — so it renders in the request, under MAX_ROWS like the punch log.
+     */
+    public function employees(Request $request, EmployeeRoster $roster): Response
+    {
+        $this->authorize('viewAny', Employee::class);
+        $request->validate(EmployeeRosterQuery::RULES);
+
+        $data = $roster->build($request);
+        $count = count($data['rows']);
+        if ($count > self::MAX_ROWS) {
+            $message = "That is {$count} people — narrow the list, or export it as Excel.";
+
+            return ApiResponse::error($message, [], 422);
+        }
+
+        // Landscape: nine columns, and a terminal list that is a line per terminal.
+        return $this->pdf->make('pdf.employee-roster', [
+            'title' => 'Employees',
+            'rangeLabel' => 'As of '.now(config('attendance.timezone'))->format('j M Y'),
+            ...$data,
+        ], auth()->user()?->tenant?->name, 'landscape')->download($this->filename('employees', []));
+    }
+
+    /** The same list as employees(), as an Excel workbook. No cap: it streams. */
+    public function employeesExcel(Request $request, EmployeeRoster $roster, EmployeeRosterWorkbook $workbook): Response
+    {
+        $this->authorize('viewAny', Employee::class);
+        $request->validate(EmployeeRosterQuery::RULES);
+
+        $path = tempnam(sys_get_temp_dir(), 'employees-');
+        $workbook->write(
+            $roster->build($request),
+            auth()->user()?->tenant?->name,
+            $path,
+            now(config('attendance.timezone'))->format('Y-m-d g:i A'),
+        );
+
+        return response()->download($path, str_replace('.pdf', '.xlsx', $this->filename('employees', [])), [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend();
     }

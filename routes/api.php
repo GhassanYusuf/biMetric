@@ -305,6 +305,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     | middleware of their own beyond auth + tenant.
     */
     Route::get('exports/attendance', [ExportController::class, 'attendanceLog']);
+    Route::get('exports/employees', [ExportController::class, 'employees']);
+    Route::get('exports/employees/excel', [ExportController::class, 'employeesExcel']);
     Route::get('exports/employees/{employee}/attendance', [ExportController::class, 'employeeAttendance']);
     Route::get('exports/payroll', [ExportController::class, 'payrollSummary']);
     Route::get('exports/attendance-report', [ExportController::class, 'attendanceReport']);
