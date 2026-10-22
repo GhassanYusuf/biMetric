@@ -131,13 +131,23 @@ Template:
   - Tried: `FingerprintPusher::push` of their stored copies onto Camelot — ACKed, read
     back with none kept ("accepted fingerprint slot(s) … but did not keep any"). Nothing
     overwritten (add-only).
+  - Owner: "re-add Charmae and Monir from the system". 11:5x UTC, per person: read →
+    `removeEmployee()` → check gone → `pushEmployee()`. Both REMOVES refused again the
+    same way (ACKed, record still there on read-back) — stopped for each before any
+    re-add; nothing changed on the terminal.
+  - Read-only, raw user table: 11 records, NO duplicate user ids (Charmae uid 3, Monir
+    uid 11); every other uid holds templates, uids 3 and 11 none. Dead end: the
+    "two records with one number" explanation is ruled out.
+  - Stopped remote attempts on a live terminal (rule 16). The firmware's own message
+    suggests a power cycle.
 - **Root cause:** Camelot executed DELETE_USER only partly — templates removed, user
   record kept — and the remaining record will not take templates. Firmware state on this
   unit after a partial delete over the internet link; cause inside the terminal not
   known. Separately: diagnostics run as root left a root-owned log file that the worker
   could not write.
-- **Fix:** — (owner to choose: remove and re-add the two records from the system, or
-  re-enrol at the terminal).
+- **Fix:** — remote re-add refused (above). Next, owner's choice: power-cycle Camelot
+  on site, then one retry of the re-add; or delete the two at the terminal's menu and
+  re-add from the system; or re-enrol their fingers at the terminal.
 - **Verified:** —
 - **Evidence:** commands 2946, 2947; laravel.log 10:47:06, 10:49:48 UTC; audit 10:55:47.
 - **Status:** OPEN — both employees active with punches and stored fingers; their fingers
