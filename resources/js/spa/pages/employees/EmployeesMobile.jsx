@@ -1,7 +1,7 @@
 import { Badge, Button, Card, EmptyState, PageHeader, Pager, ActionMenu } from '../../shared/ui';
 import AutoPushToggle from './AutoPushToggle';
 import { FOCUS } from '../../shared/theme';
-import { CardCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
+import { CardCell, DeviceUserIdCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
 import EmployeeFilters from './EmployeeFilters';
 import { EmploymentBadges, orgOf } from './employeeLabels';
 import DepartmentTree from './DepartmentTree';
@@ -158,6 +158,11 @@ export default function EmployeesMobile({
                                     <div className="min-w-0">
                                         <div className="truncate font-semibold text-slate-900">{[e.name, e.last_name].filter(Boolean).join(" ")}</div>
                                         <div className="font-mono text-xs text-slate-500">{e.employee_code}</div>
+                                        {/* Rule 5: the desktop "Device user ID" column. */}
+                                        <div className="mt-0.5 flex items-baseline gap-1 text-xs">
+                                            <span className="text-slate-500">Device ID</span>
+                                            <DeviceUserIdCell employee={e} />
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="shrink-0 text-right text-xs tabular-nums text-slate-500">

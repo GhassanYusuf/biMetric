@@ -151,6 +151,50 @@ export function TerminalsCell({ employee }) {
 }
 
 /** Both hands with enrolled fingers filled, plus the count. */
+/**
+ * The user ID each terminal knows this person by (owner, 2026-10-22: "a column to show
+ * the device user id"). One ID when every terminal agrees; otherwise each with its
+ * terminal. An ID that is not their Personnel ID is amber — the case worth spotting
+ * (a terminal that could not move them, or a number given to the wrong person).
+ */
+export function DeviceUserIdCell({ employee }) {
+    const rows = enrollmentsOf(employee);
+
+    if (rows === null) {
+        return <span className="text-sm text-slate-500" title="Per-terminal enrollment was not loaded">—</span>;
+    }
+    if (rows.length === 0) {
+        return <span className="text-sm text-slate-500" title="On no terminal">—</span>;
+    }
+
+    const byId = new Map();
+    for (const row of rows) {
+        const id = String(row.device_user_id ?? '');
+        if (!byId.has(id)) byId.set(id, []);
+        byId.get(id).push(row.device_name ?? `Device ${row.device_id}`);
+    }
+    const code = String(employee.employee_code ?? '');
+    const many = byId.size > 1;
+
+    return (
+        <span className="inline-flex flex-col gap-0.5">
+            {[...byId.entries()].map(([id, terminals]) => {
+                const differs = id !== code;
+                return (
+                    <span
+                        key={id}
+                        className={`font-mono text-xs ${differs ? 'text-amber-700' : 'text-slate-600'}`}
+                        title={`${terminals.join(', ')}: user ID ${id}${differs ? ` — not their Personnel ID (${code})` : ''}`}
+                    >
+                        {id}
+                        {many && <span className="font-sans text-slate-500"> · {terminals.join(', ')}</span>}
+                    </span>
+                );
+            })}
+        </span>
+    );
+}
+
 export function FingerprintCell({ employee }) {
     const { slots, deviceName, read } = rosterEnrollment(employee);
 

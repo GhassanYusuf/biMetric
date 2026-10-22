@@ -1,7 +1,7 @@
 import { ActionMenu, Button, EmptyState, Pager, PageHeader, TableShell, Thead } from '../../shared/ui';
 import AutoPushToggle from './AutoPushToggle';
 import { FOCUS } from '../../shared/theme';
-import { CardCell, FingerprintCell, TerminalsCell, syncedAgo } from './enrollmentCells';
+import { CardCell, DeviceUserIdCell, FingerprintCell, TerminalsCell, syncedAgo } from './enrollmentCells';
 import EmployeeFilters from './EmployeeFilters';
 import DepartmentTree from './DepartmentTree';
 import { Link } from 'react-router-dom';
@@ -131,6 +131,7 @@ export default function EmployeesDesktop({
                         <th className="px-5 py-3 text-center" style={{ width: '1%' }}>No.</th>
                         <th className="px-5 py-3 text-left">Name</th>
                         <th className="px-5 py-3 text-left">Code</th>
+                        <th className="px-5 py-3 text-left">Device user ID</th>
                         <th className="px-5 py-3 text-left">Company</th>
                         <th className="px-5 py-3 text-left">Department</th>
                         <th className="px-5 py-3 text-left">Job title</th>
@@ -143,7 +144,7 @@ export default function EmployeesDesktop({
                 <tbody>
                     {rows.length === 0 && (
                         <tr>
-                            <td colSpan={10}>
+                            <td colSpan={11}>
                                 <EmptyState
                                     title={searching || filtering ? 'No matches' : 'No employees yet'}
                                     hint={searching
@@ -208,6 +209,9 @@ export default function EmployeesDesktop({
                                 <EmploymentBadges employee={e} className="ml-2" />
                             </td>
                             <td className="px-5 py-3.5 font-mono text-xs text-slate-600">{e.employee_code}</td>
+                            <td className="px-5 py-3.5">
+                                <DeviceUserIdCell employee={e} />
+                            </td>
                             <td className="px-5 py-3.5 text-slate-600">{orgOf(e).company || '—'}</td>
                             <td className="px-5 py-3.5 text-slate-600">{orgOf(e).department || '—'}</td>
                             <td className="max-w-[14rem] truncate px-5 py-3.5 text-slate-600" title={e.job_title || undefined}>{e.job_title || '—'}</td>
