@@ -1,0 +1,55 @@
+{
+    "label": "attlog-write",
+    "host": "192.168.7.64",
+    "started_at": "2026-10-22T08:00:50+00:00",
+    "device": {
+        "id": 18,
+        "name": "IT-Office",
+        "model": "F18"
+    },
+    "test_time": "2001-01-01T09:01:00",
+    "steps": [
+        {
+            "step": "before",
+            "at": "2026-10-22T08:00:50+00:00",
+            "total": 2,
+            "test_records": [
+                {
+                    "user_id": "999999001",
+                    "verify_method": 1,
+                    "status": 0,
+                    "timestamp": "2001-01-01 09:00:00"
+                }
+            ]
+        },
+        {
+            "step": "write",
+            "at": "2026-10-22T08:00:51+00:00",
+            "payload_bytes": 108,
+            "set_data_reply": 2000,
+            "set_data_reply_name": "ACK_OK",
+            "set_data_reply_data_hex": "",
+            "refresh_reply": 2000,
+            "refresh_reply_name": "ACK_OK"
+        },
+        {
+            "step": "after",
+            "at": "2026-10-22T08:00:51+00:00",
+            "total": 3,
+            "test_records": [
+                {
+                    "user_id": "999999001",
+                    "verify_method": 1,
+                    "status": 0,
+                    "timestamp": "2001-01-01 09:00:00"
+                },
+                {
+                    "user_id": "999999001",
+                    "verify_method": 1,
+                    "status": 0,
+                    "timestamp": "2001-01-01 09:01:00"
+                }
+            ]
+        }
+    ]
+}

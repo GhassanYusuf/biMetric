@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-21**
+**Last updated: 2026-10-22**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-028 | 2026-10-22 | Camelot | Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes | OPEN |
 | DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | OPEN |
 | DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | FIXED |
 | DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | FIXED |
@@ -102,6 +103,72 @@ Template:
 ---
 
 ## Entries
+
+### DC-028 — Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes
+
+- **Date:** 2026-10-22
+- **Devices:** Camelot (F18/ID, 87.237.196.60)
+- **Direction:** device → software
+- **Symptom:** Owner, 2026-10-22: Camelot "was having a problem for 2 days and we wiped
+  the device yesterday", and asked to put its punches back to see what exists and what
+  not. The owner's partner wiped it from outside this system; no backup was taken.
+- **What was done:** read-only, no hardware touched, no data changed.
+  - The terminal held 42,423 punches at 2026-10-21 14:20 UTC and 0 at 16:34 UTC (health
+    check counts); users went 24 → 11. This system's own wipe (command 1894, 16:12) and
+    clear (1884, 16:04) never ran — "busy", "job lost". Nothing was sent by them.
+  - The system's newest REAL Camelot punch before the wipe is **2026-06-04 07:44 UTC**.
+    Nothing is stored for 2026-06-05 → 2026-10-20 apart from 87 in June and the 1,497
+    misaligned future-dated rows of DC-020. For ~4½ months every read came back mostly
+    misaligned (DC-020), so the attendance lived only on the terminal, which is now
+    empty.
+  - What survives: the raw 40-byte records of every undecodable read, archived before
+    parsing (rule 11) — sync runs 255 (2026-10-18, 30,720 rows), 263 (10-19, 14,108),
+    283 (10-20, 39,520 of 42,388 read), 310 (10-21 07:00, 29,305). DC-020 showed the
+    misalignment shifts records by whole fragments rather than destroying them.
+  - Not archived: records that DID decode but fell outside a range read's dates
+    (e.g. 2,868 in run 283) — left alone by design, so not stored anywhere.
+  - **Rebuild, read-only, offline** (scratch script; nothing written): each run's raw
+    rows (hex of 40 bytes) joined in id order into one stream, then scanned for valid
+    40-byte records (digit user id, timestamp 2015 → 2026-10-21, 8 zero padding bytes),
+    re-syncing a byte at a time where none starts. The first sample showed the record
+    starting 4 bytes into the row; across the reads, records start at offsets 28, 20,
+    32, 4 and 16 — a few fixed shifts, not random damage.
+    - Run 283 alone: 39,518 of 39,520 rows rebuilt (44 bytes skipped); **33,684 match
+      stored punches exactly** on user and time — the rebuild reproduces real records.
+    - Runs 255 + 263 + 283 + 310: 100,129 rebuilt, **39,362 distinct**, 34,592 already
+      stored, **4,770 not in the system**, of which **2,591 dated June–October 2026**
+      (June 558, July 543, August 522, September 587, October 444); 44 user ids, 31 of
+      them ever mapped to an employee on Camelot. Newest rebuilt: 2026-10-21 01:45
+      office time.
+    - Not recoverable from the archive: punches after 2026-10-21 01:45 office time until
+      the wipe, and ~3,000 of the 42,423 records the terminal held (records a range read
+      decoded but skipped as outside its dates are not stored anywhere).
+  - **Dry run** (offline, nothing written): the 4,770 would import as 3,969 attributed
+    by the mapping in force at each punch, 801 unattributed. 20 Sep – 21 Oct 2026, the
+    month the owner says HR never received: 12 employees with 31–59 punches each, plus
+    users **9** (58) and **14** (53) mapped to nobody — likely current staff never
+    linked (owner to name them). Many people appear under a short id and their CPR:
+    moved during October, both credited by time.
+  - Owner, 2026-10-22: Camelot itself stays a fresh start — nothing recovered goes back
+    on it. Wants the recovered data on the TEST terminal IT-Office to look at in the old
+    software, and a "copy onto a replacement terminal" feature.
+  - **Punch WRITE found and proven** on IT-Office (now device #18, F18, ZMM210_TFT,
+    Ver 6.60 Apr 26 2016 — the same firmware as Camelot): `CMD_SET_DATA` (3001),
+    `ATT_LOG` text payload, from `taha-rafi/php-zkteco` `bf7805c` (research, rule 17);
+    two runs, separate sessions, one test punch each for user 999999001 on 2001-01-01
+    09:00 / 09:01 — `ACK_OK`, read back exactly (`attlog-write-01/02.json`). Those two
+    test punches remain on IT-Office.
+  - Next: the owner decides what goes onto IT-Office, and whether to import into the
+    system.
+- **Root cause:** DC-020's misaligned reads over the internet link left the attendance
+  only on the terminal; the terminal was then wiped without a backup.
+- **Fix:** —
+- **Verified:** —
+- **Evidence:** devices.terminal_punch_count audit trail for device 12; sync runs 255,
+  263, 283, 310; attendance_raw_logs for device 12.
+- **Status:** OPEN — recovery from the raw archive under investigation. Do not delete
+  Camelot's raw archive rows or sync runs.
+- **Keywords:** Camelot wiped, data loss, no backup, raw archive, undecodable, misaligned, recovery, rebuild punches, attlog, DC-020
 
 ### DC-027 — A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown"
 

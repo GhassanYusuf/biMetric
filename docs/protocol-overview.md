@@ -466,6 +466,22 @@ Erases every attendance record; the user, card and template tables are untouched
 
 The 16- and 8-byte layouts are DOCUMENTED only; this hardware always sends 40.
 
+### Writing a punch — `CMD_SET_DATA` (3001) on `ATT_LOG` (OBSERVED 2026-10-22, F18)
+
+Not in ZKTeco's documentation or in `adrobinoga/zk-protocol`. Transcribed from
+`taha-rafi/php-zkteco` (commit `bf7805c`, `src/ZKTeco.php` `writeAttendanceToDevice()`,
+reverse-engineered by its author): command **3001** with the text payload
+
+    TableName=ATT_LOG\r\nUser_PIN=<pin>\tVerify_Type=<n>\tVerify_Time=<Y-m-dTH:i:s>\tStatus=<n>\tWork_Code_ID=<n>\0
+
+then `REFRESH_DATA` (1013). The reference claims it for "ZMM/new-architecture" boards
+(ZMM200, ZMM220, TX628…); it also works on the **ZMM210_TFT F18, Ver 6.60 Apr 26 2016**
+(IT-Office, 192.168.7.64): two runs in separate sessions, `ACK_OK` each, sent WITHOUT
+`DISABLE_DEVICE`, and each test record read back by `ATTLOG_RRQ` with the exact user,
+verify type, status and time (`tools/zkprobe/attlog-write.php`, traces
+`traces-2026-10-22/attlog-write-01.json`, `-02.json`). Not yet in the library, and
+unknown on every other model.
+
 ### Emptying the user table — `DELETE_USER` (18) per uid (2.16.0, never run)
 
 `UserService::deleteAll()` deletes every user one `DELETE_USER` (18, CONFIRMED on the

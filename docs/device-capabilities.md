@@ -104,6 +104,7 @@ flag that should drop**, not a new one.
 | `template.delete` | `CMD_DELETE_USERTEMP` payload is inferred, not documented. |
 | `attendance.realtime` | `REG_EVENT` subscription implemented; a live punch has not been observed arriving this way. |
 | `attendance.clear` | Destructive. Never run on hardware. Since 2.14.0 (2026-10-18) guarded on both sides by the terminal's own record count — see below. UNKNOWN on the F22 and generic terminals. |
+| (punch write) | **OBSERVED on the F18 IT-Office 2026-10-22, not yet a capability:** `CMD_SET_DATA` (3001) with an `ATT_LOG` text record is accepted (`ACK_OK`) and the punch reads back exactly — two runs, separate sessions (`traces-2026-10-22/attlog-write-01/02.json`). Source: `taha-rafi/php-zkteco` `bf7805c`. See `docs/protocol-overview.md`. Unknown on every other model. |
 | `device.wipe` | Destructive: every user removed (2.16.0, 2026-10-21) — `UserService::deleteAll()`, `DELETE_USER` (18) per uid, then the user table read back empty. Not `CLEAR_DATA` (14), DOCUMENTED only. IMPLEMENTED on the F18, never run on hardware; UNKNOWN on the F22 and generic terminals; NOT_IMPLEMENTED on C3 and CSL. The app's wipe procedure is CLAUDE.md rule 22. |
 | `user.privilege` | Added 2.14.0 (2026-10-18): admin (14) / normal user (0) on an existing record, read back. The F18 keeps a privilege through every write (C); setting one on purpose has not been run. UNKNOWN on the F22, NOT_IMPLEMENTED on C3 and CSL. |
 | `device.restart` | Deliberately never called. |
