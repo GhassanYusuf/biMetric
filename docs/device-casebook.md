@@ -80,7 +80,7 @@ Template:
 | DC-023 | 2026-10-18 | all six | Punches were never read automatically: nothing ran the scheduler | MONITORING |
 | DC-022 | 2026-10-12 to 2026-10-20 | all six | Keypad passwords: never pushed, never read — and erased by every standalone write | FIXED |
 | DC-021 | 2026-10-12 | Entrance, Glass Door, IT ROOM | Every Save took 20–40 s; two operators could talk to one terminal at once | FIXED |
-| DC-020 | 2026-10-11 to 2026-10-18 | Camelot | 1,497 Camelot punches stored with dates from 2026-12-07 to 2030-01-30 — misaligned reads, not a clock | OPEN |
+| DC-020 | 2026-10-11 to 2026-10-22 | Camelot | 1,497 Camelot punches stored with dates from 2026-12-07 to 2030-01-30 — misaligned reads, not a clock | FIXED |
 | DC-019 | 2026-10-11 | IT ROOM, On The Road, Glass Door, Entrance | Clocks ~10¾ min slow although time zones were set | MONITORING |
 | DC-018 | 2026-10-11 | Glass Door, Entrance, IT ROOM | "Abdul" (21) is Abdul Haq; a panel edit cut his finger off his record | FIXED |
 | DC-017 | 2026-10-11 | all | "Wipe a terminal and push the stored data" — Rebuild from system | MONITORING |
@@ -564,7 +564,7 @@ Template:
 - **Fix:** none yet. Rows left untouched — deleting them would destroy evidence and possibly real punches with wrong dates.
 - **Verified:** —
 - **Evidence:** `attendance_logs where device_id = 12 and punched_at > now()`; created_at 2026-10-11 08:21:38.977–08:21:39.060.
-- **Status:** OPEN — owner decides whether the rows are kept, re-dated or excluded from reports; next session inspects their raw payloads.
+- **Status:** FIXED — misaligned rows are no longer imported (2.14.0), and every junk row already stored on Camelot was removed 2026-10-22 (backups kept). The misalignment itself is DC-002/DC-028.
 - **2026-10-18 (read-only, no data changed):** the clock hypothesis is very likely WRONG. All 1,497 future rows have a BLANK `device_user_id`, and Camelot has 2,876 blank-user rows in all, dated 1999-12-31 to 2030-01-30 (2,871 inserted by the 2026-10-11 sync, 4 on 2026-09-27, 1 on 2026-10-18). A real punch always carries a user id. These are misaligned bytes that happened to pass the decoder. The catch-up sync that day (command 160, sync run 255) read 42,352 records: 13,517 decoded, **17,203 undecodable**. The newest decoded punch is 2025-11-13 21:26:13 UTC, and the newest non-blank Camelot punch stored at all is 2026-05-26. **So most of the last year of Camelot attendance exists in the system only as undecodable raw bytes. The terminal still holds it.** Sample undecodable raw record (attendance_raw_logs 1288272): `3413 3431 00… 01 918fa72a ff 00… | 3513 323238 000000`. At offset 32 of the 40-byte record a new record begins (uid 0x1335, user "228"), so the stream is offset by whole fragments, which is the DC-002 bulk-read desync. **Consequence: Camelot's attendance log must NOT be cleared until a clean read (0 undecodable, count = terminal's own record count) has been taken.** Next step: a read-only windowed read of Camelot's attendance (the DC-001 F22 method) to see whether smaller transfers survive the internet link.
 - **2026-10-18, fix for new reads (library 2.14.0 + app):** `AttendanceCodec` returns a 40-byte record with an empty user id as undecodable; `AttendanceSyncService::ingest()` archives any punch stamped more than a day ahead (`skip_reason = future_timestamp`, `counts.future`) instead of importing it, so it can never become the watermark. Re-confirmed on the F18 path (rule 15): full reads of IT ROOM (command 168: 11,332 read = its GET_FREE_SIZES count, 0 undecodable, 0 future) and On The Road (169: 8,430, 0, 0). Tests: `AttendanceClearTest` (library and app). **The 2,876 junk rows already stored are untouched** — removing them is a production data change the owner decides.
 - **2026-10-22, hand correction (owner: "delete all 1,497 junk rows"):** the 1,497 Camelot
@@ -572,7 +572,14 @@ Template:
   credited to an employee) deleted at 11:42:56 UTC, after a verified backup
   `storage/app/private/removed-records/camelot-future-junk-backup-20261022-114255.json.gz`
   (restore from it to undo). Camelot 40,539 → 39,042 punches; credited 30,878 unchanged.
-  Left: ~1,379 blank-user rows with PAST dates (1999 → 2026) — same junk, owner to say.
+  Then the remaining **1,379** blank-user Camelot rows (dated 1999-12-31 → 2026-06-04,
+  none credited) deleted at 11:48:10 UTC, owner's go-ahead, after a verified backup
+  `…/camelot-blank-user-junk-backup-20261022-114810.json.gz`. Camelot 39,042 → 37,663;
+  credited 30,878 unchanged; other terminals unchanged. **No blank-user row is left on
+  Camelot.** NOT touched: blank-user rows on the C3 panels Entrance (15,925) and Glass
+  Door (1,171) — on a C3 panel a record without a Pin is likely a real door event
+  (unregistered card, exit button, alarm), and this F18 finding says nothing about
+  them (rule 15).
 - **Keywords:** future punch, 2030, wrong date, Camelot, clock, punched_at, timezone
 
 ### DC-019 — Clocks ~10¾ min slow although time zones were set
