@@ -86,7 +86,7 @@ class AttendanceFiltersTest extends TestCase
 
         $rows = $this->withToken($token)->getJson('/api/attendance?per_page=200&'.$query)->assertOk()->json('data');
 
-        return collect($rows)->pluck('employee_code')
+        return collect($rows)->pluck('device_user_id')
             ->filter(fn ($c) => str_starts_with((string) $c, 'P-') || $c === '77123')
             ->sort()->values()->all();
     }
@@ -118,9 +118,35 @@ class AttendanceFiltersTest extends TestCase
         $token = $this->postJson('/api/auth/login', ['email' => 'punches@acme.test', 'password' => self::PASSWORD])->json('data.token');
         $this->app['auth']->forgetGuards();
 
-        $row = collect($this->withToken($token)->getJson('/api/attendance?per_page=200')->json('data'))->firstWhere('employee_code', 'P-1');
+        $row = collect($this->withToken($token)->getJson('/api/attendance?per_page=200')->json('data'))->firstWhere('device_user_id', 'P-1');
 
         $this->assertSame('Zaynab Qudsi Alwardi', $row['employee_name']);
+    }
+
+    /**
+     * 2026-10-22: a punch carries both numbers — the person's Personnel ID and the one
+     * the terminal recorded it under. They differ when a terminal could not move
+     * someone (Monir: 230 on Camelot, Personnel ID 900177098). Until then the field
+     * named employee_code held the terminal's number.
+     */
+    public function test_a_punch_carries_the_personnel_id_and_the_terminal_number_apart(): void
+    {
+        Tenancy::set(Tenant::where('slug', 'acme')->firstOrFail()->id);
+        $monir = Employee::create(['name' => 'Monir', 'employee_code' => '900177098', 'is_active' => true]);
+        AttendanceLog::create([
+            'device_id' => Device::firstOrFail()->id, 'device_user_id' => '230', 'employee_id' => $monir->id,
+            'punched_at' => now()->subMinutes(20), 'verify_method' => 1, 'status' => 0,
+        ]);
+        Tenancy::clear();
+
+        $token = $this->postJson('/api/auth/login', ['email' => 'punches@acme.test', 'password' => self::PASSWORD])->json('data.token');
+        $this->app['auth']->forgetGuards();
+        $rows = collect($this->withToken($token)->getJson('/api/attendance?per_page=200')->json('data'));
+
+        $his = $rows->firstWhere('device_user_id', '230');
+        $this->assertSame('900177098', $his['employee_code']);
+        $unmatched = $rows->firstWhere('device_user_id', '77123');
+        $this->assertNull($unmatched['employee_code'] ?? null, 'nobody, so no Personnel ID');
     }
 
     public function test_a_malformed_department_is_refused(): void

@@ -159,6 +159,10 @@ function PunchCard({ log, onSelect }) {
                 <div className="truncate text-xs text-slate-500">
                     {log.device_name || '—'} · {verifyLabel(log.verify_method)}
                     {log.employee_code && <span className="font-mono"> · {log.employee_code}</span>}
+                    {/* Rule 5: the desktop "Device user ID" column. */}
+                    {log.device_user_id && String(log.device_user_id) !== String(log.employee_code) && (
+                        <span className={`font-mono ${log.employee_code ? 'text-amber-700' : ''}`}> · device ID {log.device_user_id}</span>
+                    )}
                 </div>
             </div>
             <div className="shrink-0 text-right text-sm font-semibold tabular-nums text-slate-700">

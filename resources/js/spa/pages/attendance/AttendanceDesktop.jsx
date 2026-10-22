@@ -83,6 +83,7 @@ export default function AttendanceDesktop({
                     <tr>
                         <th className="px-5 py-3 text-left">Employee</th>
                         <th className="px-5 py-3 text-left">Code</th>
+                        <th className="px-5 py-3 text-left">Device user ID</th>
                         <th className="px-5 py-3 text-left">Device</th>
                         <th className="px-5 py-3 text-left">Method</th>
                         <th className="px-5 py-3 text-left">Date</th>
@@ -92,7 +93,7 @@ export default function AttendanceDesktop({
                 <tbody className="divide-y divide-slate-100">
                     {rows.length === 0 && (
                         <tr>
-                            <td colSpan={6}>
+                            <td colSpan={7}>
                                 <EmptyState
                                     title="No punches found"
                                     hint={hasFilters ? 'No punches match these filters. Try widening the date range.' : 'Sync a device to pull attendance in.'}
@@ -132,6 +133,14 @@ export default function AttendanceDesktop({
                                     {log.employee_name || <UnmatchedName log={log} />}
                                 </td>
                                 <td className="px-5 py-3 font-mono text-xs text-slate-600">{log.employee_code || '—'}</td>
+                                {/* The number the terminal recorded — amber when it is not their
+                                    Personnel ID (e.g. a terminal that could not move them). */}
+                                <td
+                                    className={`px-5 py-3 font-mono text-xs ${log.employee_code && String(log.device_user_id) !== String(log.employee_code) ? 'text-amber-700' : 'text-slate-600'}`}
+                                    title={log.employee_code && String(log.device_user_id) !== String(log.employee_code) ? `Recorded by ${log.device_name || 'the terminal'} under ${log.device_user_id}, not their Personnel ID ${log.employee_code}` : undefined}
+                                >
+                                    {log.device_user_id || '—'}
+                                </td>
                                 <td className="px-5 py-3 text-slate-600">{log.device_name || '—'}</td>
                                 <td className="px-5 py-3 text-slate-600">{verifyLabel(log.verify_method)}</td>
                                 <td className="px-5 py-3 text-slate-600">{date}</td>
