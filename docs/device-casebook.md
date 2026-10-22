@@ -72,7 +72,7 @@ Template:
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
 | DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | OPEN |
-| DC-028 | 2026-10-22 | Camelot | Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes | OPEN |
+| DC-028 | 2026-10-22 | Camelot | Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes | FIXED |
 | DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | OPEN |
 | DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | FIXED |
 | DC-025 | 2026-10-21 | IT ROOM, Entrance, On The Road | Employee deleted by Personnel ID over the API is still on three terminals and can still punch | FIXED |
@@ -230,17 +230,28 @@ Template:
     run's progress kept as `.progress-run1`). Read back: **42,416 records, all decoded,
     0 of the 42,415 missing** (one punch made at the terminal during the copy) —
     `attlog-copy-05/06.json`.
-  - Not done: importing the 4,770 into the system (owner's go-ahead pending); users 9 and
-    14 unidentified (owner); the 42,418 IT-Office punches in the system (owner to say
-    keep or remove).
+  - Owner pulled the log from IT-Office by USB and produced a report of 20 Sep – 21 Oct
+    2026 by user id: 669 punches, 23 ids — equal, to the second, to the same period of
+    the copied set. Named from Camelot's links for that period (14 people; ids 9 and 14
+    by Camelot's own names "TUHIN" / "Suzeth", unconfirmed; 900177098's 4 punches are
+    Winnie Khandakar's — DC-026-style mix-up, Monir's CPR on her record 10-08 → 10-21).
+    Delivered as `draft/Camelot_Attendance_20Sep-21Oct_2026_named.pdf` (git-ignored).
+    Owner, 2026-10-22: "we solved the attendance problem", IT-Office disconnected.
+  - Not done (owner's call, not required to close): importing the 4,770 into the
+    system; confirming ids 9 and 14; removing the 42,418 IT-Office punches and the
+    IT-Office device from the system.
 - **Root cause:** DC-020's misaligned reads over the internet link left the attendance
   only on the terminal; the terminal was then wiped without a backup.
-- **Fix:** —
-- **Verified:** —
+- **Fix:** none to the software; the data was recovered — raw archive rebuilt (4,770
+  punches the system lacked), Camelot's pre-wipe log reassembled (42,415 of the 42,423
+  the terminal held), written onto IT-Office with the newly proven punch write
+  (`CMD_SET_DATA` 3001), pulled by USB, and named for HR. Prevention still owed: an alert
+  when a terminal's reads are mostly undecodable, and refusing a clear while they are.
+- **Verified:** IT-Office read back 0 missing of 42,415 (twice); the owner's USB report equals the copied set for 20 Sep – 21 Oct (669 punches, same times).
 - **Evidence:** devices.terminal_punch_count audit trail for device 12; sync runs 255,
   263, 283, 310; attendance_raw_logs for device 12.
-- **Status:** OPEN — recovery from the raw archive under investigation. Do not delete
-  Camelot's raw archive rows or sync runs.
+- **Status:** FIXED — the period HR needed is recovered and delivered. Keep Camelot's
+  raw archive rows and sync runs: they are the evidence and the only other copy.
 - **Keywords:** Camelot wiped, data loss, no backup, raw archive, undecodable, misaligned, recovery, rebuild punches, attlog, DC-020
 
 ### DC-027 — A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown"
