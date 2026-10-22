@@ -81,6 +81,7 @@ enrollment **session id**), not a result. See §5.
 | GET | `/employees` | Filters: `search`, `external_id`, `employee_code`, `department_id`, `is_active`, `resigned` (`1` only resigned, `0` none), `employment_type`, `device_id`, `updated_since`. `per_page` ≤ 200. Ordered by `id` — stable while rows are added. |
 | GET | `/employees/{id}` | |
 | GET | `/employees/by-external-id/{externalId}` | |
+| GET | `/employees/by-code/{code}` | By **Personnel ID** (`employee_code`), the same answer as `/employees/{id}`. Exact match as text (`0099902` ≠ `99902`); `404` if no employee in your company has it. A path of its own because ids and codes are both numbers — `/employees/1000` is always the id. |
 | POST | `/employees` | `employee_code` optional — the next free one is allocated. |
 | PUT | `/employees/by-external-id/{externalId}` | **Upsert.** `201` + `meta.created=true` or `200` + `meta.created=false`. The URL's id wins over any `external_id` in the body. |
 | PATCH / PUT | `/employees/{id}` | **Partial** — send only what changed. |

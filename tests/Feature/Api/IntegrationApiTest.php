@@ -344,6 +344,32 @@ class IntegrationApiTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    /** Owner, 2026-10-22: get an employee by Personnel ID, the same answer as by id. */
+    public function test_an_employee_is_found_by_personnel_id(): void
+    {
+        $e = $this->employee('Coded', '770280340');
+
+        $this->as(['employees:read'])->getJson('/api/v1/employees/by-code/770280340')
+            ->assertOk()->assertJsonPath('data.id', $e->id)->assertJsonPath('data.employee_code', '770280340');
+        $this->as(['employees:read'])->getJson('/api/v1/employees/by-code/0770280340')->assertNotFound();
+        $this->as(['employees:read'])->getJson('/api/v1/employees/by-code/1')->assertNotFound();
+    }
+
+    /**
+     * Why it is its own path: an id and another person's Personnel ID can be the same
+     * number. by-code must return the person whose CODE it is, never the one whose id.
+     */
+    public function test_by_code_never_returns_the_employee_whose_id_is_that_number(): void
+    {
+        $first = $this->employee('First', 'A-1');
+        $other = $this->employee('Other', (string) $first->id);
+
+        $this->as(['employees:read'])->getJson("/api/v1/employees/by-code/{$first->id}")
+            ->assertOk()->assertJsonPath('data.id', $other->id);
+        $this->as(['employees:read'])->getJson("/api/v1/employees/{$first->id}")
+            ->assertOk()->assertJsonPath('data.id', $first->id);
+    }
+
     public function test_delete_by_code_on_no_terminal_deletes_at_once(): void
     {
         Queue::fake();

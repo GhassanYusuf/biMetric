@@ -82,6 +82,24 @@ class EmployeeController extends Controller
         return ApiResponse::success(new EmployeeResource($employee->load(self::WITH)), 'Employee retrieved.');
     }
 
+    /**
+     * One employee by Personnel ID (`employee_code`) instead of the database id (owner,
+     * 2026-10-22). A path of its own, not `{employee}` accepting either: ids and codes are
+     * both numbers, so `/employees/1000` would be the employee with id 1000 OR the one
+     * with code 1000 — 150 employees have short numeric codes and ids keep growing.
+     * Matched exactly, as text ("0099902" is not "99902"); tenant-scoped.
+     */
+    public function showByCode(string $code): JsonResponse
+    {
+        $employee = Employee::query()->where('employee_code', $code)->first();
+
+        if ($employee === null) {
+            return ApiResponse::error("No employee has Personnel ID {$code}.", [], 404);
+        }
+
+        return $this->show($employee);
+    }
+
     public function showByExternalId(string $externalId): JsonResponse
     {
         $employee = Employee::query()->where('external_id', $externalId)->firstOrFail();

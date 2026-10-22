@@ -322,6 +322,15 @@ that the employee has no fingerprints.
 
 ## Employees
 
+### `GET /api/employees/by-code/{code}` — get by Personnel ID (2026-10-22)
+
+The same answer as `GET /api/employees/{employee}`, found by Personnel ID
+(`employee_code`) instead of the database id. Exact match as text; `404` when no
+employee in your company has it. Also `GET /api/v1/employees/by-code/{code}`
+(`employees:read`). Not folded into `{employee}`: ids and codes are both numbers
+(150 employees had short numeric codes on 2026-10-22), so one path accepting both
+would sooner or later return the wrong person.
+
 ### `DELETE /api/employees/by-code/{code}` — delete by Personnel ID, system AND terminals (2026-10-21)
 
 `{code}` is the **Personnel ID** (`employee_code`), not the database `id` that

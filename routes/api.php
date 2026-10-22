@@ -134,6 +134,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Delete by Personnel ID (employee_code), from the system AND every terminal
     // (2026-10-21, casebook DC-025). The integration API's method, so the two are one.
     Route::delete('employees/by-code/{code}', [IntegrationEmployeeController::class, 'destroyByCode']);
+    // Get by Personnel ID (2026-10-22): the same answer as GET employees/{employee}.
+    Route::get('employees/by-code/{code}', [EmployeeController::class, 'showByCode']);
 
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
     Route::get('employees/{employee}/duplicates', [DuplicateScanController::class, 'forEmployee']);

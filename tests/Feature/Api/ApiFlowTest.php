@@ -163,6 +163,18 @@ class ApiFlowTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
+    /** Owner, 2026-10-22: the signed-in API finds an employee by Personnel ID too. */
+    public function test_an_employee_is_found_by_personnel_id(): void
+    {
+        $token = $this->tokenFor('admin@acme.test');
+        $id = $this->actingWithToken($token)->postJson('/api/employees', ['name' => 'Get Me', 'employee_code' => '99911'])->assertStatus(201)->json('data.id');
+
+        $this->actingWithToken($token)->getJson('/api/employees/by-code/99911')
+            ->assertOk()->assertJsonPath('data.id', $id)->assertJsonPath('data.name', 'Get Me');
+        $this->actingWithToken($token)->getJson('/api/employees/by-code/099911')
+            ->assertStatus(404)->assertJsonPath('success', false);
+    }
+
     /** The code is text: "0099902" must not find "99902", nor the other way round. */
     public function test_delete_by_personnel_id_matches_the_code_exactly(): void
     {

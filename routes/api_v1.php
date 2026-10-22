@@ -63,8 +63,10 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'tenant', 'throttle:integration
     Route::middleware('abilities:employees:read')->group(function () {
         Route::get('employees', [EmployeeController::class, 'index'])->name('api.v1.employees.index');
         Route::get('employees/next-code', [SpaEmployeeController::class, 'nextCode'])->name('api.v1.employees.next-code');
-        // Both fixed paths MUST precede `employees/{employee}`.
+        // The fixed paths MUST precede `employees/{employee}`.
         Route::get('employees/by-external-id/{externalId}', [EmployeeController::class, 'showByExternalId'])->name('api.v1.employees.show-by-external-id');
+        // Personnel ID (employee_code), 2026-10-22 — its own path: ids and codes are both numbers.
+        Route::get('employees/by-code/{code}', [EmployeeController::class, 'showByCode'])->name('api.v1.employees.show-by-code');
         Route::get('employees/{employee}', [EmployeeController::class, 'show'])->whereNumber('employee')->name('api.v1.employees.show');
     });
     Route::middleware('abilities:employees:write')->group(function () {

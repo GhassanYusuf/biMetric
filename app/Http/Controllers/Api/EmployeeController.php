@@ -168,6 +168,22 @@ class EmployeeController extends Controller
         return ApiResponse::created(new EmployeeResource($employee->fresh()->load([...self::DEPARTMENT, 'accessLevels:id', ...self::copyRelations()])), 'Employee added.');
     }
 
+    /**
+     * One employee by Personnel ID (`employee_code`), the same answer as show() (owner,
+     * 2026-10-22). Its own path because ids and codes are both numbers — see
+     * Api\V1\EmployeeController::showByCode(). Exact match, tenant-scoped.
+     */
+    public function showByCode(string $code): JsonResponse
+    {
+        $employee = Employee::query()->where('employee_code', $code)->first();
+
+        if ($employee === null) {
+            return ApiResponse::error("No employee has Personnel ID {$code}.", [], 404);
+        }
+
+        return $this->show($employee);
+    }
+
     public function show(Employee $employee): JsonResponse
     {
         $this->authorize('view', $employee);
