@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | OPEN |
 | DC-028 | 2026-10-22 | Camelot | Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes | OPEN |
 | DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | OPEN |
 | DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | FIXED |
@@ -103,6 +104,45 @@ Template:
 ---
 
 ## Entries
+
+### DC-029 — A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers
+
+- **Date:** 2026-10-22
+- **Devices:** Camelot (F18/ID, 87.237.196.60)
+- **Direction:** software → device
+- **Symptom:** Owner: "by mistake I deleted 2 users just now in Camelot, through Postman
+  — can you get them back".
+- **What was done:** read-only investigation, two database/terminal recoveries.
+  - `DELETE …/by-code/{code}` at 10:47 (Charmae Darbin Quijano, #1771, user 930326288)
+    and 10:49 UTC (Monir Khandakar, #1767, user 230): each deactivated and queued
+    `remove_user` (commands 2946, 2947). `removeEmployee()` saved their credentials,
+    sent DELETE_USER, and the read-back found the record STILL there —
+    `VerificationException` "accepted the delete … but the record is still there".
+    Writing that failure to `storage/logs/device-2026-10-22.log` then threw
+    "Permission denied": the file had been created by a diagnostic script run as root
+    that morning, so the www-data worker could not append — the commands ended "job
+    lost" instead of failed cleanly. The employee delete never ran (it needs a
+    confirmed removal).
+  - Read-only: both still on Camelot, links intact, punches intact (1,382 / 2,653),
+    stored copies intact (1 / 4 slots) — but **no fingers on the terminal** for these two
+    (the other 9 users keep theirs).
+  - Reactivated both (`is_active` true, through the model, audited 10:55:47 UTC).
+  - Fixed: every root-owned file under storage/ and bootstrap/cache chown'ed to www-data.
+  - Tried: `FingerprintPusher::push` of their stored copies onto Camelot — ACKed, read
+    back with none kept ("accepted fingerprint slot(s) … but did not keep any"). Nothing
+    overwritten (add-only).
+- **Root cause:** Camelot executed DELETE_USER only partly — templates removed, user
+  record kept — and the remaining record will not take templates. Firmware state on this
+  unit after a partial delete over the internet link; cause inside the terminal not
+  known. Separately: diagnostics run as root left a root-owned log file that the worker
+  could not write.
+- **Fix:** — (owner to choose: remove and re-add the two records from the system, or
+  re-enrol at the terminal).
+- **Verified:** —
+- **Evidence:** commands 2946, 2947; laravel.log 10:47:06, 10:49:48 UTC; audit 10:55:47.
+- **Status:** OPEN — both employees active with punches and stored fingers; their fingers
+  are missing on Camelot until re-added or re-enrolled.
+- **Keywords:** delete by code, accepted the delete but the record is still there, VerificationException, job lost, Permission denied, device log, root-owned, fingers dropped, did not keep any of them, Camelot
 
 ### DC-028 — Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes
 
