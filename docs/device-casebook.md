@@ -169,8 +169,23 @@ Template:
     42,415 missing** (`attlog-copy-01..04.json`).
   - IT-Office is linked to nobody, so a read cannot credit these to anyone; a FULL
     re-read of IT-Office would import them as unattributed punches — do not.
+  - 2026-10-22 08:45 UTC a "Sync punches" on IT-Office (command 2794, not by this
+    session) imported all 42,418 into the system as IT-Office punches, unattributed.
+  - Owner asked for an admin user on IT-Office to pull the punches by USB. A push of
+    Ghassan was refused (roster entry 1434 for 830108246 unclaimed — the guard working);
+    830108246 holds none of the copied punches, so entry 1434 was claimed for Ghassan
+    (map 3001). The privilege write then found NO user on the terminal: between 08:55 and
+    09:00 UTC IT-Office's clock was set from outside this system (drift 123,874,360 s →
+    665 s) and the terminal was emptied — **0 users, 0 punches** at 09:05. Nothing was
+    sent by this system. Likely the old software connecting with a download-and-clear,
+    or the terminal menu — owner to say.
+  - Hand correction: map 3001 `valid_from` NULL → 2026-10-22 09:05:30 UTC, so the
+    claim's unbounded start cannot credit Ghassan with IT-Office punches already stored
+    (1 is under 830108246: IT-Office's own old punch, left unattributed). Undo: set it
+    back to NULL.
   - Not done: importing the 4,770 into the system (owner's go-ahead pending); users 9 and
-    14 unidentified (owner).
+    14 unidentified (owner); the 42,418 IT-Office punches in the system (owner to say
+    keep or remove).
 - **Root cause:** DC-020's misaligned reads over the internet link left the attendance
   only on the terminal; the terminal was then wiped without a backup.
 - **Fix:** —
