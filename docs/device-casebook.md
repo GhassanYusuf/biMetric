@@ -183,6 +183,13 @@ Template:
     claim's unbounded start cannot credit Ghassan with IT-Office punches already stored
     (1 is under 830108246: IT-Office's own old punch, left unattributed). Undo: set it
     back to NULL.
+  - Owner asked for an admin user to pull the punches by USB; their Test User (1805,
+    code 999) push had been refused while roster entry 1434 was unclaimed. Pushed after
+    the claim: IT-Office user **1**, privilege 14, keypad password set — read back.
+  - **Re-copied** the same 42,415 (2026-10-22 09:10 → 09:37 UTC, every reply ACK_OK; first
+    run's progress kept as `.progress-run1`). Read back: **42,416 records, all decoded,
+    0 of the 42,415 missing** (one punch made at the terminal during the copy) —
+    `attlog-copy-05/06.json`.
   - Not done: importing the 4,770 into the system (owner's go-ahead pending); users 9 and
     14 unidentified (owner); the 42,418 IT-Office punches in the system (owner to say
     keep or remove).
