@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-10-21**
+**Last updated: 2026-10-22**
 
 ---
 
@@ -137,7 +137,35 @@ was then deleted at the owner's request, so code 1000 is free there again. The e
 was then proven live on IT ROOM (test employee 1804, 09:17 UTC: removed in 8 s, record
 deleted on confirmation, read back). The "Test" employee note under the password feature no longer applies.
 
-### Wipe terminal — BUILT 2026-10-21 on `wipe-terminal`, never run on hardware
+### 2026-10-22 — Camelot's lost attendance recovered; punches can be WRITTEN to an F18
+
+Camelot was wiped from outside the system on 2026-10-21 (no backup) after ~4½ months
+of misaligned reads: its June–October attendance existed only as undecodable raw bytes
+(DC-020/DC-028). Rebuilt offline from the raw archive (4,770 punches the system lacked);
+Camelot's pre-wipe log reassembled (42,415 of 42,423), written onto the test F18
+IT-Office, pulled by USB by the owner, and named for HR
+(`draft/Camelot_Attendance_20Sep-21Oct_2026_named.pdf`). **Owner owes:** whether to
+import the 4,770 into the system; confirm Camelot ids 9 ("TUHIN") and 14 ("Suzeth").
+
+**Punch write PROVEN on F18 firmware Ver 6.60 (ZMM210_TFT):** `CMD_SET_DATA` (3001) with
+an `ATT_LOG` text record (from `taha-rafi/php-zkteco` `bf7805c`). Not yet a library
+feature or capability — owner wants a "copy onto a replacement terminal" feature built
+from it (library → driver → command → UI). Probes `tools/zkprobe/attlog-write.php`,
+`attlog-copy.php` (both refuse any terminal but IT-Office).
+
+Also 2026-10-22: `GET /api/employees/by-code/{code}` and `/api/v1/…` (by Personnel ID,
+its own path because ids and codes are both numbers); DC-027 closed on hardware (first
+finger written to an empty terminal; wipe's linked-user path proven); **DC-029 OPEN** —
+mistaken Postman deletes of Charmae and Monir half-ran on Camelot (records kept, fingers
+gone, records now drop new fingers): both reactivated with punches and stored fingers;
+owner to choose re-add from the system or re-enrol at the terminal. Camelot still holds
+Winnie under 900177098 (Monir's CPR) — move her to 841270180 there.
+
+IT-Office (device #18, 192.168.7.64) disconnected by the owner, not needed: the device row
+and 42,418 copied punches imported by a sync at 08:45 UTC are still in the system —
+owner to say remove.
+
+### Wipe terminal — BUILT 2026-10-21 on `wipe-terminal`, run on hardware 2026-10-21
 
 Owner: a Devices action that removes every fingerprint and card, asks whether to save
 the punches, and saves a linked user's fingers or card only when the system lacks them.
@@ -799,6 +827,13 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-22 — Camelot recovery, punch write proven, get-by-code, two half-deletes
+
+See "Where we stopped" (2026-10-22). All committed on `wipe-terminal`; library tagged
+v2.16.2; nothing pushed. Ops trap found: a diagnostic script run as root created a
+root-owned log file that the www-data worker could not append to, turning two device
+failures into "job lost" (DC-029) — run scripts as `sudo -u www-data`, chown after.
+
 ### 2026-10-21 — Employee list export; everything committed; push blocked by no credentials
 
 Owner asked how to make "Test" admin on IT ROOM but not Entrance: the Enrollment
