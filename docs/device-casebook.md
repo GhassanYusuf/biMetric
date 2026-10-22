@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | OPEN |
+| DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | FIXED |
 | DC-028 | 2026-10-22 | Camelot | Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes | FIXED |
 | DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | OPEN |
 | DC-026 | 2026-10-21 | Good Wheels | A CPR typed onto the wrong employee, corrected, could never be given to the right one on that terminal | FIXED |
@@ -140,18 +140,29 @@ Template:
     "two records with one number" explanation is ruled out.
   - Stopped remote attempts on a live terminal (rule 16). The firmware's own message
     suggests a power cycle.
+  - Owner power-cycled Camelot on site (back at 14:13 UTC, same address, clock right,
+    11 users). Retry at ~14:15 UTC: both REMOVES now worked and read back gone. The
+    re-add then refused — "has no identity on Camelot": the script called
+    `pushEmployee()` without `claim()` after the removal closed the link (a script
+    mistake, not the terminal). Both were off Camelot for ~2 minutes; then `claim()` +
+    `pushEmployee()`: **Charmae 930326288 finger 6, Monir 230 fingers 3, 5, 6, 7 —
+    written from the system copies and read back.**
+  - Found while there: 13 employees still LINKED to Camelot are not on the terminal
+    (its 2026-10-21 wipe) — including Winnie Khandakar (link 900177098, the DC-026-style
+    mix-up; she is not on Camelot at all) and Firoj, both punching there until
+    2026-10-21. Owner to decide re-adding them / closing the other links.
 - **Root cause:** Camelot executed DELETE_USER only partly — templates removed, user
   record kept — and the remaining record will not take templates. Firmware state on this
   unit after a partial delete over the internet link; cause inside the terminal not
   known. Separately: diagnostics run as root left a root-owned log file that the worker
   could not write.
-- **Fix:** — remote re-add refused (above). Next, owner's choice: power-cycle Camelot
-  on site, then one retry of the re-add; or delete the two at the terminal's menu and
-  re-add from the system; or re-enrol their fingers at the terminal.
-- **Verified:** —
+- **Fix:** none to the software. A power cycle of Camelot cleared the stuck state; the
+  two were then removed and re-added from the system with their stored fingers. Lesson:
+  on this unit, a delete ACKed but not done is a terminal state a restart clears —
+  restart before retrying writes.
+- **Verified:** Camelot read back 14:16 UTC: Charmae [6], Monir [3, 5, 6, 7], 11 users.
 - **Evidence:** commands 2946, 2947; laravel.log 10:47:06, 10:49:48 UTC; audit 10:55:47.
-- **Status:** OPEN — both employees active with punches and stored fingers; their fingers
-  are missing on Camelot until re-added or re-enrolled.
+- **Status:** FIXED — both active, on Camelot with their fingers.
 - **Keywords:** delete by code, accepted the delete but the record is still there, VerificationException, job lost, Permission denied, device log, root-owned, fingers dropped, did not keep any of them, Camelot
 
 ### DC-028 — Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes
