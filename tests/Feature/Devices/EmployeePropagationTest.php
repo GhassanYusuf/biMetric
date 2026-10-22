@@ -751,6 +751,55 @@ class EmployeePropagationTest extends TestCase
         $this->assertSame(14, collect($driver->roster)->firstWhere('userId', '501')->privilege, 'an admin stays an admin');
     }
 
+    /**
+     * 2026-10-22 (Gretchen on Camelot after its wipe): linked as 6, not on the terminal at
+     * all — the roster read marked it missing_on_device and this push's read agrees. The
+     * move becomes an add under the code, stored finger written back; the old link is
+     * closed, not edited, so punches under 6 stay hers.
+     */
+    public function test_a_person_no_longer_on_the_terminal_is_added_under_the_code(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $old = $this->mapTo($this->adopted, '6');
+        $old->update(['reconciliation_status' => EmployeeDeviceMap::MISSING_ON_DEVICE]);
+        $blob = "\x4A\x2DSS21".random_bytes(300);
+        \App\Models\BiometricTemplate::create([
+            'tenant_id' => $this->tenant->id, 'employee_id' => $this->employee->id, 'device_id' => $this->adopted->id,
+            'finger_slot' => 6, 'template' => base64_encode($blob), 'template_size' => strlen($blob), 'template_sha1' => sha1($blob),
+            'template_format' => 'binary:F18', 'verified_at' => now(),
+        ]);
+
+        $res = $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk();
+
+        $this->assertSame([], $res->json('data.failed'), json_encode($res->json('data.failed')));
+        $res->assertJsonPath('data.written.0.pin', '501');
+        $this->assertStringContainsString('no longer on Main Gate (user ID 6), so they were added as 501', $res->json('data.written.0.message'));
+        $this->assertSame([], $driver->deletes, 'nothing to delete');
+        $this->assertSame([['user_id' => '501', 'slot' => 6, 'template' => $blob]], $driver->uploads);
+        $this->assertNotNull($old->fresh()->valid_to);
+        $this->assertSame('501', EmployeeDeviceMap::where('employee_id', $this->employee->id)->whereNull('valid_to')->value('device_user_id'));
+    }
+
+    /** Only ONE read says gone (the roster still had them): refused, nothing written. */
+    public function test_a_person_missing_on_one_read_only_is_not_added_twice(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $old = $this->mapTo($this->adopted, '6'); // reconciliation_status stays as created
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(0, 'data.written')->assertJsonCount(1, 'data.failed');
+
+        $this->assertSame([], $driver->writes);
+        $this->assertNull($old->fresh()->valid_to);
+    }
+
     public function test_a_model_that_cannot_put_fingers_back_is_refused_before_anything_is_deleted(): void
     {
         $driver = new FakeBiometricDriver;

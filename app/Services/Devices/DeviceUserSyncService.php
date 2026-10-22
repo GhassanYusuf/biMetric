@@ -782,7 +782,28 @@ class DeviceUserSyncService
             }
         }
         if ($before === null) {
-            throw new \DomainException("{$employee->name} (user ID {$oldPin}) was not found on {$device->name}; read the terminal's users first.");
+            /*
+             * NOT ON THE TERMINAL AT ALL (2026-10-22: Gretchen on Camelot after its wipe —
+             * every push failed "not found", and so did every removal). There is nothing to
+             * save or delete, so the move is an ADD under the new ID: the old link is closed
+             * (punches already under $oldPin stay theirs) and the normal push writes their
+             * stored card and fingers and reads them back (rule 19, step 4).
+             *
+             * Only when TWO reads agree it is gone: this one, and the roster read that
+             * already marked the link missing_on_device. A single glitchy read (Camelot's
+             * link) must never add the same person twice under two numbers.
+             */
+            if ($map->reconciliation_status !== EmployeeDeviceMap::MISSING_ON_DEVICE) {
+                throw new \DomainException("{$employee->name} (user ID {$oldPin}) was not found on {$device->name} just now, but its last roster read still had them. Read the terminal's users, then push again.");
+            }
+            $map->close("Not on the terminal; added again as {$newPin}");
+            $this->identity->claim($device, $employee->fresh(), $newPin);
+            $pushed = $this->pushEmployee($device, $employee->fresh());
+
+            return [
+                'message' => "{$employee->name} was no longer on {$device->name} (user ID {$oldPin}), so they were added as {$newPin}. {$pushed['message']}",
+                'restored' => $pushed['restored'] ?? [],
+            ];
         }
         if ($before->fingerSlots === null) {
             throw new \DomainException("{$device->name}'s fingerprint table would not decode, so {$employee->name}'s fingers could not be checked after a move. Nothing was changed.");

@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-030 | 2026-10-22 | Camelot | A person linked to a terminal but no longer on it could not be pushed, moved or removed — every path said "not found" | OPEN |
 | DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | FIXED |
 | DC-028 | 2026-10-22 | Camelot | Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes | FIXED |
 | DC-027 | 2026-10-21 | IT-Office | A terminal with no fingerprints at all could never be given one: an empty template table read as "unknown" | OPEN |
@@ -104,6 +105,31 @@ Template:
 ---
 
 ## Entries
+
+### DC-030 — A person linked to a terminal but no longer on it could not be pushed, moved or removed — every path said "not found"
+
+- **Date:** 2026-10-22
+- **Devices:** Camelot (F18/ID, 87.237.196.60)
+- **Direction:** software → device
+- **Symptom:** Owner: pushing Gretchen Grace Gan Kaptan (Device User ID 6) "says failed,
+  Gretchen is not found on Camelot".
+- **What was done:** read-only, then a code change.
+  - Her Camelot link is user 6, `reconciliation_status` missing_on_device (nightly roster
+    read): Camelot's 2026-10-21 wipe removed her and the link stayed live. 13 such links on
+    Camelot (DC-029). Her Personnel ID is 841021481, so every push tried the F18 move
+    (`moveByReadding`), which needs the record and threw "was not found"; a removal
+    would fail the same way (DELETE of a user who is not there) — no screen path out.
+- **Root cause:** `moveByReadding()` treated "not on the terminal" as an error, though there
+  is nothing to save or delete and the system holds the person's copies.
+- **Fix:** `DeviceUserSyncService::moveByReadding()` — when the record is not on the terminal
+  AND the link is already missing_on_device (two reads agree), close the old link and add
+  the person under the new ID with `pushEmployee()` (stored card and fingers written back,
+  read back). One read only → refused with a clearer message. Tests:
+  `EmployeePropagationTest` (2). `docs/device-models.md` F18 row.
+- **Verified:** — (the owner's push of Gretchen on Camelot, next)
+- **Evidence:** employee_device_maps for employee 1778, device 12.
+- **Status:** OPEN — until Gretchen's push succeeds and reads back on Camelot.
+- **Keywords:** not found on Camelot, read the terminal's users first, missing_on_device, stale link, wiped terminal, moveByReadding, re-add, push failed
 
 ### DC-029 — A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers
 
