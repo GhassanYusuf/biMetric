@@ -1,0 +1,267 @@
+{
+    "label": "attlog-copy",
+    "host": "192.168.7.64",
+    "started_at": "2026-10-22T08:08:28+00:00",
+    "list_size": 42415,
+    "start_index": 200,
+    "batches": [
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 45.8,
+            "next_index": 1200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 43.8,
+            "next_index": 2200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 44.3,
+            "next_index": 3200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 43.6,
+            "next_index": 4200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.4,
+            "next_index": 5200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.8,
+            "next_index": 6200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.7,
+            "next_index": 7200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.8,
+            "next_index": 8200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.1,
+            "next_index": 9200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.3,
+            "next_index": 10200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 40.9,
+            "next_index": 11200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.2,
+            "next_index": 12200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 40.9,
+            "next_index": 13200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41,
+            "next_index": 14200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.7,
+            "next_index": 15200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.2,
+            "next_index": 16200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 40.9,
+            "next_index": 17200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.5,
+            "next_index": 18200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42,
+            "next_index": 19200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.9,
+            "next_index": 20200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.6,
+            "next_index": 21200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.8,
+            "next_index": 22200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.2,
+            "next_index": 23200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.7,
+            "next_index": 24200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.9,
+            "next_index": 25200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.3,
+            "next_index": 26200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.8,
+            "next_index": 27200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.4,
+            "next_index": 28200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 43,
+            "next_index": 29200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.7,
+            "next_index": 30200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 44.4,
+            "next_index": 31200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41,
+            "next_index": 32200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.7,
+            "next_index": 33200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.3,
+            "next_index": 34200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 43.2,
+            "next_index": 35200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.6,
+            "next_index": 36200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 44,
+            "next_index": 37200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 43.2,
+            "next_index": 38200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 40.5,
+            "next_index": 39200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 44.2,
+            "next_index": 40200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 41.7,
+            "next_index": 41200
+        },
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 42.8,
+            "next_index": 42200
+        },
+        {
+            "sent": 215,
+            "refresh_reply": 2000,
+            "seconds": 8.9,
+            "next_index": 42415
+        }
+    ]
+}

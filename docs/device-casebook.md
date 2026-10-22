@@ -158,8 +158,19 @@ Template:
     two runs, separate sessions, one test punch each for user 999999001 on 2001-01-01
     09:00 / 09:01 — `ACK_OK`, read back exactly (`attlog-write-01/02.json`). Those two
     test punches remain on IT-Office.
-  - Next: the owner decides what goes onto IT-Office, and whether to import into the
-    system.
+  - **Copied onto IT-Office** (owner: "go with A"), `tools/zkprobe/attlog-copy.php`
+    (WRITES, IT-Office only, resumable so nothing is written twice): Camelot as it was
+    before the wipe — the system's Camelot punches with a digit user id, before
+    2026-10-21 16:30 UTC and from 2015 on (DC-020 junk and the 18 post-wipe punches
+    left out), plus the rebuilt ones not stored: **42,415 punches** (37,645 + 4,770),
+    2021-08-17 → 2026-10-20 UTC, 46 user ids — within 8 of the 42,423 Camelot itself
+    reported before the wipe. 2026-10-22 08:09 → 08:38 UTC, ~41 ms a punch, every reply
+    ACK_OK. **Read back: 42,418 records (42,415 + the 3 earlier), all decoded, 0 of the
+    42,415 missing** (`attlog-copy-01..04.json`).
+  - IT-Office is linked to nobody, so a read cannot credit these to anyone; a FULL
+    re-read of IT-Office would import them as unattributed punches — do not.
+  - Not done: importing the 4,770 into the system (owner's go-ahead pending); users 9 and
+    14 unidentified (owner).
 - **Root cause:** DC-020's misaligned reads over the internet link left the attendance
   only on the terminal; the terminal was then wiped without a backup.
 - **Fix:** —
