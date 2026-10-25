@@ -20,10 +20,10 @@ cannot see:
 
 | Blocker | State on 2026-09-13 |
 |---|---|
-| **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It has been a git repository since 2026-09-14 (all work committed through `v2.15.0`, 2026-10-21) but has **no remote**: its only copy is this box's disk. This is still the worst of the three. |
+| ~~The live library has no remote~~ **RESOLVED 2026-10-25** | It lives at **`/var/biometric-protocol/`**, and `vendor/promoseven/biometric-protocol` is a symlink to it. On 2026-10-25 it was pushed to **`GhassanYusuf/biometric-protocol`** (private): branch `main` at `2e9f4c1` (= `v2.16.2`) and all seven tags, `v2.3.0`–`v2.16.2`. The remote is `git@github-biometric:GhassanYusuf/biometric-protocol.git`. `github-biometric` is a host alias in `/root/.ssh/config` that uses this repo's own write-enabled deploy key, `/root/.ssh/id_ed25519_biometric`, because GitHub will not let one deploy key serve two repos. **What is still not clone-and-go:** the app finds the library through a composer *path* repository at `/var/biometric-protocol`. A fresh machine has to clone the library to that path before `composer install`, or composer has to be pointed at the GitHub repo (a VCS repository plus a credential) instead. Repointing composer is not done yet and is the owner's call. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| ~~App repo not pushed~~ **RESOLVED 2026-10-25** | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. On 2026-10-25 an SSH key was made on this box (`/root/.ssh/id_ed25519`, comment `zkt-server`, no passphrase) and the owner added it to the biMetric repo as a **deploy key with write access**, which covers that one repo only. GitHub's host keys are in `/root/.ssh/known_hosts`; their fingerprints were checked against GitHub's published ones. **All seven branches are pushed** with upstreams set: `main` (fast-forwarded `13775e2`→`69c50c0`), `camelot`, `employees`, `password-feature`, `export-employees`, `delete-by-code`, `wipe-terminal` (the one this server runs). Nothing has been merged into `main`; that is the owner's call. `docs/database-diagram.md` stays untracked until the owner decides on it. **The library is still not pushed** (see the row above): it has no remote, and the deploy key cannot reach any other repo. It needs its own GitHub repo and its own deploy key (or an account-level key). |
+| ~~App repo not pushed~~ **RESOLVED 2026-10-25** | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. On 2026-10-25 an SSH key was made on this box (`/root/.ssh/id_ed25519`, comment `zkt-server`, no passphrase) and the owner added it to the biMetric repo as a **deploy key with write access**, which covers that one repo only. GitHub's host keys are in `/root/.ssh/known_hosts`; their fingerprints were checked against GitHub's published ones. **All seven branches are pushed** with upstreams set: `main` (fast-forwarded `13775e2`→`69c50c0`), `camelot`, `employees`, `password-feature`, `export-employees`, `delete-by-code`, `wipe-terminal` (the one this server runs). Nothing has been merged into `main`; that is the owner's call. `docs/database-diagram.md` stays untracked until the owner decides on it. The library was pushed the same day to its own repo with its own deploy key (see the row above). |
 | ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. On 2026-09-24 the working tree (2.7.0–2.9.0) was committed as `2180866` on `main`; **not tagged**. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
@@ -39,7 +39,7 @@ clone-and-go work.
 ```
 Projects/
 ├── biometric-protocol/     ← THE PRODUCT. Own repo, v1.0.0, proprietary licence.
-│                             No remote yet. 43 files, ~4,700 lines of src/.
+│                             origin = GhassanYusuf/biometric-protocol (2026-10-25). 43 files, ~4,700 lines of src/.
 └── payroll/app/            ← Reference consumer + demo. origin = biMetric.git
                               Consumes the library via composer path repository.
 ```
@@ -48,8 +48,9 @@ Projects/
 2026-09-14 the live library sits at `/var/biometric-protocol/` — the path the
 composer path repository has always pointed at — and
 `vendor/promoseven/biometric-protocol` is a symlink to it. So composer works. But
-that repository **has no remote**, so it is still the only copy of the library in
-existence, backed up by nothing. See the blockers
+since 2026-10-25 that repository is pushed to `GhassanYusuf/biometric-protocol`, so it
+is no longer the only copy. A fresh machine still has to clone it to
+`/var/biometric-protocol` for the path repository to resolve. See the blockers
 above before touching composer.
 
 ---
@@ -613,7 +614,7 @@ What is actually on this box, as opposed to what the layout section below claims
 
 | | |
 |---|---|
-| `/var/biometric-protocol/` | The **live** library, `Promoseven\Biometric`, since 2026-09-14. **Not a git repository** — no history, no tags, no remote. |
+| `/var/biometric-protocol/` | The **live** library, `Promoseven\Biometric`, since 2026-09-14. Git repository; origin `GhassanYusuf/biometric-protocol` via the `github-biometric` SSH alias (2026-10-25). |
 | `vendor/promoseven/biometric-protocol/` | A **symlink** to the above, created by composer on 2026-09-14. Git-ignored. Was a plain directory holding the only copy before that. |
 | `packages/zkteco-protocol/` | An **older, superseded** copy, namespace `Zkteco\Protocol`. Tracked in git. **Nothing loads it.** |
 | `../../biometric-protocol` | The composer path repository target — `/var/biometric-protocol`. **Exists since 2026-09-14.** |
@@ -827,11 +828,14 @@ wrap all exist already.
 ---
 
 ## Session log
-### 2026-10-25 — GitHub push access; every app branch pushed
+### 2026-10-25 — GitHub push access; the app and the library both pushed
 
 Created an SSH key for this box and the owner added it as a write-enabled deploy key on
-biMetric. Pushed all seven app branches (no force; `main` was a fast-forward). The
-library still has no remote, so it remains the only unpushed copy.
+biMetric. Pushed all seven app branches (no force; `main` was a fast-forward). The owner
+then created `GhassanYusuf/biometric-protocol`, which got a second deploy key and an SSH
+alias (`github-biometric`). Pushed the library's `main` and all seven tags. For the first
+time, nothing exists only on this box except `draft/` (deliberately) and the untracked
+`docs/database-diagram.md`.
 
 ### 2026-10-22 — Camelot recovery, punch write proven, get-by-code, two half-deletes
 
