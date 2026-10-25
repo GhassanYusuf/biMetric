@@ -153,8 +153,8 @@ It is NOT part of this application — this app is merely one of its consumers, 
 it is sold to others. It must stay framework-agnostic.
 
 It is resolved through composer and installed at
-`vendor/promoseven/biometric-protocol` (a symlink to the working copy in
-development). Editing it means editing a product other people pay for: bump its
+`vendor/promoseven/biometric-protocol`, cloned by tag from its private GitHub repo
+(`docs/library-installation.md`). Editing it means editing a product other people pay for: bump its
 version and update its own README, not just this app.
 
 **Never** put Laravel in it: no `config()`, `now()`, `Log::`, Carbon, Eloquent,

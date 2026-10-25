@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e1ef9bee2ad4cfa4b329d45e2ca77f3f",
+    "content-hash": "5cde11ea42b33bc9b231318dd1ff69eb",
     "packages": [
         {
             "name": "barryvdh/laravel-dompdf",
@@ -3325,11 +3325,17 @@
         },
         {
             "name": "promoseven/biometric-protocol",
-            "version": "dev-main",
+            "version": "v2.16.2",
+            "source": {
+                "type": "git",
+                "url": "git@github.com:GhassanYusuf/biometric-protocol.git",
+                "reference": "2e9f4c13281f100ce6c8b1df102a53ecefefae4c"
+            },
             "dist": {
-                "type": "path",
-                "url": "../../biometric-protocol",
-                "reference": "218086679d94d675c612ec7f1a6269dcf1d9bbf2"
+                "type": "zip",
+                "url": "https://api.github.com/repos/GhassanYusuf/biometric-protocol/zipball/2e9f4c13281f100ce6c8b1df102a53ecefefae4c",
+                "reference": "2e9f4c13281f100ce6c8b1df102a53ecefefae4c",
+                "shasum": ""
             },
             "require": {
                 "php": "^8.2"
@@ -3376,10 +3382,7 @@
                 "terminal",
                 "zkteco"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "time": "2026-10-21T15:15:27+00:00"
         },
         {
             "name": "psr/clock",
@@ -9593,9 +9596,7 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {
-        "promoseven/biometric-protocol": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

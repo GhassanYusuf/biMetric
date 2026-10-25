@@ -247,7 +247,8 @@ Carried deliberately, not forgotten. Each is a claim we have **not** earned.
    authentication methods.
 8. **A CSL HTTP driver** behind the same `BiometricDeviceDriver` contract, for
    reseller-branded units that do not speak the binary protocol.
-9. **Tag and publish the library** — it is consumed as a path repository today.
+9. ~~**Tag and publish the library**~~ — done 2026-10-25: tagged, pushed to the
+   private `GhassanYusuf/biometric-protocol`, and the app installs it from there by tag.
 
 ### Not planned
 

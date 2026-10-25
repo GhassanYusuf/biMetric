@@ -18,7 +18,7 @@
         "openspout/openspout": "^4.28",
         "php-mqtt/client": "^2.3",
         "php-mqtt/laravel-client": "^1.8",
-        "promoseven/biometric-protocol": "@dev",
+        "promoseven/biometric-protocol": "^2.16",
         "spatie/laravel-permission": "^6.25",
         "tightenco/ziggy": "^2.0"
     },
@@ -87,7 +87,10 @@
     },
     "config": {
         "optimize-autoloader": true,
-        "preferred-install": "dist",
+        "preferred-install": {
+            "promoseven/biometric-protocol": "source",
+            "*": "dist"
+        },
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
@@ -98,11 +101,9 @@
     "prefer-stable": true,
     "repositories": [
         {
-            "type": "path",
-            "url": "../../biometric-protocol",
-            "options": {
-                "symlink": true
-            }
+            "type": "vcs",
+            "url": "git@github.com:GhassanYusuf/biometric-protocol.git",
+            "no-api": true
         }
     ]
 }

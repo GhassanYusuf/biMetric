@@ -7,35 +7,85 @@ requires **PHP ≥ 8.2 and nothing else** — no framework, no HTTP client, no
 logger, no config system. That constraint is enforced by a test, not just
 intended: see [testing-strategy.md](testing-strategy.md).
 
-## In this repository (path repository)
+## In this repository (GitHub, installed from source)
 
-The library is **not** in-tree. It is its own repository, checked out beside this
-one, and consumed as a path repository so an edit is live immediately with no
-publish step:
-
-```
-Projects/
-├── biometric-protocol/     <- the library, its own git repo, its own tags
-└── payroll/app/            <- this application, one consumer
-```
+The library is **not** in-tree. It is its own private repository,
+`GhassanYusuf/biometric-protocol`, and since 2026-10-25 this app installs it from
+there by tag. Before that it was a composer *path* repository pointing at a checkout
+beside the app (`../../biometric-protocol`, symlinked into `vendor/`). That meant a
+fresh clone of the app could not install until the library was also copied to that
+exact folder.
 
 ```json
 {
     "repositories": [
-        { "type": "path", "url": "../../biometric-protocol", "options": { "symlink": true } }
+        { "type": "vcs", "url": "git@github.com:GhassanYusuf/biometric-protocol.git", "no-api": true }
     ],
     "require": {
-        "promoseven/biometric-protocol": "@dev"
+        "promoseven/biometric-protocol": "^2.16"
+    },
+    "config": {
+        "preferred-install": { "promoseven/biometric-protocol": "source", "*": "dist" }
     }
 }
 ```
 
-Composer junctions it to `vendor/promoseven/biometric-protocol`, so
-`composer dump-autoload` is enough after adding a class. `@dev` tracks the
-library's checked-out branch; pin `^1.0` once you install from a registry.
+Why each setting:
 
-**Anyone cloning this app needs both repositories.** The relative path is the
-development convenience; a private Composer registry is the deployment answer.
+- **`no-api: true`.** Composer talks to the repo with plain `git` over SSH, not the
+  GitHub API, so no API token is needed. A machine only needs an SSH key that can
+  read the repo.
+- **`source` for this package.** `vendor/promoseven/biometric-protocol` is a git
+  clone, not a zip. The zip honours the library's `.gitattributes` `export-ignore`,
+  so it has no `tests/`, and the app's `Protocol` test suite
+  (`phpunit.xml`) runs those tests from `vendor/`. A private repo's zip would also
+  need an API token.
+- **`^2.16`**, resolved to a tag and recorded in `composer.lock`. Pin the exact
+  version deliberately with `composer update promoseven/biometric-protocol`.
+
+### Access on a machine
+
+The repo is private. A machine needs an SSH key GitHub accepts for it: an account
+key, or a **deploy key** on that repo. A deploy key opens one repo only, so a machine
+that also pushes the app with a deploy key needs a second key, reached through an
+SSH host alias. The production box (2026-10-25) does this:
+
+```
+# /root/.ssh/config
+Host github-biometric
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_biometric
+    IdentitiesOnly yes
+```
+
+```bash
+# Make composer's github.com URL use that alias, for this one repo only.
+git config --global url."git@github-biometric:GhassanYusuf/biometric-protocol".insteadOf \
+    "git@github.com:GhassanYusuf/biometric-protocol"
+```
+
+`composer.json` keeps the canonical `git@github.com:` URL so it works unchanged on a
+machine with an account key. The alias is per-machine configuration, not part of
+the repo. On the production box composer runs as **root** (the key is root's). Run
+`chown -R www-data:www-data vendor/promoseven` afterwards.
+
+### Changing the library
+
+The working copy is still `/var/biometric-protocol/`, but the app **no longer sees
+edits there live**. `vendor/` holds a separate clone at the locked tag. To ship a
+library change to the app:
+
+1. Commit in `/var/biometric-protocol`, bump the version, tag it (`vX.Y.Z`),
+   `git push origin main --tags`.
+2. In the app: `composer update promoseven/biometric-protocol`, then commit
+   `composer.lock`.
+3. Restart the queue worker (`php artisan queue:restart`), since it holds the old
+   classes in memory.
+
+To try an untagged change in the app first, a temporary
+`composer require promoseven/biometric-protocol:dev-main` works once it is pushed.
+Put the tag constraint back before committing.
 
 ## In another project
 
@@ -44,10 +94,10 @@ Point at the git remote and pin a tag:
 ```json
 {
     "repositories": [
-        { "type": "vcs", "url": "https://github.com/promoseven/biometric-protocol.git" }
+        { "type": "vcs", "url": "git@github.com:GhassanYusuf/biometric-protocol.git", "no-api": true }
     ],
     "require": {
-        "promoseven/biometric-protocol": "^1.0"
+        "promoseven/biometric-protocol": "^2.16"
     }
 }
 ```
