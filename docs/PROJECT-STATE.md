@@ -844,6 +844,21 @@ with `tools/composer-library-source.sh folder` (a git `insteadOf` to
 `/var/biometric-protocol`; the lock is unchanged). Table and evidence in
 `docs/library-installation.md`, "Falling back to the local folder".
 
+**Security update, same day (owner: "do the security update first").** `composer audit`
+listed 20 advisories in 6 packages, including Laravel's critical TokenGuard bypass
+(GHSA-f9x3-7vq9-cph6, fixed in 12.68.0). It was not believed exploitable here, because
+the app uses session and Sanctum guards, not `token`. Updated only those packages plus
+what they need (`-W`): Laravel 12.64.0 → **12.70.1**, Guzzle 7.16.0, commonmark 2.10.4,
+Flysystem 3.36.0, Symfony 7.4.21; 50 updates and 1 new package, all minor or patch.
+Method: `vendor/` is not tied to a branch, so updating in place changes production at
+once. The update was done and tested first in a separate git worktree (baseline 741
+passing, then 741 passing on the new packages). Then `security-updates` was
+fast-forwarded into `wipe-terminal` and production ran `composer install`, Apache
+`graceful`, `queue:restart`. After: 741 tests pass in production, audit clean, the
+site answers, and the 11:50 UTC health check reached all five ZKTeco terminals with no
+failed jobs. Rollback: `storage/app/private/composer-backup-202610251142-pre-security/`
+(old `composer.lock` + `vendor.tgz`).
+
 ### 2026-10-22 — Camelot recovery, punch write proven, get-by-code, two half-deletes
 
 See "Where we stopped" (2026-10-22). All committed on `wipe-terminal`; library tagged
