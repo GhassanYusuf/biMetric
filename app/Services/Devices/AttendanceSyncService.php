@@ -10,6 +10,7 @@ use App\Models\AttendanceSyncRun;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\EmployeeDeviceMap;
+use App\Services\Attendance\PunchAttribution;
 use App\Support\Timezone;
 use Illuminate\Support\Carbon;
 use Promoseven\Biometric\Capability\Capability;
@@ -47,7 +48,10 @@ use Promoseven\Biometric\Exception\DeviceException;
  */
 class AttendanceSyncService
 {
-    public function __construct(private readonly BiometricDeviceDriver $driver) {}
+    public function __construct(
+        private readonly BiometricDeviceDriver $driver,
+        private readonly PunchAttribution $attribution,
+    ) {}
 
     /**
      * Runs one sync.
@@ -272,6 +276,7 @@ class AttendanceSyncService
          */
         $employeeId = EmployeeDeviceMap::query()
             ->inForceAt($device->id, $deviceUserId, $record['timestamp'])
+            ->byPrecedence()
             ->value('employee_id');
 
         /*
@@ -586,30 +591,14 @@ class AttendanceSyncService
      * @return array<string,mixed>
      */
     /**
-     * Every mapping this device has ever had, grouped by PIN, newest window first.
+     * Every mapping this device has ever had, grouped by PIN, in precedence order.
+     * One definition, shared with re-linking: PunchAttribution::windows().
      *
      * @return array<string,list<array{employee_id:int,from:?int,to:?int}>>
      */
     private function mappingsByPin(Device $device): array
     {
-        $grouped = [];
-
-        $rows = EmployeeDeviceMap::query()
-            ->where('device_id', $device->id)
-            ->get(['employee_id', 'device_user_id', 'valid_from', 'valid_to']);
-
-        foreach ($rows as $row) {
-            $grouped[(string) $row->device_user_id][] = [
-                'employee_id' => $row->employee_id,
-                // Null bounds mean "unbounded on that side". A mapping adopted from a
-                // terminal that predates this system has no known start — the person
-                // was already enrolled — so it must match punches older than the row.
-                'from' => $row->valid_from?->getTimestamp(),
-                'to' => $row->valid_to?->getTimestamp(),
-            ];
-        }
-
-        return $grouped;
+        return $this->attribution->windows($device);
     }
 
     /**
@@ -624,21 +613,7 @@ class AttendanceSyncService
      */
     private function employeeAt(array $mappingsByPin, string $devicePin, \DateTimeInterface $punchedAt): ?int
     {
-        $at = $punchedAt->getTimestamp();
-
-        foreach ($mappingsByPin[$devicePin] ?? [] as $window) {
-            if ($window['from'] !== null && $at < $window['from']) {
-                continue;
-            }
-
-            if ($window['to'] !== null && $at >= $window['to']) {
-                continue;
-            }
-
-            return $window['employee_id'];
-        }
-
-        return null;
+        return $this->attribution->employeeAt($mappingsByPin, $devicePin, $punchedAt);
     }
 
     /**

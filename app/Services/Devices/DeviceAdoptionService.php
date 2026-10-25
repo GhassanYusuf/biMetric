@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\DeviceRosterEntry;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
+use App\Services\Attendance\PunchAttribution;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Value\DeviceUser;
 
@@ -37,6 +38,7 @@ class DeviceAdoptionService
     public function __construct(
         private readonly BiometricDeviceDriver $driver,
         private readonly DeviceIdentityResolver $identity,
+        private readonly PunchAttribution $attribution,
     ) {}
 
     /**
@@ -145,6 +147,12 @@ class DeviceAdoptionService
      * recording who they are, not changing anything. Adopting their existing PIN is
      * also what preserves their fingerprints — issuing them a new number would mean
      * re-enrolling every finger.
+     *
+     * The punches already stored under this PIN are re-linked here too. They were
+     * imported while nobody held the PIN, so they sit on nobody; the new mapping is
+     * open-ended, and without this only future punches would count. Catering
+     * (DC-031): 2,112 punches read on 2026-10-22, users imported 2026-10-25, and every
+     * worker showed 0 punches until it was done by hand.
      */
     public function claim(DeviceRosterEntry $entry, Employee $employee, ?int $actorId = null): EmployeeDeviceMap
     {
@@ -195,6 +203,8 @@ class DeviceAdoptionService
             'claimed_by' => $actorId,
             'claimed_at' => now(),
         ]);
+
+        $this->attribution->relink($device, (string) $entry->device_user_id);
 
         return $map;
     }

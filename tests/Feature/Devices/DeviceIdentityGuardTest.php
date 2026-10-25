@@ -454,6 +454,65 @@ class DeviceIdentityGuardTest extends TestCase
         $this->assertSame($employee->id, $resolved);
     }
 
+    /**
+     * DC-031, Catering: punches read before anyone was linked sat on nobody after the
+     * users were imported, so every worker showed 0 punches. Claiming now re-links
+     * the stored punches under that PIN on that device, and nothing else.
+     */
+    public function test_claiming_a_pin_links_the_punches_already_stored_under_it(): void
+    {
+        $device = $this->device('Catering');
+        $other = $this->adoptedDeviceHolding([], 'IT Room');
+        $this->driver->roster = [new DeviceUser(1, '602', 'Essam'), new DeviceUser(2, '702', 'Gone')];
+        $this->adoption()->readRoster($device);
+
+        $this->punch($device, '602', '2026-06-24 06:00:00', null);
+        $this->punch($device, '602', '2026-10-25 06:20:00', null);
+        $this->punch($device, '702', '2025-10-08 16:26:00', null);   // someone else's PIN
+        $this->punch($other, '602', '2026-07-01 07:00:00', null);    // same PIN, other terminal
+
+        $essam = $this->employee('Essam', '602');
+        $entry = DeviceRosterEntry::where('device_id', $device->id)->where('device_user_id', '602')->firstOrFail();
+        $this->adoption()->claim($entry, $essam);
+
+        $this->assertSame(2, \App\Models\AttendanceLog::where('device_id', $device->id)->where('employee_id', $essam->id)->count());
+        $this->assertNull(\App\Models\AttendanceLog::where('device_id', $device->id)->where('device_user_id', '702')->value('employee_id'));
+        $this->assertNull(\App\Models\AttendanceLog::where('device_id', $other->id)->value('employee_id'));
+    }
+
+    /** A punch inside an earlier holder's closed window stays theirs when the PIN is claimed again. */
+    public function test_claiming_a_pin_leaves_an_earlier_holders_punches_with_them(): void
+    {
+        $device = $this->device('Catering');
+        $this->driver->roster = [new DeviceUser(1, '19', 'Sunitha')];
+        $this->adoption()->readRoster($device);
+
+        $leaver = $this->employee('Leaver', 'E-1');
+        $this->heldUntil($device, $leaver, '19', '2024-01-01 00:00:00', '2025-01-01 00:00:00');
+        $this->punch($device, '19', '2024-06-01 08:00:00', $leaver);
+
+        $sunitha = $this->employee('Sunitha', '19');
+        $this->adoption()->claim(DeviceRosterEntry::where('device_id', $device->id)->firstOrFail(), $sunitha);
+
+        $this->assertSame($leaver->id, (int) \App\Models\AttendanceLog::where('device_id', $device->id)->value('employee_id'));
+    }
+
+    public function test_importing_from_a_device_links_its_stored_punches_and_says_so(): void
+    {
+        $device = $this->device('Catering');
+        $this->driver->roster = [new DeviceUser(1, '602', 'Essam'), new DeviceUser(2, '732', 'youssef')];
+        $this->adoption()->readRoster($device);
+        $this->punch($device, '602', '2026-10-24 06:00:00', null);
+        $this->punch($device, '602', '2026-10-25 06:00:00', null);
+        $this->punch($device, '732', '2026-09-30 17:26:00', null);
+
+        $result = $this->sync()->importFromDevice($device);
+
+        $this->assertSame(3, $result['raw']['punches_linked']);
+        $this->assertStringContainsString('3 punch(es) already stored from it are now theirs', $result['message']);
+        $this->assertSame(0, \App\Models\AttendanceLog::where('device_id', $device->id)->whereNull('employee_id')->count());
+    }
+
     // ------------------------------------------------------------------- helpers
 
     /**

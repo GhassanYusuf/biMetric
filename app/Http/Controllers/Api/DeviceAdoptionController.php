@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\DeviceRosterEntryResource;
+use App\Models\AttendanceLog;
 use App\Models\Device;
 use App\Models\DeviceRosterEntry;
 use App\Models\Employee;
@@ -104,7 +105,8 @@ class DeviceAdoptionController extends Controller
 
         return ApiResponse::success(
             new DeviceRosterEntryResource($entry->fresh()->load('claimedEmployee')),
-            "PIN {$entry->device_user_id} on {$device->name} is now {$employee->name}.",
+            "PIN {$entry->device_user_id} on {$device->name} is now {$employee->name}"
+                .$this->punchesNote($device, $entry, $employee),
         );
     }
 
@@ -139,5 +141,17 @@ class DeviceAdoptionController extends Controller
         } catch (\RuntimeException $e) {
             return ApiResponse::error($e->getMessage(), status: 422);
         }
+    }
+
+    /** How many of this device's stored punches the claim made the employee's (DC-031). */
+    private function punchesNote(Device $device, DeviceRosterEntry $entry, Employee $employee): string
+    {
+        $count = AttendanceLog::query()
+            ->where('device_id', $device->id)
+            ->where('device_user_id', $entry->device_user_id)
+            ->where('employee_id', $employee->id)
+            ->count();
+
+        return $count > 0 ? "; {$count} stored punch(es) are now theirs." : '.';
     }
 }

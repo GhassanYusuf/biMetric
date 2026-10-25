@@ -432,6 +432,7 @@ class DeviceUserSyncService
         }
 
         $created = 0;
+        $employeeIds = [];
 
         foreach ($entries as $entry) {
             $employee = Employee::create([
@@ -450,12 +451,20 @@ class DeviceUserSyncService
             ]);
 
             $this->adoption->claim($entry, $employee);
+            $employeeIds[] = $employee->id;
             $created++;
         }
 
+        // claim() re-linked each PIN's stored punches (DC-031); say how many.
+        $punches = $employeeIds === [] ? 0 : AttendanceLog::query()
+            ->where('device_id', $device->id)
+            ->whereIn('employee_id', $employeeIds)
+            ->count();
+
         return [
-            'message' => "Imported {$created} device user(s) from {$device->name} as new employees.",
-            'raw' => ['created' => $created, 'device_id' => $device->id],
+            'message' => "Imported {$created} device user(s) from {$device->name} as new employees"
+                .($punches > 0 ? "; {$punches} punch(es) already stored from it are now theirs." : '.'),
+            'raw' => ['created' => $created, 'device_id' => $device->id, 'punches_linked' => $punches],
         ];
     }
 

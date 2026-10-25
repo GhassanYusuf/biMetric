@@ -88,6 +88,20 @@ class EmployeeDeviceMap extends Model
     }
 
     /**
+     * When inForceAt() matches two windows, the one that should win first: a closed
+     * window (an earlier holder with a known end) before an open-ended one, then the
+     * later start. The same order as PunchAttribution::windows(), which explains why.
+     * Only for a query that takes one row (value(), first()) — SQL Server refuses an
+     * ORDER BY under count().
+     */
+    public function scopeByPrecedence(Builder $query): Builder
+    {
+        return $query
+            ->orderByRaw('CASE WHEN valid_to IS NULL THEN 1 ELSE 0 END')
+            ->orderByDesc('valid_from');
+    }
+
+    /**
      * Ends this mapping without deleting it.
      *
      * The row is history: it is how a punch recorded last year still resolves to the

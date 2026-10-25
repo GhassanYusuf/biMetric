@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-22**
+**Last updated: 2026-10-25**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-031 | 2026-10-25 | Catering | Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112 | FIXED |
 | DC-030 | 2026-10-22 | Camelot | A person linked to a terminal but no longer on it could not be pushed, moved or removed — every path said "not found" | OPEN |
 | DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | FIXED |
 | DC-028 | 2026-10-22 | Camelot | Camelot wiped outside the system; its June–October 2026 attendance exists only as undecodable raw bytes | FIXED |
@@ -105,6 +106,70 @@ Template:
 ---
 
 ## Entries
+
+### DC-031 — Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112
+
+- **Date:** 2026-10-25
+- **Devices:** Catering (model not recorded on the device row, 192.168.7.120)
+- **Direction:** device → software
+- **Symptom:** Owner: the Catering workers imported from the terminal "have 0 punches near
+  their name" on Employees, while Devices shows Catering with 2,112 device and 2,112 system
+  punches.
+- **What was done:** read-only so far.
+  - 2,111 of Catering's 2,112 `attendance_logs` rows have `employee_id` NULL. Only one is
+    attributed: Shahad (user 119), punched 08:00 and imported 09:22 on 2026-10-25.
+  - Timeline: the device row was created and its punches read on 2026-10-22 07:51, BEFORE
+    any link existed. The 21 `employee_device_maps` rows (users imported from the
+    terminal, all open-ended: `valid_from`/`valid_to` NULL) were created 2026-10-25 08:54.
+    A punch is attributed at import time, so everything read before 08:54 stayed
+    unattributed.
+  - Nothing re-links history after a user import. `attendance:reattribute` exists for
+    exactly this, but no code calls it; it is only suggested in console output
+    (`StaffImport`, `EmployeesMerge`, `ResetDeviceIdentity`).
+  - `attendance:reattribute 17 --dry-run`: **673 newly attributed, 0 cleared, 1,438 still
+    unmatched.** By person: Essam 602 → 174, youssef 732 → 155, Sunitha 19 → 124 (some
+    dated 2000-02, the terminal clock was wrong then), Akhil 701 → 118, Shahad 119 → 57,
+    Jimmely 15 → 19, Joanne 472 → 19, Ragesh 261 → 3, Mintesnot 215 → 2, Jahid 109 → 1,
+    Arich 111 → 1. The 10 others have no punches on the terminal.
+  - The 1,438 unmatched are under 22 user IDs nobody is linked to, people no longer on the
+    terminal: 702 (481, until 2025-10-08), 59 (128), 205 (124), 123 (119), 25 (117),
+    719 (101), 112 (93), 3 (85), 28 (65), 61 (46) and smaller. They stay unattributed until
+    the owner says who they were (rule 10).
+  - Owner said yes. 12:44 UTC: saved every Catering punch's attribution to
+    `storage/app/private/removed-records/catering-attribution-before-reattribute-20261025-124431.json.gz`
+    (undo = set `employee_id` back from it), then `attendance:reattribute 17`: 673 newly
+    attributed, 0 cleared, 1,438 unmatched, exactly as the dry run said.
+  - Dead end found while writing the test: when a PIN had a closed earlier window and is
+    then claimed open-ended, BOTH windows cover the earlier punches, and all three
+    attribution paths (bulk sync, `attendance:reattribute`, realtime `inForceAt`) took
+    whichever row the database returned first. The new test failed by giving a leaver's
+    2024 punch to the new holder.
+- **Root cause:** a punch's employee is decided once, at import, from the links in force
+  then. Catering's punches were read before its users were imported and linked, and the
+  import did not re-link stored punches. Secondary: no tie-break between overlapping
+  windows.
+- **Fix:** `App\Services\Attendance\PunchAttribution` holds the one definition (windows,
+  precedence, relink). `DeviceAdoptionService::claim()` re-links that PIN's stored punches,
+  so "Import from device" and a single claim both bring the history, and both messages say
+  how many punches became the person's. `attendance:reattribute` and the bulk sync
+  (`AttendanceSyncService`) now use the same class. Precedence: a closed window wins over
+  an open-ended one, then the later start; `EmployeeDeviceMap::scopeByPrecedence()` gives
+  the realtime query the same order. The re-link also moves `updated_at`, so open
+  Attendance screens refresh (rule 18). Tests (`DeviceIdentityGuardTest`, 3): a claim
+  links only that PIN on that device, a leaver's punches stay theirs, and the import links
+  and reports. 748 pass. Docs: `attendance-sync-flow.md`.
+- **Verified:** on production data, Catering's workers now carry their punches (Essam 174,
+  youssef 155, Sunitha 124, Akhil 118, Shahad 58, ...). A dry run of the new precedence over
+  every terminal changed nothing (0 attributed, 0 cleared on all seven). The shared sync
+  path was re-confirmed on the F18 (rule 15): an IT ROOM sync, command 7504, imported 15
+  new punches, all attributed, with unmatched unchanged at 3,400.
+- **Evidence:** attendance_logs and employee_device_maps for device 17; the backup above;
+  device_commands 7504.
+- **Status:** FIXED. The 1,438 punches under 22 user IDs no longer on the terminal stay
+  unattributed until the owner says who those people were. Catering's model is not
+  recorded on its device row, so it runs with the cautious generic capabilities (rule 21);
+  identify it (`device.info`, read-only).
+- **Keywords:** 0 punches, unattributed, employee_id null, punches before users, user import, reattribute, Catering, history not linked
 
 ### DC-030 — A person linked to a terminal but no longer on it could not be pushed, moved or removed — every path said "not found"
 

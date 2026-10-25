@@ -181,8 +181,10 @@ Two consequences worth stating plainly:
 ## Attribution resolves through TIME, not through the current mapping
 
 Rewritten 2026-09-15. A punch is attributed to whoever held that PIN **at the moment it
-was made** — `EmployeeDeviceMap::scopeInForceAt()`, and `employeeAt()` inside the bulk
-loop, which resolves in PHP so a 90,000-record table does not become 90,000 queries.
+was made** — `EmployeeDeviceMap::scopeInForceAt()` for a realtime punch, and in the bulk
+loop `PunchAttribution::windows()` / `employeeAt()`, which resolve in PHP so a
+90,000-record table does not become 90,000 queries. Since 2026-10-25 (DC-031) the bulk
+sync and re-linking share that one class instead of each keeping a copy.
 
 Taking the *current* mapping instead is wrong in a way nothing on screen would show.
 Terminals reassign a departed employee's number to a new hire; resolving old punches to
@@ -193,10 +195,29 @@ already enrolled when the terminal was first read and we do not know since when,
 null bound is the honest statement. Stamping the claim date instead would orphan every
 punch older than it, which on the Glass Door panel is 87,000 records.
 
+### When two windows cover one punch
+
+That unbounded start overlaps any earlier holder of the same PIN: a leaver's closed window
+(2024–2025) and a later open-ended claim both cover a 2024 punch. **A closed window wins,
+then the later start** (`PunchAttribution::windows()`, and
+`EmployeeDeviceMap::scopeByPrecedence()` for the realtime query). Until 2026-10-25 the
+first row the database returned won. A dry run over every terminal on that date showed
+the new order changed no stored attribution (0 attributed, 0 cleared on all seven), and
+an IT ROOM (F18) sync on it attributed all 15 new punches, so the shared path was
+re-confirmed on the F18 (rule 15).
+
 ### Re-attributing after the fact
 
-Claiming a device user is a human decision that usually lands *after* the sync. So
-attribution is recomputable:
+Claiming a device user is a human decision that usually lands *after* the sync. **Since
+2026-10-25 the claim re-links that PIN's stored punches itself**
+(`DeviceAdoptionService::claim()` → `PunchAttribution::relink($device, $pin)`), so
+"Import from device" and a claim from the screen both bring the history with them. Each
+says how many stored punches became the person's. Catering is why (DC-031): its 2,112
+punches were read 2026-10-22, its 21 users imported 2026-10-25, and every worker showed
+0 punches until the command below was run by hand.
+
+For everything else (a merge, an identity reset, a corrected window), attribution is
+recomputable by hand:
 
 ```
 php artisan attendance:reattribute [device] [--dry-run]
@@ -226,7 +247,7 @@ Measured across the estate on 2026-09-15, after a full re-read:
 The large majority are PINs **deleted from the terminal** — leavers whose user record
 was removed while their punches remained. That attribution is unrecoverable. The
 minority still on the device become attributable as soon as an operator claims them,
-via `attendance:reattribute`.
+and the claim links them.
 
 ## Full re-read
 
