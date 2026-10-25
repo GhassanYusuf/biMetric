@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-10-22**
+**Last updated: 2026-10-25**
 
 ---
 
@@ -23,7 +23,7 @@ cannot see:
 | **The live library is untracked and outside git** | Since 2026-09-14 it lives at **`/var/biometric-protocol/`**, with `vendor/promoseven/biometric-protocol` a symlink to it (composer's own doing — see the session log). It has been a git repository since 2026-09-14 (all work committed through `v2.15.0`, 2026-10-21) but has **no remote**: its only copy is this box's disk. This is still the worst of the three. |
 | The tracked copy is the **wrong** one | `packages/zkteco-protocol/` (`Zkteco\Protocol`) is tracked but superseded and loaded by nothing. Reading it will mislead you. |
 | ~~App depends on a path that does not exist~~ **FIXED 2026-09-14** | The path repository `../../biometric-protocol` resolves to `/var/biometric-protocol`, which was absent; **any** `composer require` failed outright, not just `composer install`. The library was copied there and composer now resolves and symlinks it normally. The copy is still nobody's git repository, so this only unblocks composer — it does not make the library safe. |
-| App repo not pushed — **and this server CANNOT push** | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. As of 2026-10-21 **everything is committed, locally only**, on four branches: **`employees`** (`41181b2`, through the Cron jobs screen), two branched from it — **`password-feature`** (`3143511`, keypad passwords and Device role) and **`export-employees`** (`5bfafe7`, the employee list export) — and **`delete-by-code`**, branched from `password-feature`, which is what this server runs. The library is committed too (`ada8f15`, tag `v2.15.0`, 2.10.0–2.15.0). **No branch has been pushed**; `origin/main` is still the first commit, and local `main` is 4 commits ahead of it. A push on 2026-10-21 failed with *Host key verification failed*: this box has **no SSH key and no `gh`** (`~/.ssh` holds only `authorized_keys`), so it has never been able to push. Owner chose 2026-10-21 to push all branches at once once access exists — an SSH key added on GitHub, or an HTTPS token the owner types in. Merging into `main` is the owner's call. |
+| ~~App repo not pushed~~ **RESOLVED 2026-10-25** | `origin` is `git@github.com:GhassanYusuf/biMetric.git`. On 2026-10-25 an SSH key was made on this box (`/root/.ssh/id_ed25519`, comment `zkt-server`, no passphrase) and the owner added it to the biMetric repo as a **deploy key with write access**, which covers that one repo only. GitHub's host keys are in `/root/.ssh/known_hosts`; their fingerprints were checked against GitHub's published ones. **All seven branches are pushed** with upstreams set: `main` (fast-forwarded `13775e2`→`69c50c0`), `camelot`, `employees`, `password-feature`, `export-employees`, `delete-by-code`, `wipe-terminal` (the one this server runs). Nothing has been merged into `main`; that is the owner's call. `docs/database-diagram.md` stays untracked until the owner decides on it. **The library is still not pushed** (see the row above): it has no remote, and the deploy key cannot reach any other repo. It needs its own GitHub repo and its own deploy key (or an account-level key). |
 | ~~The C3 driver is uncommitted and half outside git~~ **RESOLVED 2026-09-14** | App committed as `69748ae` on branch `camelot`. `/var/biometric-protocol` is now a git repository with a **`v2.3.0` tag** and 70 tracked files. **It still has no REMOTE** — the history exists but lives only on this box, so pushing it somewhere is the remaining half of this blocker. On 2026-09-24 the working tree (2.7.0–2.9.0) was committed as `2180866` on `main`; **not tagged**. |
 | **The vendor SDK dump is deliberately NOT in git** | `draft/` (the owner's ZKAccess 3.5.5 install and `draft/analysis/`) is gitignored because it holds real employee names, card numbers and fingerprint templates. Every conclusion drawn from it is written into `docs/`; the source is not portable and must be re-supplied by the owner if needed again. |
 
@@ -827,6 +827,12 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-25 — GitHub push access; every app branch pushed
+
+Created an SSH key for this box and the owner added it as a write-enabled deploy key on
+biMetric. Pushed all seven app branches (no force; `main` was a fast-forward). The
+library still has no remote, so it remains the only unpushed copy.
+
 ### 2026-10-22 — Camelot recovery, punch write proven, get-by-code, two half-deletes
 
 See "Where we stopped" (2026-10-22). All committed on `wipe-terminal`; library tagged
