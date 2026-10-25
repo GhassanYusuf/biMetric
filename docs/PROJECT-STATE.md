@@ -837,6 +837,12 @@ GitHub repo: `vcs` + `no-api`, `^2.16` locked at `v2.16.2`, installed from sourc
 first try). The installed code was diffed against the working copy (identical apart
 from the export-ignored files), all 741 tests passed, and the queue was restarted.
 Backup of the old composer files: `storage/app/private/composer-backup-202610251122/`.
+The owner then asked for the folder as a fallback in `composer.json`. Tested: composer
+cannot do that (an unreachable vcs repository is fatal in every order). It already
+survives a GitHub outage from its cache, and a machine with no GitHub access switches
+with `tools/composer-library-source.sh folder` (a git `insteadOf` to
+`/var/biometric-protocol`; the lock is unchanged). Table and evidence in
+`docs/library-installation.md`, "Falling back to the local folder".
 
 ### 2026-10-22 — Camelot recovery, punch write proven, get-by-code, two half-deletes
 

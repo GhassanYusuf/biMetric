@@ -70,6 +70,42 @@ machine with an account key. The alias is per-machine configuration, not part of
 the repo. On the production box composer runs as **root** (the key is root's). Run
 `chown -R www-data:www-data vendor/promoseven` afterwards.
 
+### Falling back to the local folder
+
+`composer.json` names GitHub only, on purpose. **It cannot name a fallback.** This was
+tested on 2026-10-25 with Composer 2.10.3, in throwaway projects:
+
+| `repositories` | GitHub | Result |
+|---|---|---|
+| GitHub, then folder | reachable | GitHub used; the folder is ignored |
+| GitHub, then folder | unreachable | **fatal** "Repository not found"; the folder is never tried |
+| GitHub (`"canonical": false`), then folder | unreachable | **fatal**, same |
+| folder, then GitHub | unreachable | **fatal**, same |
+| folder, then GitHub | reachable | refused: the folder is canonical and offers only `dev-main`, which does not satisfy `^2.16` |
+| GitHub, then a missing folder | reachable | fine; a missing path repository is not an error |
+
+What does work, from those same tests:
+
+- **A GitHub outage on a machine that has installed before needs nothing.**
+  Composer keeps a git mirror in its cache. With SSH broken, `composer install`
+  cloned the locked commit from that mirror, and `composer update` warned
+  ("Failed to update …, package information … may be outdated") and carried on.
+- **A machine that cannot reach GitHub at all** falls back through git, below
+  composer. An `insteadOf` rule sends the GitHub URL to the local working copy.
+  The folder has the same commits and tags, so `composer.lock` does not change. On a
+  simulated fresh machine (empty cache, SSH broken) this installed `2e9f4c1`
+  (v2.16.2) with its tests. The switch:
+
+```bash
+tools/composer-library-source.sh status   # where composer fetches it from
+tools/composer-library-source.sh folder   # use /var/biometric-protocol (or $BIOMETRIC_LIBRARY_FOLDER)
+tools/composer-library-source.sh github   # back to GitHub
+```
+
+Only committed, tagged work in the folder can be installed this way, which is
+what the lock pins anyway. Switch back to `github` when GitHub is reachable again,
+or the folder quietly stays the source.
+
 ### Changing the library
 
 The working copy is still `/var/biometric-protocol/`, but the app **no longer sees
