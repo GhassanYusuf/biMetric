@@ -896,6 +896,17 @@ resort. **Housekeeping:** `pecl` is no longer how sqlsrv is installed here. A fu
 8.4 driver update means rebuilding with `phpize8.4`/`php-config8.4`, or `pie install
 microsoft/pdo_sqlsrv`.
 
+**Branches merged into `main` (owner, same day).** `main` was fast-forwarded to
+`wipe-terminal`, which already held `camelot`, `employees`, `password-feature`,
+`delete-by-code` and `security-updates`. Then `export-employees` (its one commit, the
+employee list export) was merged with `--no-ff`, with no conflicts, though
+`EmployeeController` and `routes/api.php` had changed on both sides. Tested in a
+separate worktree: 745 tests pass (741 + the 4 export tests) and the Vite build
+succeeds. **Production still runs `wipe-terminal`**, so the Export button is not live
+yet. Moving production to `main` means `git checkout main`, `npm run build` and
+`queue:restart`. **Owner to decide when.** The feature branches are kept on GitHub
+until then.
+
 ### 2026-10-22 — Camelot recovery, punch write proven, get-by-code, two half-deletes
 
 See "Where we stopped" (2026-10-22). All committed on `wipe-terminal`; library tagged
