@@ -859,7 +859,7 @@ site answers, and the 11:50 UTC health check reached all five ZKTeco terminals w
 failed jobs. Rollback: `storage/app/private/composer-backup-202610251142-pre-security/`
 (old `composer.lock` + `vendor.tgz`).
 
-**PHP 8.4 installed beside 8.2, NOT yet switched (same day, owner chose 8.4 over 8.3).**
+**Production moved to PHP 8.4.27 (same day, owner chose 8.4 over 8.3; switched 12:20 UTC).**
 Why 8.4: security support to the end of 2028 (8.2 ends 2026-12-31, 8.3 2027-12-31). Also
 Microsoft's SQL Server driver 5.13.x, which carries a `PDO::lastInsertId` security fix
 (5.13.2), supports 8.3+ only, so staying on 8.2 also leaves the driver behind. How:
@@ -869,14 +869,32 @@ so only `php8.4*`, `libapache2-mod-php8.4` and the shared `php-common` (2:101, n
 8.4) come from it; the php8.2 packages stay on Debian's builds. The owner ran the apt
 install (the assistant's run was refused by the permission classifier), with
 `update-alternatives` first set to **manual 8.2** for php, phar, phpize and php-config,
-so `php` on the CLI, the queue worker and cron are still 8.2.35. `sqlsrv`/`pdo_sqlsrv`
+so `php` on the CLI stayed 8.2.35 until the switch. `sqlsrv`/`pdo_sqlsrv`
 5.13.3 were built by hand against 8.4 (`phpize8.4`, `php-config8.4`) and enabled for 8.4
 only; 8.2 keeps 5.12.0. Checked under 8.4: identical extension list, 741 tests pass, no
 PHP 8.4 deprecations in app or library, a real SQL Server connection, and a read-only
 `info()`/`readClock()` on IT ROOM. **To carry over at the switch:** the Apache 8.2
 `php.ini` has `memory_limit = 256M`, `post_max_size = 100M`, `upload_max_filesize = 100M`;
-a new 8.4 Apache ini will have the defaults. The owner's clone of the container, taken
-the morning of 2026-10-25, is the fallback. **Owner to approve the switch.**
+a new 8.4 Apache ini would have had the defaults.
+
+The switch, approved by the owner: `libapache2-mod-php8.4` installed (it did not enable
+itself while php8.2 was enabled). The three settings above were copied into
+`/etc/php/8.4/apache2/php.ini`, sqlsrv was enabled for the 8.4 apache2 SAPI, then
+`a2dismod php8.2 && a2enmod php8.4`, configtest, Apache restart (the script would have
+reverted on a non-200). `update-alternatives` (manual) set php, phar, phar.phar, phpize
+and php-config to 8.4, then `queue:restart`; systemd relaunched the worker on
+`/usr/bin/php8.4`. Verified after: the web SAPI reports 8.4.27, sqlsrv 5.13.3, 256M and
+100M; the 741 tests pass on the CLI; the 12:25 UTC health checks, created by cron's
+scheduler on 8.4 and run by the 8.4 worker, succeeded on all five ZKTeco terminals; no
+failed jobs, no production errors.
+
+**Rollback (keep 8.2 installed until about 2026-11-01, then remove it):**
+`a2dismod php8.4 && a2enmod php8.2 && systemctl restart apache2`; `update-alternatives
+--set php /usr/bin/php8.2` (and phar, phar.phar, phpize, php-config); `php artisan
+queue:restart`. The owner's container clone from the morning of 2026-10-25 is the last
+resort. **Housekeeping:** `pecl` is no longer how sqlsrv is installed here. A future
+8.4 driver update means rebuilding with `phpize8.4`/`php-config8.4`, or `pie install
+microsoft/pdo_sqlsrv`.
 
 ### 2026-10-22 — Camelot recovery, punch write proven, get-by-code, two half-deletes
 
