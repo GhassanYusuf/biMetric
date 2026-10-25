@@ -21,7 +21,7 @@ export default function EmployeesMobile({
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
-    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport,
+    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -63,6 +63,8 @@ export default function EmployeesMobile({
                 subtitle={searching ? `${rows.length} matching` : `${(total ?? rows.length).toLocaleString()} on the roster`}
                 compact
             >
+                {/* Rule 5: the same export as desktop — the list as filtered. */}
+                <ActionMenu label="Export" className="min-h-[38px] px-3 text-sm" items={exportItems} />
                 {canCreate && <Button onClick={onAdd} className="px-3">+ Add</Button>}
             </PageHeader>
 

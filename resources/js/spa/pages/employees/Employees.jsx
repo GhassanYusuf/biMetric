@@ -17,6 +17,27 @@ import PushModal from './PushModal';
 import EnrollModal from './EnrollModal';
 import EmployeeDetailModal from './EmployeeDetailModal';
 
+/*
+| The screen's filters as query parameters: the list request and the PDF / Excel export
+| (2026-10-21) both send exactly these, so a file lists the people on the screen — every
+| page of them, with the tree's company or department, search, terminal and status.
+*/
+function rosterParams(term, active) {
+    const params = new URLSearchParams();
+    if (term) params.set('search', term);
+    if (active.department_id) params.set('department_id', active.department_id);
+    // Status: resigned people are left out unless asked for (2026-10-12).
+    const status = active.status ?? '';
+    if (status === 'active' || status === 'inactive') params.set('is_active', status === 'active' ? '1' : '0');
+    if (status === 'resigned') params.set('resigned', '1');
+    else if (status !== 'all') params.set('resigned', '0');
+    // "On no terminal" is a different question from "on terminal N", so it is a
+    // separate parameter rather than a magic device id.
+    if (active.device === 'none') params.set('unenrolled', '1');
+    else if (active.device) params.set('device_id', active.device);
+    return params;
+}
+
 // Owns employee data + all mutations. Every action updates local state in place
 // (no page reload) per the standards; the device-specific file only renders.
 export default function Employees() {
@@ -115,18 +136,9 @@ export default function Employees() {
         const id = ++requestId.current;
         setLoading(true);
         try {
-            const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pageNum) });
-            if (term) params.set('search', term);
-            if (active.department_id) params.set('department_id', active.department_id);
-            // Status: resigned people are left out unless asked for (2026-10-12).
-            const status = active.status ?? '';
-            if (status === 'active' || status === 'inactive') params.set('is_active', status === 'active' ? '1' : '0');
-            if (status === 'resigned') params.set('resigned', '1');
-            else if (status !== 'all') params.set('resigned', '0');
-            // "On no terminal" is a different question from "on terminal N", so it is a
-            // separate parameter rather than a magic device id.
-            if (active.device === 'none') params.set('unenrolled', '1');
-            else if (active.device) params.set('device_id', active.device);
+            const params = rosterParams(term, active);
+            params.set('per_page', String(PER_PAGE));
+            params.set('page', String(pageNum));
 
             const res = await api.get(`/employees?${params.toString()}`);
             // Superseded while in flight: a newer request already owns the screen.
@@ -819,6 +831,23 @@ export default function Employees() {
         }
     }
 
+    // Which export is being produced ('pdf' | 'excel'), so only that menu item spins.
+    const [exporting, setExporting] = useState(null);
+
+    async function exportRoster(format) {
+        setExporting(format);
+        try {
+            const query = rosterParams(search.trim(), filters).toString();
+            const path = format === 'excel' ? '/exports/employees/excel' : '/exports/employees';
+            const name = await api.download(`${path}${query ? `?${query}` : ''}`, format === 'excel' ? 'employees.xlsx' : 'employees.pdf');
+            toast.success(`Downloaded ${name}.`);
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : 'Could not produce the file.');
+        } finally {
+            setExporting(null);
+        }
+    }
+
     const presentationProps = {
         rows,
         loading,
@@ -862,6 +891,12 @@ export default function Employees() {
         onView: (employee) => setViewing(employee),
         onReport: (employee) => navigate(`/employees/${employee.id}/report`),
         onReadFromDevice: readFromDevice,
+        // The list as filtered — all employees, or the company / department picked in
+        // the tree — as a PDF or an Excel workbook.
+        exportItems: [
+            { key: 'export-pdf', label: 'PDF', description: 'The list as filtered, ready to print', onSelect: () => exportRoster('pdf'), loading: exporting === 'pdf', disabled: !!exporting },
+            { key: 'export-excel', label: 'Excel', description: 'The same list, a column per terminal', onSelect: () => exportRoster('excel'), loading: exporting === 'excel', disabled: !!exporting },
+        ],
     };
 
     const Presentation = deviceClass === 'desktop' ? EmployeesDesktop : EmployeesMobile;

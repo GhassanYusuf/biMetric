@@ -7,7 +7,6 @@ use App\Http\Requests\Api\Employee\StoreEmployeeRequest;
 use App\Http\Requests\Api\Employee\UpdateEmployeeRequest;
 use App\Http\Resources\EmployeeResource;
 use App\Models\Device;
-use App\Models\Department;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\EmployeeReportService;
@@ -16,6 +15,7 @@ use App\Services\Devices\EnrollmentOrchestratorService;
 use App\Services\Employees\EmployeeCodeAllocator;
 use App\Services\Employees\EmployeeDevicePropagator;
 use App\Services\Employees\EmployeeMergeService;
+use App\Services\Employees\EmployeeRosterQuery;
 use App\Services\Employees\FingerprintPusher;
 use App\Services\Employees\FingerprintVault;
 use App\Support\ApiResponse;
@@ -48,58 +48,14 @@ class EmployeeController extends Controller
     {
         $this->authorize('viewAny', Employee::class);
 
-        $employees = Employee::query()
+        $employees = EmployeeRosterQuery::build($request)
             ->withCount('attendanceLogs')
             // `deviceMaps` answers "enrolled on which terminal?" — the flat
             // enrollment columns on employees cannot, once there is more than
             // one device.
             ->with([...self::DEPARTMENT, 'deviceMaps.device:id,name', 'accessLevels:id', ...self::copyRelations()])
-            /*
-             * Every word must match somewhere (2026-10-11). The list shows first and
-             * last name together, so "ali mohamed" has to find ALI / MOHAMED JAAFAR
-             * even though the two words live in different columns. Word by word rather
-             * than a CONCAT, which SQL Server and SQLite spell differently.
-             */
-            ->when($request->filled('search'), function ($q) use ($request) {
-                $words = preg_split('/\s+/', $request->string('search')->trim()->toString(), -1, PREG_SPLIT_NO_EMPTY);
-                foreach ($words as $word) {
-                    $term = '%'.$word.'%';
-                    $q->where(function ($sub) use ($term) {
-                        $sub->where('name', 'like', $term)
-                            ->orWhere('last_name', 'like', $term)
-                            ->orWhere('employee_code', 'like', $term)
-                            ->orWhere('department', 'like', $term)
-                            ->orWhere('job_title', 'like', $term)
-                            ->orWhere('email', 'like', $term);
-                    });
-                }
-            })
-            // The department tree (2026-10-11): a node selects itself and everything
-            // beneath it, so picking a company lists its departments' people too.
-            // `none` is the tree's "Unassigned" node — a real state, not an id.
-            ->when($request->query('department_id') === 'none', fn ($q) => $q->whereNull('department_id'))
-            ->when(
-                $request->filled('department_id') && $request->query('department_id') !== 'none',
-                fn ($q) => $q->whereIn('department_id', Department::subtreeIds($request->integer('department_id'))),
-            )
-            ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
-            // Resigned (2026-10-12): `1` only them, `0` everyone still employed. Absent =
-            // both, so other callers (search, merge) still find a resigned person.
-            ->when($request->filled('resigned') && Employee::hasEmploymentColumns(), fn ($q) => $request->boolean('resigned')
-                ? $q->whereNotNull('resigned_at')
-                : $q->whereNull('resigned_at'))
-            // Enrolled on a specific terminal, via the live mapping — not the flat
-            // snapshot columns, which cannot say WHICH device once there are two.
-            ->when($request->filled('device_id'), fn ($q) => $q->whereHas(
-                'deviceMaps',
-                fn ($m) => $m->where('device_id', $request->integer('device_id'))->whereNull('valid_to'),
-            ))
-            // On no terminal at all: they cannot clock in anywhere.
-            ->when($request->boolean('unenrolled'), fn ($q) => $q->whereDoesntHave(
-                'deviceMaps',
-                fn ($m) => $m->whereNull('valid_to'),
-            ))
-            ->orderBy('name')
+            // The filters themselves live in EmployeeRosterQuery, shared with the
+            // roster's PDF / Excel export so the file lists who the screen lists.
             ->paginate($this->perPage($request));
 
         return ApiResponse::success(
