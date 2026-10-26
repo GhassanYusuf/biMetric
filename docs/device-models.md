@@ -106,33 +106,35 @@ first run.
 
 ## UA300 — Catering
 
-`src/Model/UA300.php` (library 2.17.0, 2026-10-26). Same standalone protocol and firmware
-line as the F18, different board (ZMM200 vs ZMM210). **No write has run on a UA300**, so
-none is offered: Catering is read-only in the app (hidden from Access levels and Push)
-until the first write test, which the owner has approved in principle and will schedule
-(casebook DC-032). Research found nothing UA300-specific in pyzk, pyzatt or php-zkteco.
+`src/Model/UA300.php` (library 2.17.0 reads, **2.18.0 writes**, 2026-10-26). Same standalone
+protocol and firmware line as the F18, different board (ZMM200 vs ZMM210). Its methods are
+the F18's (the same library calls); its LEVELS are its own, from what ran on Catering: the
+owner's real moves while the row said F18 (2026-10-25/26) and the write test of 2026-10-26
+08:19 UTC (`tools/zkprobe/ua300-write.php`, casebook DC-032). Research found nothing
+UA300-specific in pyzk, pyzatt or php-zkteco.
 
 | Attribute | Action | Method | Level |
 |---|---|---|---|
 | User ID | read | user table (the F18's path), 21 users, 2026-10-22 onward | C |
-| User ID | add / name / delete / move | never run on a UA300 | U |
+| User ID | add / name | `USER_WRQ`, as the F18: test user added and renamed, read back; ~17 real re-adds by the owner's merges, read back | C |
+| User ID | delete | `DELETE_USER`: test user verified gone with its finger, everyone else unchanged; the merges' old IDs removed. **I, not C:** Riza (870876872) found with record kept, finger and card gone, after a removal that timed out on connect (unexplained) | I |
+| User ID | **move** | in place never tried (U). **By re-add**, the F18's method: the owner's merges, ~17 workers to their CPR IDs, fingers written back | I (re-add) |
 | Card | read | user record, 2026-10-22 onward | C |
-| Card | write | never run | U |
+| Card | write | `setCard`: test card read back, name kept; 10 workers' cards on the terminal match the system | I |
 | Fingerprint | read | blobs C (27 stored from it); the template **table** decoded on two of five nightly reads (2026-10-23 to -25 failed), so I | C / I |
-| Fingerprint | write / delete / enroll | never run | U |
+| Fingerprint | write | `addTemplates` (`SAVE_USERTEMPS`): test template read back byte-identical (1,444 bytes); the merges' fingers present for 15 of 16 workers. **I until a system-written finger has matched at the terminal** (none punched by finger under a new ID yet), and Riza's unexplained loss | I |
+| Fingerprint | delete / enroll | never run | U |
 | Attendance | read | 2,101 → 2,115 records over eleven reads, none undecodable | C |
 | Attendance | clear | never run | U |
 | Password | read / write | read rides the user record but was never compared with a known value (I); write never run (U) | I / U |
 | Privilege | set | never run | U |
 | Clock | read | `readClock`, C | C |
-| Clock | write | **differs from the F18.** While the row wrongly said F18, 2026-10-26 02:00 UTC: ACKed, but the immediate read-back still showed the old time (96 s slow), so the command failed; by 07:00 the clock was right. It applies later than the read-back. U until the write test measures how late | U |
+| Clock | write | **differs from the F18.** While the row wrongly said F18, 2026-10-26 02:00 UTC: ACKed, but the immediate read-back still showed the old time (96 s slow), so the command failed; by 07:00 the clock was right. It applies later than the read-back. Not measured on the write test (the clock was right; a deliberate error would mis-stamp punches): run `--clock-only` once it drifts 30 s | U |
 | Everyone | wipe | never run | U |
 
-**The write test (planned, owner to choose the time):** save the roster first; a temporary
-test user (not a worker) added, read back, renamed, given a card, then deleted and
-verified gone; the clock set and read back at 0, 5, 30 and 60 s. Each step that passes
-moves its level in `UA300.php`, the pin in `DeviceModelMethodologyTest` and this table
-together.
+**To promote further:** delete, card and fingerprint to C once moved workers punch by finger
+and Riza's case is explained or does not recur; the clock with `--clock-only`; password,
+privilege, clear and wipe each need their own run.
 
 ## inBIO460 — Glass Door
 

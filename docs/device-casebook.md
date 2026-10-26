@@ -122,8 +122,15 @@ Template:
   - 2026-10-25 read-only `device.info`: UA300/ID, serial CEG9194260020, MAC
     00:17:61:11:bd:84. Clock 95 s slow; no clock set had ever run on it.
   - 2026-10-25 13:19 UTC the owner set the row's model to "F18" in the browser (audit_logs
-    18570). Catering then appeared in Access levels with every F18 write. Nothing was
-    pushed to it in that window. The nightly clock job ran: 02:00 UTC ACKed, but the
+    18570). Catering then appeared in Access levels with every F18 write. **Correction
+    (2026-10-26 08:3x UTC): writes DID run in that window.** A first check looked only at
+    queued `device_commands` and missed them; the employee form writes in the request.
+    audit_logs show the owner merging the imported Catering employees into their CPR
+    records, 2026-10-25 13:14 to 14:13 and 2026-10-26 06:55 to 07:08 UTC. Each move ran the
+    F18 method on the UA300: re-add under the CPR ID, fingers written (`slots_written`),
+    old ID deleted, each read back in the app. Then 07:26 to 07:32 the owner resigned
+    Arich, Jahid, Jairus, Sunitha and Riza; the first four were removed from Catering
+    (maps closed "Removed from device"). The nightly clock job ran: 02:00 UTC ACKed, but the
     read-back showed the old time and the command failed (8302); 07:00 already right (8623).
     So the UA300 applies the clock later than the read-back, unlike the F18 (dead end: the
     F18's method is NOT the UA300's).
@@ -132,13 +139,40 @@ Template:
     firmware, serial and platform at 07:45 UTC (was "F18"); library 2.17.0 adds
     `Model\UA300` (reads confirmed, no write); the app pins it in
     `DeviceModelMethodologyTest`.
+  - 2026-10-26 08:19 UTC, the write test with the owner's go-ahead
+    (`tools/zkprobe/ua300-write.php`, trace `traces-2026-10-26/ua300-write-01.json`,
+    reconstructed from the console because the run could not write it; the folder is
+    now created for www-data). The queue's per-device lock was held for the run. Roster
+    saved first to `storage/app/private/removed-records/catering-roster-before-ua300-write-20261026-081950.json.gz`.
+    Test User (#1827) as 981122445: add ✓, rename ✓, card ✓, fingerprint slot 0 written
+    and read back byte-identical (1,444 bytes) ✓, delete ✓ (user and finger gone), every
+    other user, card and finger unchanged ✓ (digest e501a7ca… before and after). Clock:
+    refused by the library's own guard (UNKNOWN); not re-run, because the clock was already
+    right and making it wrong would mis-stamp punches. Use `--clock-only` once it drifts
+    30 s or more.
+  - The "before" read held **16** users, not the 21 of 02:30 UTC: the owner's moves and
+    removals above, not the test.
+  - **Riza Teodosio (870876872), unexplained:** moved at 07:02 with finger 6 written and
+    read back; resigned at 07:30; her removal at 07:31 failed with a timeout on CONNECT
+    (laravel.log WARNING, command 1000), so on this evidence no delete was sent. At 08:19
+    her record is on Catering with **no finger and no card**, and her map is still open.
+    The same symptom as DC-029 (Camelot: a delete that dropped fingers and kept the
+    record), but not proven. Her finger and card are safe in the system. Her removal is
+    still owed (she is resigned).
+  - Fingers on the terminal vs the system for the 16: every stored finger present except
+    Riza's. Cards: 10 match; Ragesh holds a different card per terminal (expected); Riza
+    none. Only one punch under a new ID since the moves (Shahad, by card), so no finger
+    written by the system has yet been seen to match at the terminal.
 - **Root cause:** a new model with no file of its own. The app correctly offers no write
   until one has run on that model; the first attempt to work around it (labelling it F18)
   would have offered unproven writes.
-- **Fix:** — so far, identification only. The write test (owner to schedule, outside meal
-  service): save the roster; a temporary test user added, read back, renamed, given a card,
-  deleted and verified gone; the clock set and read back at 0, 5, 30, 60 s. Each passing
-  step moves its level in `UA300.php`, the pin and `docs/device-models.md` together.
+- **Fix:** library 2.17.0 (`Model\UA300`, reads) and 2.18.0 (from the write test:
+  `user.write` C; `user.delete`, `card.write`, `template.upload` I; the rest U). The
+  assistant's commit/tag/push of 2.18.0 was refused by its permission classifier; the
+  owner ran it, and it was installed the same day. Pin `standalone:UA300` updated in
+  `DeviceModelMethodologyTest`; `docs/device-models.md` UA300 table. The owner reports the
+  two days of real use under the F18 label (moves, merges, resignations) "all working
+  fine", which the audit and the terminal read agree with except for Riza.
 - **Verified:** reads only: Catering resolves to `UA300` in production; `user.write` is
   unsupported, so Access levels correctly omits it; the clock is right (drift 1 s at 07:44 UTC).
 - **Evidence:** audit_logs 18570 (model → F18); device_commands 8302, 8623, 3918, 5391,

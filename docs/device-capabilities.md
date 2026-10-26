@@ -48,7 +48,9 @@ Identified 2026-10-26 by `device.info` (read-only): **UA300/ID**, "Ver 6.60 May 
 platform **ZMM200_TFT**, serial CEG9194260020. It had been added 2026-10-22 with no model,
 so it ran on `GenericTerminal`; on 2026-10-25 13:19 UTC the row was set to "F18" in the
 browser, which offered every F18 write until it was corrected at 07:45 UTC on 2026-10-26.
-No user, card or finger was written in that window. The nightly clock job ran twice:
+In that window the owner's merges ran the F18 move method on it, about 17 times (re-add,
+fingers written, old ID deleted, each read back in the app), then removed four resigned
+workers (casebook DC-032). The nightly clock job ran twice:
 
 - 02:00 UTC: `SET_TIME` ACKed; the immediate read-back showed the OLD time (96 s slow), so
   the command failed. Rule 10's read-back caught it.
@@ -57,8 +59,16 @@ No user, card or finger was written in that window. The nightly clock job ran tw
 
 Reads confirmed on it: ping, info, clock, users (21), cards, attendance (2,115 records, none
 undecodable), fingerprint blobs (27). The template **table** decoded on two of five nightly
-roster reads; IMPLEMENTED. Every write is UNKNOWN until a write test on Catering
-(`docs/device-models.md`, UA300; casebook DC-032). **Not settled by research:** nothing
+roster reads; IMPLEMENTED.
+
+**Write test, 2026-10-26 08:19 UTC** (`tools/zkprobe/ua300-write.php`,
+`traces-2026-10-26/ua300-write-01.json`): a test user added, renamed, given a card and a
+fingerprint (read back byte-identical), deleted and verified gone; everyone else unchanged.
+2.18.0 sets `user.write` CONFIRMED and `user.delete`, `card.write`, `template.upload`
+IMPLEMENTED. They are not CONFIRMED because of one unexplained case (Riza: record kept,
+finger and card gone, after a removal that timed out on connect) and because no
+system-written finger has yet matched at the terminal. Clock, password, privilege, move in
+place, clear and wipe: UNKNOWN. **Not settled by research:** nothing
 UA300- or ZMM200-specific was found in pyzk, pyzatt or php-zkteco (2026-10-26).
 
 ## Windowed bulk reads: deliberately NOT a capability flag

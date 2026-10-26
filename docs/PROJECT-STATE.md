@@ -79,19 +79,23 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 
 ## Where we stopped
 
-### Catering is a UA300 — read-only until its write test (owner to schedule) — 2026-10-26
+### Catering is a UA300 — writes on since library 2.18.0 — 2026-10-26
 
-Catering (192.168.7.120) was added 2026-10-22 with no model. Identified read-only on
-2026-10-25 as a **ZKTeco UA300/ID**, a model the library had no file for, so it was read-only
-and missing from Access levels (DC-032). The owner briefly set its row to "F18" (2026-10-25
-13:19 UTC), which offered every F18 write; corrected to `UA300/ID` at 2026-10-26 07:45 UTC.
-**Why not leave it as F18:** the one write that ran under that label, the nightly clock set,
-behaved differently from an F18 (ACKed, applied only after the read-back), which is the
-kind of difference rule 21 exists for. Library **2.17.0** adds `Model\UA300`: reads
-confirmed, no write. **Next, owner to choose a quiet time (outside meal service):** the write
-test on Catering in `docs/device-models.md` (UA300). It needs the roster saved first and a
-temporary test user, never a worker. Until it runs, nobody can be pushed to Catering from
-the system.
+Catering (192.168.7.120) is a **ZKTeco UA300/ID** (identified 2026-10-25, DC-032). The owner
+had set its row to "F18" (2026-10-25 13:19 UTC); corrected to `UA300/ID` at 2026-10-26 07:45
+UTC. While it said F18, the owner's employee merges moved ~17 workers on it to their CPR IDs
+through the app and removed four resigned workers, and the owner reports it all worked.
+**Why not leave it as F18:** a different board, and the one write compared so far (the
+clock) behaved differently, so its levels must be its own.
+
+Library **2.17.0** added `Model\UA300` (reads). The owner-approved write test passed
+2026-10-26 08:19 UTC; **2.18.0** (owner committed and tagged it; installed the same day) sets
+`user.write` C and `user.delete`, `card.write`, `template.upload` I. Catering is back in
+Access levels on its own profile, with a warning on delete, card and fingerprint.
+
+**Owed, owner:** Riza Teodosio (resigned) is still on Catering as 870876872 with no finger and
+no card (unexplained, DC-032); her removal is still to do. **Clock write** on the UA300 is
+untested: run `tools/zkprobe/ua300-write.php 17 --clock-only` once it has drifted 30 s.
 
 Catering's punches (DC-031, fixed 2026-10-25): 673 re-linked; **1,438 under 22 user IDs no
 longer on the terminal stay unattributed. Owner to say who they were**, starting with 702

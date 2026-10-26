@@ -1,0 +1,68 @@
+{
+    "label": "ua300-write",
+    "host": "192.168.7.120",
+    "started_at": "2026-10-26T08:19:50+00:00",
+    "note": "RECONSTRUCTED from the console output of run 01: the script could not write its trace (traces-2026-10-26/ did not exist and tools/zkprobe/ is root-owned; it ran as www-data). Values below are copied verbatim from that output.",
+    "device": {
+        "id": 17,
+        "name": "Catering",
+        "model": "UA300/ID",
+        "firmware": "Ver 6.60 May 14 2018",
+        "platform": "ZMM200_TFT"
+    },
+    "test_user_id": "981122445",
+    "steps": [
+        {
+            "step": "lock held",
+            "key": "laravel-queue-overlap:App\\Jobs\\ProcessDeviceCommand:device:17"
+        },
+        {
+            "step": "saved and read before",
+            "users": 16,
+            "fingers": 21,
+            "digest": "e501a7caa4ca99ce761d32ab61c72be9276e6006",
+            "backup": "catering-roster-before-ua300-write-20261026-081950.json.gz",
+            "test_id_free": true
+        },
+        {
+            "step": "add",
+            "ok": true,
+            "read_back_name": "Test User"
+        },
+        {
+            "step": "rename",
+            "ok": true,
+            "read_back_name": "Test User UA"
+        },
+        {
+            "step": "card",
+            "ok": true,
+            "name_kept": true
+        },
+        {
+            "step": "fingerprint",
+            "ok": true,
+            "slot": 0,
+            "size_written": 1444,
+            "size_read": 1444,
+            "sha1_match": true
+        },
+        {
+            "step": "delete",
+            "ok": true,
+            "user_gone": true,
+            "fingers_gone": true
+        },
+        {
+            "step": "everyone else unchanged",
+            "ok": true,
+            "users": 16,
+            "fingers": 21,
+            "digest": "e501a7caa4ca99ce761d32ab61c72be9276e6006"
+        },
+        {
+            "step": "clock FAILED",
+            "error": "Promoseven\\Biometric\\Exception\\UnsupportedCommandException: This device does not support device.time.write: Not yet probed on this device."
+        }
+    ]
+}
