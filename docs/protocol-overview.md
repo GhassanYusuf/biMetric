@@ -526,7 +526,9 @@ records (119), capacities, firmware and serial were the same after. The clock wa
 before and 2 s slow after, so it stops for about 9 s across the reboot. The restart cleared
 a state in which every `USER_WRQ` for a new uid had been refused with **4995**, "Error
 inserting database" (casebook DC-034). `tools/zkprobe/restart.php`,
-`traces-2026-10-26/restart-01.json`.
+`traces-2026-10-26/restart-01.json`. Second run, IT ROOM (F18, same firmware, on the LAN),
+from the app's Restart terminal button the same day: answering again after about 8 s
+(device_commands 8985). The 25 s on Camelot includes its internet link and AUTH.
 
 ### Error replies 4981-4999 (DOCUMENTED, ZKTeco's own dictionary)
 
