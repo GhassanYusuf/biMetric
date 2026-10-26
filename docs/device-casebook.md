@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-25**
+**Last updated: 2026-10-26**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-032 | 2026-10-25 to 2026-10-26 | Catering | Catering missing from an employee's Access levels; it is a UA300, a model with no write proven | OPEN |
 | DC-031 | 2026-10-25 | Catering | Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112 | FIXED |
 | DC-030 | 2026-10-22 | Camelot | A person linked to a terminal but no longer on it could not be pushed, moved or removed — every path said "not found" | OPEN |
 | DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | FIXED |
@@ -106,6 +107,44 @@ Template:
 ---
 
 ## Entries
+
+### DC-032 — Catering missing from an employee's Access levels; it is a UA300, a model with no write proven
+
+- **Date:** 2026-10-25 to 2026-10-26
+- **Devices:** Catering (UA300/ID, 192.168.7.120, Ver 6.60 May 14 2018, ZMM200_TFT)
+- **Direction:** software → device
+- **Symptom:** Owner: editing an employee, the Access levels tab lists no Catering under
+  terminals.
+- **What was done:** read-only investigation, then identification; no write to the terminal.
+  - The list is `writableTargets()` in `DeviceTargets.jsx`: active terminals whose
+    `user.write` is supported. Catering's row had no model, so it ran on `GenericTerminal`
+    (every write UNKNOWN), and was hidden by design (rule 9, rule 21.2).
+  - 2026-10-25 read-only `device.info`: UA300/ID, serial CEG9194260020, MAC
+    00:17:61:11:bd:84. Clock 95 s slow; no clock set had ever run on it.
+  - 2026-10-25 13:19 UTC the owner set the row's model to "F18" in the browser (audit_logs
+    18570). Catering then appeared in Access levels with every F18 write. Nothing was
+    pushed to it in that window. The nightly clock job ran: 02:00 UTC ACKed, but the
+    read-back showed the old time and the command failed (8302); 07:00 already right (8623).
+    So the UA300 applies the clock later than the read-back, unlike the F18 (dead end: the
+    F18's method is NOT the UA300's).
+  - 2026-10-26, owner's go-ahead for steps 1-3: research (nothing UA300- or
+    ZMM200-specific in pyzk, pyzatt, php-zkteco); the row set to `UA300/ID` with
+    firmware, serial and platform at 07:45 UTC (was "F18"); library 2.17.0 adds
+    `Model\UA300` (reads confirmed, no write); the app pins it in
+    `DeviceModelMethodologyTest`.
+- **Root cause:** a new model with no file of its own. The app correctly offers no write
+  until one has run on that model; the first attempt to work around it (labelling it F18)
+  would have offered unproven writes.
+- **Fix:** — so far, identification only. The write test (owner to schedule, outside meal
+  service): save the roster; a temporary test user added, read back, renamed, given a card,
+  deleted and verified gone; the clock set and read back at 0, 5, 30, 60 s. Each passing
+  step moves its level in `UA300.php`, the pin and `docs/device-models.md` together.
+- **Verified:** reads only: Catering resolves to `UA300` in production; `user.write` is
+  unsupported, so Access levels correctly omits it; the clock is right (drift 1 s at 07:44 UTC).
+- **Evidence:** audit_logs 18570 (model → F18); device_commands 8302, 8623, 3918, 5391,
+  6864, 8340; library v2.17.0.
+- **Status:** OPEN — until the write test runs and Catering's writes are levelled.
+- **Keywords:** Catering, UA300, ZMM200, access levels, terminal missing, writableTargets, user.write, generic terminal, model F18 mislabel, clock applied late
 
 ### DC-031 — Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112
 

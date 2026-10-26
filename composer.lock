@@ -3331,16 +3331,16 @@
         },
         {
             "name": "promoseven/biometric-protocol",
-            "version": "v2.16.2",
+            "version": "v2.17.0",
             "source": {
                 "type": "git",
                 "url": "git@github.com:GhassanYusuf/biometric-protocol.git",
-                "reference": "2e9f4c13281f100ce6c8b1df102a53ecefefae4c"
+                "reference": "76ae79dc85fd3415cbfe4b9d98b0e6957c38183a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/GhassanYusuf/biometric-protocol/zipball/2e9f4c13281f100ce6c8b1df102a53ecefefae4c",
-                "reference": "2e9f4c13281f100ce6c8b1df102a53ecefefae4c",
+                "url": "https://api.github.com/repos/GhassanYusuf/biometric-protocol/zipball/76ae79dc85fd3415cbfe4b9d98b0e6957c38183a",
+                "reference": "76ae79dc85fd3415cbfe4b9d98b0e6957c38183a",
                 "shasum": ""
             },
             "require": {
@@ -3388,7 +3388,7 @@
                 "terminal",
                 "zkteco"
             ],
-            "time": "2026-10-21T15:15:27+00:00"
+            "time": "2026-10-26T07:46:40+00:00"
         },
         {
             "name": "psr/clock",

@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-10-25**
+**Last updated: 2026-10-26**
 
 ---
 
@@ -78,6 +78,25 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 ---
 
 ## Where we stopped
+
+### Catering is a UA300 — read-only until its write test (owner to schedule) — 2026-10-26
+
+Catering (192.168.7.120) was added 2026-10-22 with no model. Identified read-only on
+2026-10-25 as a **ZKTeco UA300/ID**, a model the library had no file for, so it was read-only
+and missing from Access levels (DC-032). The owner briefly set its row to "F18" (2026-10-25
+13:19 UTC), which offered every F18 write; corrected to `UA300/ID` at 2026-10-26 07:45 UTC.
+**Why not leave it as F18:** the one write that ran under that label, the nightly clock set,
+behaved differently from an F18 (ACKed, applied only after the read-back), which is the
+kind of difference rule 21 exists for. Library **2.17.0** adds `Model\UA300`: reads
+confirmed, no write. **Next, owner to choose a quiet time (outside meal service):** the write
+test on Catering in `docs/device-models.md` (UA300). It needs the roster saved first and a
+temporary test user, never a worker. Until it runs, nobody can be pushed to Catering from
+the system.
+
+Catering's punches (DC-031, fixed 2026-10-25): 673 re-linked; **1,438 under 22 user IDs no
+longer on the terminal stay unattributed. Owner to say who they were**, starting with 702
+(481 punches, until 2025-10-08).
+
 
 ### The scheduler was NEVER running until 2026-10-18 — cron now installed
 
@@ -824,6 +843,14 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-26 — Catering identified as a UA300; library 2.17.0
+
+Catering resolved: punches re-linked on claim (DC-031, previous day), then the Access levels
+question (DC-032): it is a UA300, now with its own read-only model file (2.17.0) and the row
+corrected from a hand-set "F18". The write test is owed a time by the owner. Ops trap: after
+`chown -R www-data vendor/promoseven`, a root `composer update` of the library fails with
+git's "dubious ownership"; see `docs/library-installation.md`.
+
 ### 2026-10-25 — GitHub push access; the app and the library both pushed
 
 Created an SSH key for this box and the owner added it as a write-enabled deploy key on
@@ -3293,6 +3320,7 @@ of 2026-09-15. Roster and punch figures are from the post-wipe re-read that day.
 | 12 | Camelot | `87.237.196.60:4370` | F18 | 24 | 13,110 | **`adopted`** | **Public IP.** Needs AUTH, key 0. Slow: **exceeds the default worker timeout**, and the stale-lock trap below follows from that. 7,242 records archived undecodable. |
 | 13 | **"Glass Door"** ⚠ | `192.168.7.61:4370` | **inBIO460** | 320 | 87,349 | `read_only` — **85 undecided** | **WORKING** through `C3Driver`, protocol `c3`. Session-less over TCP. Busiest terminal in the estate. **Reads only — `saveUser()`/`deleteUser()` throw.** ⚠ **The NAME is wrong** — see below. |
 | 14 | **"Entrance"** ⚠ | `192.168.7.60:4370` | **TF1700** | 320 | 20,967 | **`adopted`** | **WORKING** through `C3Driver`, protocol `c3`. A C3 panel, NOT standalone. **Requires `0x01`**; without it it reports zero records without erroring. **Reads only.** ⚠ **The NAME is wrong** — see below. |
+| 17 | Catering | `192.168.7.120:4370` | **UA300/ID** (ZMM200_TFT, Ver 6.60 May 14 2018) | 21 | 2,115 (2026-10-26) | claimed by import 2026-10-25 | Added 2026-10-22. LAN. **Reads only** until its write test (DC-032): `Model\UA300` (2.17.0) offers no write, so it is hidden from Access levels and Push. Its clock write applies LATER than the read-back. |
 
 **Entrance and Glass Door hold IDENTICAL rosters** — 320 entries, 259 distinct names,
 the same people. They are the two C3 panels at the same site. Adopting one does not

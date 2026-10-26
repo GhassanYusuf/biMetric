@@ -1,6 +1,6 @@
 # Device models — how each one does each action
 
-**Last updated: 2026-10-21**
+**Last updated: 2026-10-26**
 
 Required by **CLAUDE.md rule 21** (owner, 2026-10-11): *"each device, a different
 model, has its own method of achieving the same required action. Know all models and
@@ -37,6 +37,7 @@ warning · **U** unknown, hidden until run on this model · **N** not implemente
 | Camelot | F18 (F18/ID) | 87.237.196.60 | Ver 6.60 Apr 26 2016 | ZMM210_TFT | standalone, UDP, **AUTH needed** |
 | Good Wheels | F18/ID | 46.184.163.106 | **Ver 6.60 Oct 12 2021** | ZMM210_TFT | standalone, UDP |
 | On The Road | F22/ID | 192.168.7.63 | Ver 6.60 Apr 27 2017 | ZLM60_TFT | standalone, UDP |
+| Catering | **UA300/ID** (added 2026-10-22, identified 2026-10-26) | 192.168.7.120 | Ver 6.60 May 14 2018 | **ZMM200_TFT** | standalone, UDP |
 | Glass Door | inBIO460 | 192.168.7.61 | AC Ver 5.2.4 Apr 19 2016 | — | C3, TCP, session-less |
 | Entrance | TF1700 | 192.168.7.60 | Ver 6.64.0013 Oct 16 2018 | — | C3, TCP, CONNECT accepted |
 
@@ -102,6 +103,36 @@ first run.
 | Privilege | set | the F18's `setPrivilege()`, same record. **C since 2026-10-20:** test user 14 then 0, read back, name and password kept, others unchanged, twice on On The Road (`user-privilege-write-01/02.json`) | C |
 
 **Password (2026-10-12):** read **C** (On The Road's one password equal to the system's copy). **Write / keep C since 2026-10-20:** a test user's password written and read back twice, kept through a name write, roster unchanged (`user-password-write-03/04.json`).
+
+## UA300 — Catering
+
+`src/Model/UA300.php` (library 2.17.0, 2026-10-26). Same standalone protocol and firmware
+line as the F18, different board (ZMM200 vs ZMM210). **No write has run on a UA300**, so
+none is offered: Catering is read-only in the app (hidden from Access levels and Push)
+until the first write test, which the owner has approved in principle and will schedule
+(casebook DC-032). Research found nothing UA300-specific in pyzk, pyzatt or php-zkteco.
+
+| Attribute | Action | Method | Level |
+|---|---|---|---|
+| User ID | read | user table (the F18's path), 21 users, 2026-10-22 onward | C |
+| User ID | add / name / delete / move | never run on a UA300 | U |
+| Card | read | user record, 2026-10-22 onward | C |
+| Card | write | never run | U |
+| Fingerprint | read | blobs C (27 stored from it); the template **table** decoded on two of five nightly reads (2026-10-23 to -25 failed), so I | C / I |
+| Fingerprint | write / delete / enroll | never run | U |
+| Attendance | read | 2,101 → 2,115 records over eleven reads, none undecodable | C |
+| Attendance | clear | never run | U |
+| Password | read / write | read rides the user record but was never compared with a known value (I); write never run (U) | I / U |
+| Privilege | set | never run | U |
+| Clock | read | `readClock`, C | C |
+| Clock | write | **differs from the F18.** While the row wrongly said F18, 2026-10-26 02:00 UTC: ACKed, but the immediate read-back still showed the old time (96 s slow), so the command failed; by 07:00 the clock was right. It applies later than the read-back. U until the write test measures how late | U |
+| Everyone | wipe | never run | U |
+
+**The write test (planned, owner to choose the time):** save the roster first; a temporary
+test user (not a worker) added, read back, renamed, given a card, then deleted and
+verified gone; the clock set and read back at 0, 5, 30 and 60 s. Each step that passes
+moves its level in `UA300.php`, the pin in `DeviceModelMethodologyTest` and this table
+together.
 
 ## inBIO460 — Glass Door
 

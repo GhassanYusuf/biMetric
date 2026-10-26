@@ -42,6 +42,25 @@ what was observed on the reference F18, not a datasheet.
 > gets its own file rather than a branch inside the F18 path, and a level confirmed
 > on the F18 is `unknown` on another model until that model has been read.
 
+## The UA300 (Catering, 192.168.7.120) — its own set since 2.17.0, no write offered
+
+Identified 2026-10-26 by `device.info` (read-only): **UA300/ID**, "Ver 6.60 May 14 2018",
+platform **ZMM200_TFT**, serial CEG9194260020. It had been added 2026-10-22 with no model,
+so it ran on `GenericTerminal`; on 2026-10-25 13:19 UTC the row was set to "F18" in the
+browser, which offered every F18 write until it was corrected at 07:45 UTC on 2026-10-26.
+No user, card or finger was written in that window. The nightly clock job ran twice:
+
+- 02:00 UTC: `SET_TIME` ACKed; the immediate read-back showed the OLD time (96 s slow), so
+  the command failed. Rule 10's read-back caught it.
+- 07:00 UTC: the clock was already right. So the write applied, but **after** the
+  read-back. On the F18 it applies at once.
+
+Reads confirmed on it: ping, info, clock, users (21), cards, attendance (2,115 records, none
+undecodable), fingerprint blobs (27). The template **table** decoded on two of five nightly
+roster reads; IMPLEMENTED. Every write is UNKNOWN until a write test on Catering
+(`docs/device-models.md`, UA300; casebook DC-032). **Not settled by research:** nothing
+UA300- or ZMM200-specific was found in pyzk, pyzatt or php-zkteco (2026-10-26).
+
 ## Windowed bulk reads: deliberately NOT a capability flag
 
 The F22 supports the flow-controlled `CMD_PREPARE_BUFFER` / `CMD_READ_BUFFER`

@@ -68,7 +68,17 @@ git config --global url."git@github-biometric:GhassanYusuf/biometric-protocol".i
 `composer.json` keeps the canonical `git@github.com:` URL so it works unchanged on a
 machine with an account key. The alias is per-machine configuration, not part of
 the repo. On the production box composer runs as **root** (the key is root's). Run
-`chown -R www-data:www-data vendor/promoseven` afterwards.
+`chown -R www-data:www-data vendor/promoseven` afterwards. That chown has a cost: the next root
+`composer update` of the library fails inside git with "detected dubious ownership"
+(2026-10-26), because the clone in `vendor/` is no longer root's. Trust that one folder
+for the one command rather than globally:
+
+```bash
+COMPOSER_ALLOW_SUPERUSER=1 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory \
+  GIT_CONFIG_VALUE_0=/var/www/zkt/vendor/promoseven/biometric-protocol \
+  composer update promoseven/biometric-protocol
+chown -R www-data:www-data vendor/promoseven
+```
 
 ### Falling back to the local folder
 
