@@ -849,6 +849,17 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-26 — Dates are dd/mm/yyyy everywhere (owner)
+
+Owner: every date field and filter, then also the Monthly Statement, in dd/mm/yyyy. The
+browser's date input cannot do that (it follows the browser's language), so every one of
+the 18 date fields is now `DateField` (`shared/ui.jsx`), with helpers in `shared/dates.js`.
+The API still sends and receives ISO yyyy-mm-dd; only what people see and type changed.
+`FrontendConventionsTest::test_every_date_field_is_dd_mm_yyyy` keeps it that way. The
+Monthly Statement PDF and Excel (rows, range, generated-at, and the Excel cell format) moved
+from ZKTeco's mm/dd/yyyy to dd/mm/yyyy; the rest of its ZKTeco layout is unchanged. Branch
+`date-format-ddmmyyyy`, live on this server; **merge into `main` after the owner checks it**.
+
 ### 2026-10-26 — Catering identified as a UA300; library 2.17.0
 
 Catering resolved: punches re-linked on claim (DC-031, previous day), then the Access levels

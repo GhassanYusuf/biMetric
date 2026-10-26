@@ -317,7 +317,7 @@ class ExportController extends Controller
             return ApiResponse::error($message, [$field => [$message]], 422);
         }
 
-        $fmt = fn (string $d) => Carbon::parse($d)->format('m/d/Y');
+        $fmt = fn (string $d) => Carbon::parse($d)->format('d/m/Y'); // owner, 2026-10-26
         $days = collect($statement['shift']['work_days'])->map(fn (int $d) => Carbon::create()->startOfWeek(Carbon::SUNDAY)->addDays($d)->format('D'))->implode(' ');
         $filterLines = ["Shift {$statement['shift']['start']}–{$statement['shift']['end']} · {$days}"];
         if ($departmentIds = $this->statementDepartmentIds($validated)) {
@@ -366,7 +366,7 @@ class ExportController extends Controller
             $statement,
             auth()->user()?->tenant?->name,
             $path,
-            now(config('attendance.timezone'))->format('m/d/Y H:i'),
+            now(config('attendance.timezone'))->format('d/m/Y H:i'),
         );
 
         $name = str_replace('.pdf', '.xlsx', $this->filename('monthly-statement', ['from' => $statement['from'], 'to' => $statement['to']]));

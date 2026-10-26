@@ -48,7 +48,7 @@ class MonthlyStatementWorkbook
         $title = (new Style())->setFontBold()->setFontSize(14);
         $head = (new Style())->setFontBold()->setBackgroundColor('E2E8F0')->setCellAlignment(CellAlignment::CENTER)
             ->setBorder(new Border(new BorderPart(Border::BOTTOM, '94A3B8', Border::WIDTH_THIN)));
-        $date = (new Style())->setFormat('mm/dd/yyyy');
+        $date = (new Style())->setFormat('dd/mm/yyyy');
         $clock = (new Style())->setFormat('hh:mm')->setCellAlignment(CellAlignment::CENTER);
         $duration = (new Style())->setFormat('[h]:mm')->setCellAlignment(CellAlignment::CENTER);
         $total = (new Style())->setFontBold()->setFormat('[h]:mm')->setCellAlignment(CellAlignment::CENTER)
@@ -61,7 +61,7 @@ class MonthlyStatementWorkbook
 
         $writer->addRow(Row::fromValues([$company ?: 'Company'], $bold));
         $writer->addRow(Row::fromValues(['Monthly Statement Report'], $title));
-        $writer->addRow(Row::fromValues(['From '.$from->format('m/d/Y').' To '.$to->format('m/d/Y')]));
+        $writer->addRow(Row::fromValues(['From '.$from->format('d/m/Y').' To '.$to->format('d/m/Y')]));
         $writer->addRow(Row::fromValues([
             "Shift {$shift['start']}-{$shift['end']}. Late after {$shift['grace']} min; Left early more than "
             ."{$shift['early_leave_grace']} min before the end; OT1 once {$shift['leave_late_after']} min past it. "
@@ -78,7 +78,7 @@ class MonthlyStatementWorkbook
 
             foreach ($block['rows'] as $r) {
                 $values = [
-                    DateTimeImmutable::createFromFormat('!m/d/Y', $r['date']),
+                    DateTimeImmutable::createFromFormat('!d/m/Y', $r['date']),
                     $r['week'],
                     $r['timetable'],
                     self::dayFraction($r['in']),

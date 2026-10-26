@@ -198,6 +198,14 @@ class ExportTest extends TestCase
         $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
         $this->assertStringContainsString('Monthly Statement Report', $sheet.$zip->getFromName('xl/sharedStrings.xml'));
         $this->assertNotFalse($zip->getFromName('xl/worksheets/sheet2.xml'), 'the Summary sheet');
+
+        // dd/mm/yyyy (owner, 2026-10-26). The row date is written as text and parsed back
+        // into a real date cell, so a mismatch between the two formats would leave every
+        // date cell empty rather than fail loudly.
+        $this->assertStringContainsString('From 01/09/2026 To 14/09/2026', $sheet.$zip->getFromName('xl/sharedStrings.xml'));
+        $serial = (new \DateTimeImmutable('1899-12-30'))->diff(new \DateTimeImmutable('2026-09-14'))->days;
+        $this->assertMatchesRegularExpression('/<v>'.$serial.'(\.0+)?<\/v>/', $sheet, '14/09/2026 is a real date cell');
+        $this->assertStringContainsString('formatCode="dd/mm/yyyy"', (string) $zip->getFromName('xl/styles.xml'));
         $zip->close();
 
         $this->login('operator@acme.test')->getJson('/api/exports/monthly-statement/excel')->assertStatus(403);
@@ -230,27 +238,27 @@ class ExportTest extends TestCase
 
         $this->assertCount(5, $rows);
 
-        $saturday = $rows['09/12/2026'];
+        $saturday = $rows['12/09/2026'];
         $this->assertSame(['Sat.', 'Off', '07:54', '15:01'], [$saturday['week'], $saturday['timetable'], $saturday['in'], $saturday['out']]);
         $this->assertSame(427, $saturday['work']);
         $this->assertSame(427, $saturday['ot2']);
         $this->assertSame(0, $saturday['absent']);
 
-        $sunday = $rows['09/13/2026'];
+        $sunday = $rows['13/09/2026'];
         $this->assertSame(40, $sunday['late']);
         $this->assertSame(570, $sunday['work']);
         $this->assertSame(70, $sunday['ot1']);
         $this->assertSame(0, $sunday['early']);
 
-        $monday = $rows['09/14/2026'];
+        $monday = $rows['14/09/2026'];
         $this->assertTrue($monday['missed_punch_out']);
         $this->assertNull($monday['out']);
         $this->assertSame(0, $monday['work']);
         $this->assertSame(0, $monday['absent']);
 
-        $this->assertSame(540, $rows['09/15/2026']['absent']);
+        $this->assertSame(540, $rows['15/09/2026']['absent']);
 
-        $wednesday = $rows['09/16/2026'];
+        $wednesday = $rows['16/09/2026'];
         $this->assertSame(60, $wednesday['early']);
         $this->assertSame(570, $wednesday['work']);
 
@@ -277,11 +285,11 @@ class ExportTest extends TestCase
 
         $rows = collect(collect($statement['employees'])->firstWhere('employee.id', $this->employee->id)['rows'])->keyBy('date');
 
-        $this->assertSame('Off', $rows['09/11/2026']['timetable']);
-        $this->assertSame(0, $rows['09/11/2026']['absent']);
-        $this->assertNotSame('Off', $rows['09/12/2026']['timetable']);
-        $this->assertSame(0, $rows['09/12/2026']['ot2']);
-        $this->assertSame(546, $rows['09/12/2026']['work']);
+        $this->assertSame('Off', $rows['11/09/2026']['timetable']);
+        $this->assertSame(0, $rows['11/09/2026']['absent']);
+        $this->assertNotSame('Off', $rows['12/09/2026']['timetable']);
+        $this->assertSame(0, $rows['12/09/2026']['ot2']);
+        $this->assertSame(546, $rows['12/09/2026']['work']);
     }
 
     /**
@@ -313,12 +321,12 @@ class ExportTest extends TestCase
         Tenancy::clear();
 
         $rows = collect(collect($statement['employees'])->firstWhere('employee.id', $this->employee->id)['rows'])->keyBy('date');
-        $this->assertSame('07:30-17:00', $rows['09/13/2026']['timetable']);
-        $this->assertSame([0, 0, 0], [$rows['09/13/2026']['late'], $rows['09/13/2026']['early'], $rows['09/13/2026']['ot1']]);
-        $this->assertSame(11, $rows['09/14/2026']['late']);
-        $this->assertSame(0, $rows['09/14/2026']['ot1']);
-        $this->assertSame(10, $rows['09/15/2026']['early']);
-        $this->assertSame(45, $rows['09/16/2026']['ot1']);
+        $this->assertSame('07:30-17:00', $rows['13/09/2026']['timetable']);
+        $this->assertSame([0, 0, 0], [$rows['13/09/2026']['late'], $rows['13/09/2026']['early'], $rows['13/09/2026']['ot1']]);
+        $this->assertSame(11, $rows['14/09/2026']['late']);
+        $this->assertSame(0, $rows['14/09/2026']['ot1']);
+        $this->assertSame(10, $rows['15/09/2026']['early']);
+        $this->assertSame(45, $rows['16/09/2026']['ot1']);
 
         $daily = collect($summary['daily'])->keyBy('date');
         $this->assertSame('early', $daily['2026-09-13']['arrival']);

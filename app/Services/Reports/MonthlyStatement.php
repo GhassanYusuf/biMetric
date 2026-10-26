@@ -212,7 +212,9 @@ class MonthlyStatement
         $date = Carbon::parse($key);
 
         return [
-            'date' => $date->format('m/d/Y'),
+            // dd/mm/yyyy (owner, 2026-10-26). ZKTeco's export printed mm/dd/yyyy; the
+            // rest of the layout is still theirs. MonthlyStatementWorkbook parses this back.
+            'date' => $date->format('d/m/Y'),
             'week' => self::WEEKDAYS[$date->dayOfWeek],
             'timetable' => $timetable,
             'in' => null,
