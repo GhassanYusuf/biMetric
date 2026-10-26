@@ -162,6 +162,8 @@ Template:
   ("4995 Error inserting database") and confirms `device.restart` on the F18; the app has
   Devices → Restart terminal (`DeviceRestartService`, done only when the terminal has gone
   away and answers again), and a 4994/4995 refusal now says to restart and retry.
+  Then the owner restarted IT ROOM from the new button, 12:58 UTC: back after about 8 s
+  (command 8985), "working fine".
 - **Keywords:** Camelot, 4995, Error inserting database, UNKNOWN(4995), user write rejected, push failed, uid 17, restart, power cycle
 
 ### DC-033 — Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF)
