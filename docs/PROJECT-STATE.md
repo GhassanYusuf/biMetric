@@ -857,8 +857,10 @@ the 18 date fields is now `DateField` (`shared/ui.jsx`), with helpers in `shared
 The API still sends and receives ISO yyyy-mm-dd; only what people see and type changed.
 `FrontendConventionsTest::test_every_date_field_is_dd_mm_yyyy` keeps it that way. The
 Monthly Statement PDF and Excel (rows, range, generated-at, and the Excel cell format) moved
-from ZKTeco's mm/dd/yyyy to dd/mm/yyyy; the rest of its ZKTeco layout is unchanged. Branch
-`date-format-ddmmyyyy`, live on this server; **merge into `main` after the owner checks it**.
+from ZKTeco's mm/dd/yyyy to dd/mm/yyyy; the rest of its ZKTeco layout is unchanged.
+Merged into `main` the same day with the F18 Scan card change (DC-033: the F18 reads a
+tapped card but never hands its number over, so library 2.19.0 hides Scan card there;
+cards are typed). This server runs `main`.
 
 ### 2026-10-26 — Catering identified as a UA300; library 2.17.0
 
