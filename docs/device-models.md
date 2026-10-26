@@ -117,12 +117,12 @@ UA300-specific in pyzk, pyzatt or php-zkteco.
 |---|---|---|---|
 | User ID | read | user table (the F18's path), 21 users, 2026-10-22 onward | C |
 | User ID | add / name | `USER_WRQ`, as the F18: test user added and renamed, read back; ~17 real re-adds by the owner's merges, read back | C |
-| User ID | delete | `DELETE_USER`: test user verified gone with its finger, everyone else unchanged; the merges' old IDs removed. **I, not C:** Riza (870876872) found with record kept, finger and card gone, after a removal that timed out on connect (unexplained) | I |
+| User ID | delete | `DELETE_USER`: test user verified gone with its finger, everyone else unchanged; the merges' old IDs removed; Riza deleted at 07:31 despite a later timeout. I in 2.18.0 on a misreading; **C from 2.18.1** | I → C |
 | User ID | **move** | in place never tried (U). **By re-add**, the F18's method: the owner's merges, ~17 workers to their CPR IDs, fingers written back | I (re-add) |
 | Card | read | user record, 2026-10-22 onward | C |
 | Card | write | `setCard`: test card read back, name kept; 10 workers' cards on the terminal match the system | I |
 | Fingerprint | read | blobs C (27 stored from it); the template **table** decoded on two of five nightly reads (2026-10-23 to -25 failed), so I | C / I |
-| Fingerprint | write | `addTemplates` (`SAVE_USERTEMPS`): test template read back byte-identical (1,444 bytes); the merges' fingers present for 15 of 16 workers. **I until a system-written finger has matched at the terminal** (none punched by finger under a new ID yet), and Riza's unexplained loss | I |
+| Fingerprint | write | `addTemplates` (`SAVE_USERTEMPS`): test template read back byte-identical (1,444 bytes); the merges' fingers present for 15 of 16 workers. **I until a system-written finger has matched at the terminal** (none punched by finger under a new ID yet) | I |
 | Fingerprint | delete / enroll | never run | U |
 | Attendance | read | 2,101 → 2,115 records over eleven reads, none undecodable | C |
 | Attendance | clear | never run | U |
@@ -132,8 +132,7 @@ UA300-specific in pyzk, pyzatt or php-zkteco.
 | Clock | write | **differs from the F18.** While the row wrongly said F18, 2026-10-26 02:00 UTC: ACKed, but the immediate read-back still showed the old time (96 s slow), so the command failed; by 07:00 the clock was right. It applies later than the read-back. Not measured on the write test (the clock was right; a deliberate error would mis-stamp punches): run `--clock-only` once it drifts 30 s | U |
 | Everyone | wipe | never run | U |
 
-**To promote further:** delete, card and fingerprint to C once moved workers punch by finger
-and Riza's case is explained or does not recur; the clock with `--clock-only`; password,
+**To promote further:** card and fingerprint to C once moved workers punch by finger; the clock with `--clock-only`; password,
 privilege, clear and wipe each need their own run.
 
 ## inBIO460 — Glass Door

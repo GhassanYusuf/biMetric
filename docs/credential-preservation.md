@@ -57,6 +57,12 @@ copy.
    ("their card and fingerprints could not be saved to the system first").
 4. After the delete: the active card row becomes `revoked` /
    `REASON_REMOVED_WITH_USER`; only bare slot markers are deleted; the copies stay.
+5. **Already off the terminal (2026-10-26, DC-032).** If the read in step 1 does not find
+   the person and a second read agrees, no delete is sent: the link is closed as "Not on
+   the device when removed" and the operator is told. Steps 1-2 still run first, so
+   whatever the terminal holds is saved. Before this, a removal whose delete had reached
+   the terminal but whose next step timed out could never be finished: every retry
+   failed with "not on the device" (a 502).
 
 **The keypad password** (2026-10-12) is a credential like the card. Captured on every
 roster read and before every removal into `employees.device_password` when that is

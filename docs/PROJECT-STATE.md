@@ -93,8 +93,10 @@ Library **2.17.0** added `Model\UA300` (reads). The owner-approved write test pa
 `user.write` C and `user.delete`, `card.write`, `template.upload` I. Catering is back in
 Access levels on its own profile, with a warning on delete, card and fingerprint.
 
-**Owed, owner:** Riza Teodosio (resigned) is still on Catering as 870876872 with no finger and
-no card (unexplained, DC-032); her removal is still to do. **Clock write** on the UA300 is
+**Riza Teodosio** (resigned) is NOT on Catering: deleted at 07:31 UTC, link left open by a
+timeout. Removing her gave a 502 ("not on the device") until the removal fix of 08:5x UTC;
+the owner's next save closes her link. **Library 2.18.1** (owner tagged it, installed
+2026-10-26) corrects 2.18.0's wrong Riza finding and sets the UA300's `user.delete` C. **Clock write** on the UA300 is
 untested: run `tools/zkprobe/ua300-write.php 17 --clock-only` once it has drifted 30 s.
 
 Catering's punches (DC-031, fixed 2026-10-25): 673 re-linked; **1,438 under 22 user IDs no

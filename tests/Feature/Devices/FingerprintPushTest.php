@@ -211,6 +211,25 @@ class FingerprintPushTest extends TestCase
         $this->assertSame([], $this->driver->deletes);
     }
 
+    /**
+     * DC-032, Riza on Catering: the delete ran, the next step timed out, the link stayed
+     * open, and every later removal threw "not on the device" (a 502). Now it closes the
+     * link, sends no delete, and keeps the saved copies.
+     */
+    public function test_removing_someone_already_off_the_terminal_closes_the_link(): void
+    {
+        $this->driver->roster = [new DeviceUser(uid: 41, userId: '777', name: 'Someone Else')];
+
+        $result = app(\App\Services\Devices\DeviceUserSyncService::class)->removeEmployee($this->f18, $this->employee);
+
+        $this->assertTrue($result['raw']['already_gone']);
+        $this->assertStringContainsString('was already off IT Room', $result['message']);
+        $this->assertSame([], $this->driver->deletes);
+        $this->assertNull(app(\App\Services\Devices\DeviceIdentityResolver::class)->activeMap($this->f18, $this->employee));
+        $this->assertSame('Not on the device when removed', EmployeeDeviceMap::where('employee_id', $this->employee->id)->where('device_id', $this->f18->id)->value('closed_reason'));
+        $this->assertSame(1, \App\Models\BiometricTemplate::where('employee_id', $this->employee->id)->whereNotNull('template_sha1')->count());
+    }
+
     public function test_adding_someone_to_a_terminal_that_cannot_take_fingers_says_so(): void
     {
         $this->driver->capabilityOverrides = [Capability::TEMPLATE_UPLOAD => Capability::NOT_IMPLEMENTED];

@@ -65,9 +65,10 @@ roster reads; IMPLEMENTED.
 `traces-2026-10-26/ua300-write-01.json`): a test user added, renamed, given a card and a
 fingerprint (read back byte-identical), deleted and verified gone; everyone else unchanged.
 2.18.0 sets `user.write` CONFIRMED and `user.delete`, `card.write`, `template.upload`
-IMPLEMENTED. They are not CONFIRMED because of one unexplained case (Riza: record kept,
-finger and card gone, after a removal that timed out on connect) and because no
-system-written finger has yet matched at the terminal. Clock, password, privilege, move in
+IMPLEMENTED. The "unexplained case" given for that (Riza: record kept, finger and card
+gone) was a misreading of her still-open link in the app; she had been deleted from the
+terminal (DC-032). 2.18.1 sets `user.delete` CONFIRMED; card and fingerprint stay
+IMPLEMENTED until a system-written finger has matched at the terminal. Clock, password, privilege, move in
 place, clear and wipe: UNKNOWN. **Not settled by research:** nothing
 UA300- or ZMM200-specific was found in pyzk, pyzatt or php-zkteco (2026-10-26).
 

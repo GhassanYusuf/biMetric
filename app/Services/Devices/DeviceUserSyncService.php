@@ -1099,9 +1099,20 @@ class DeviceUserSyncService
          * they existed — Akram's finger 6 and card on IT Room were lost exactly that
          * way (2026-10-11). If either cannot be read, nothing is deleted.
          */
-        $this->saveCredentialsBeforeRemoval($device, $employee, $pin);
+        $onTerminal = $this->saveCredentialsBeforeRemoval($device, $employee, $pin);
 
-        $this->driver->deleteUser($device, $pin);
+        /*
+         * Already gone (DC-032, Riza on Catering 2026-10-26): a removal whose delete ran
+         * but whose next step timed out left the link open, and every later removal
+         * threw "not on the device", a 502 the operator could not get past. Two reads
+         * agreeing that the record is absent (the one above and this one, so a single
+         * short read cannot do it) mean there is nothing to delete: close the link.
+         */
+        $alreadyGone = $onTerminal === false && ! $this->holdsUser($device, $pin);
+
+        if (! $alreadyGone) {
+            $this->driver->deleteUser($device, $pin);
+        }
 
         /*
          * The mapping is CLOSED, not deleted.
@@ -1111,7 +1122,7 @@ class DeviceUserSyncService
          * row orphans that history; worse, the PIN would then look free and could be
          * reissued, quietly re-attributing those punches to whoever got it next.
          */
-        $this->identity->activeMap($device, $employee)?->close('Removed from device');
+        $this->identity->activeMap($device, $employee)?->close($alreadyGone ? 'Not on the device when removed' : 'Removed from device');
 
         // Their roster entry, if one exists, goes back to being an unclaimed slot that
         // is still reserved — the number stays spent even though the record is gone.
@@ -1139,9 +1150,23 @@ class DeviceUserSyncService
             ->update(['status' => AccessCard::REVOKED, 'revoked_at' => now(), 'revoke_reason' => AccessCard::REASON_REMOVED_WITH_USER]);
 
         return [
-            'message' => "{$employee->name} removed from {$device->name}.",
-            'raw' => ['employee_id' => $employee->id, 'device_id' => $device->id],
+            'message' => $alreadyGone
+                ? "{$employee->name} was already off {$device->name}; the link to it is closed. Their card and fingerprints stay saved in the system."
+                : "{$employee->name} removed from {$device->name}.",
+            'raw' => ['employee_id' => $employee->id, 'device_id' => $device->id, 'already_gone' => $alreadyGone],
         ];
+    }
+
+    /** Whether the terminal's user table holds this user ID now. */
+    private function holdsUser(Device $device, string $pin): bool
+    {
+        foreach ($this->driver->readUsers($device, false) as $user) {
+            if ($user->userId === $pin) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1284,13 +1309,19 @@ class DeviceUserSyncService
      * in the card history (access_cards — the system's copy of cards per terminal) and
      * onto the employee record if that has none. Fingers: FingerprintVault.
      */
-    private function saveCredentialsBeforeRemoval(Device $device, Employee $employee, string $pin): void
+    /** @return ?bool whether the user table held $pin; null when it could not be read */
+    private function saveCredentialsBeforeRemoval(Device $device, Employee $employee, string $pin): ?bool
     {
         $capabilities = $this->driver->capabilities($device);
+        $found = null;
 
         try {
             if ($capabilities->supports(Capability::USER_READ)) {
+                $found = false;
                 foreach ($this->driver->readUsers($device, false) as $user) {
+                    if ($user->userId === $pin) {
+                        $found = true;
+                    }
                     if ($user->userId === $pin) {
                         // Their privilege goes with the record too; kept on the mapping so
                         // a re-add can put an admin back as an admin (privilegeToRestore).
@@ -1313,6 +1344,8 @@ class DeviceUserSyncService
                 $vault->assertReady();
                 $vault->capture($device, $this->driver->readTemplates($device), $employee->id);
             }
+
+            return $found;
         } catch (\Throwable $e) {
             // DomainException: a refusal with an operator-readable reason, which the
             // controller returns as a 409 rather than letting it become "Server error.".

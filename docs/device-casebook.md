@@ -152,24 +152,35 @@ Template:
     30 s or more.
   - The "before" read held **16** users, not the 21 of 02:30 UTC: the owner's moves and
     removals above, not the test.
-  - **Riza Teodosio (870876872), unexplained:** moved at 07:02 with finger 6 written and
-    read back; resigned at 07:30; her removal at 07:31 failed with a timeout on CONNECT
-    (laravel.log WARNING, command 1000), so on this evidence no delete was sent. At 08:19
-    her record is on Catering with **no finger and no card**, and her map is still open.
-    The same symptom as DC-029 (Camelot: a delete that dropped fingers and kept the
-    record), but not proven. Her finger and card are safe in the system. Her removal is
-    still owed (she is resigned).
+  - **Riza Teodosio (870876872). First read WRONG, corrected 08:58 UTC:** moved at 07:02
+    with finger 6 written and read back; resigned at 07:30; her removal at 07:31 logged a
+    timeout on CONNECT (laravel.log WARNING, command 1000) and her link stayed open. I
+    then reported her "on Catering with no finger and no card". That came from her open
+    LINK in the app, not the terminal: the 08:19 roster had no 870876872. The owner's
+    retry at 08:58 got a 502, "User 870876872 is not on the device"; a fresh read
+    confirmed she is not there (nor as 4). So the 07:31 delete reached the terminal, and
+    only the step after it failed. Nothing was lost; her finger and card are in the
+    system. Dead end worth keeping: an open map is not evidence of a record on the
+    terminal (rule 10).
   - Fingers on the terminal vs the system for the 16: every stored finger present except
     Riza's. Cards: 10 match; Ragesh holds a different card per terminal (expected); Riza
     none. Only one punch under a new ID since the moves (Shahad, by card), so no finger
     written by the system has yet been seen to match at the terminal.
+  - The 502: `removeEmployee()` sent a delete for a user the terminal no longer held, and
+    `UserService::delete()` threw. **Fixed:** when the save-first read and a second read
+    agree the record is absent, it sends no delete, closes the link ("Not on the device
+    when removed") and says so. Test:
+    `FingerprintPushTest::test_removing_someone_already_off_the_terminal_closes_the_link`.
+    750 tests pass.
 - **Root cause:** a new model with no file of its own. The app correctly offers no write
   until one has run on that model; the first attempt to work around it (labelling it F18)
   would have offered unproven writes.
 - **Fix:** library 2.17.0 (`Model\UA300`, reads) and 2.18.0 (from the write test:
   `user.write` C; `user.delete`, `card.write`, `template.upload` I; the rest U). The
   assistant's commit/tag/push of 2.18.0 was refused by its permission classifier; the
-  owner ran it, and it was installed the same day. Pin `standalone:UA300` updated in
+  owner ran it, and it was installed the same day. **2.18.1** (owner committed and tagged it;
+  installed the same day) corrects 2.18.0's Riza reasoning and sets `user.delete` C; pin
+  `c c c u c i u c i u i u u u`. Pin `standalone:UA300` updated in
   `DeviceModelMethodologyTest`; `docs/device-models.md` UA300 table. The owner reports the
   two days of real use under the F18 label (moves, merges, resignations) "all working
   fine", which the audit and the terminal read agree with except for Riza.
