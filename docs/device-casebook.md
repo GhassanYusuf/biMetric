@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-032 | 2026-10-25 to 2026-10-26 | Catering | Catering missing from an employee's Access levels; it is a UA300, a model with no write proven | OPEN |
+| DC-032 | 2026-10-25 to 2026-10-26 | Catering | Catering missing from an employee's Access levels; it is a UA300, a model with no write proven | FIXED |
 | DC-031 | 2026-10-25 | Catering | Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112 | FIXED |
 | DC-030 | 2026-10-22 | Camelot | A person linked to a terminal but no longer on it could not be pushed, moved or removed — every path said "not found" | OPEN |
 | DC-029 | 2026-10-22 | Camelot | A delete-by-code half-ran on Camelot: fingers gone, records kept, and the record now drops new fingers | FIXED |
@@ -188,7 +188,10 @@ Template:
   unsupported, so Access levels correctly omits it; the clock is right (drift 1 s at 07:44 UTC).
 - **Evidence:** audit_logs 18570 (model → F18); device_commands 8302, 8623, 3918, 5391,
   6864, 8340; library v2.17.0.
-- **Status:** OPEN — until the write test runs and Catering's writes are levelled.
+- **Status:** FIXED — Catering is in Access levels on its own UA300 profile (2.18.1), and the owner's
+  save of Riza at 09:09 UTC closed her link ("Not on the device when removed"), her finger kept.
+  Follow-ups, not this problem: card and fingerprint writes to C once a system-written finger
+  matches at the terminal; the clock write with `--clock-only` after 30 s of drift.
 - **Keywords:** Catering, UA300, ZMM200, access levels, terminal missing, writableTargets, user.write, generic terminal, model F18 mislabel, clock applied late
 
 ### DC-031 — Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112
