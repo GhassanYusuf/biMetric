@@ -1,4 +1,4 @@
-import { ActionMenu, Button, Card, EmptyState, PageHeader, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
+import { ActionMenu, Button, Card, DateField, EmptyState, PageHeader, SelectField, Spinner, TableShell, Thead } from '../../shared/ui';
 import { ExportRuns, hours, rangeLabel } from './parts';
 
 // Desktop payroll summary: range + department filters, one row per employee,
@@ -35,8 +35,8 @@ export default function ReportsDesktop({ report, departments, filters, onFilter,
 
             <Card className="p-4">
                 <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-4">
-                    <TextField label="From" type="date" value={filters.from} onChange={(e) => set('from', e.target.value)} />
-                    <TextField label="To" type="date" value={filters.to} onChange={(e) => set('to', e.target.value)} />
+                    <DateField label="From" value={filters.from} onChange={(e) => set('from', e.target.value)} />
+                    <DateField label="To" value={filters.to} onChange={(e) => set('to', e.target.value)} />
                     <SelectField label="Department" value={filters.department_id} onChange={(e) => set('department_id', e.target.value)}>
                         <option value="">All departments</option>
                         {departments.map((d) => (

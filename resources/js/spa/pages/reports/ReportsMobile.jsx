@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActionMenu, Badge, Button, Card, EmptyState, PageHeader, SelectField, TextField } from '../../shared/ui';
+import { ActionMenu, Badge, Button, Card, DateField, EmptyState, PageHeader, SelectField } from '../../shared/ui';
 import { ExportRuns, hours, rangeLabel } from './parts';
 
 // Mobile payroll summary: the same report and the same export, with the filters
@@ -66,8 +66,8 @@ export default function ReportsMobile({ report, departments, filters, onFilter, 
             {filtersOpen && (
                 <Card className="space-y-3 p-4">
                     <div className="grid grid-cols-2 gap-3">
-                        <TextField label="From" type="date" value={filters.from} onChange={(e) => set('from', e.target.value)} />
-                        <TextField label="To" type="date" value={filters.to} onChange={(e) => set('to', e.target.value)} />
+                        <DateField label="From" value={filters.from} onChange={(e) => set('from', e.target.value)} />
+                        <DateField label="To" value={filters.to} onChange={(e) => set('to', e.target.value)} />
                     </div>
                     <SelectField label="Department" value={filters.department_id} onChange={(e) => set('department_id', e.target.value)}>
                         <option value="">All departments</option>

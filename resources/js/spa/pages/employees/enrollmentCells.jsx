@@ -1,5 +1,6 @@
 import MiniHands from './MiniHands';
 import { Badge } from '../../shared/ui';
+import { formatDateTime } from '../../shared/dates';
 
 /*
 | Roster cells for enrollment read off the terminal.
@@ -315,5 +316,5 @@ export function syncedAgo(rows) {
     if (mins < 60) return `${mins}m ago`;
     const hrs = Math.round(mins / 60);
     if (hrs < 24) return `${hrs}h ago`;
-    return at.toLocaleString();
+    return formatDateTime(at);
 }

@@ -137,6 +137,41 @@ class FrontendConventionsTest extends TestCase
         );
     }
 
+    /**
+     * Dates are dd/mm/yyyy everywhere (owner, 2026-10-26). A browser date input shows
+     * the browser's locale instead (mm/dd/yyyy on an English-US machine) and the page
+     * cannot change that, so every date field is DateField from shared/ui.jsx, which
+     * holds the one hidden native input it opens the calendar with.
+     */
+    public function test_every_date_field_is_dd_mm_yyyy(): void
+    {
+        $offenders = [];
+
+        foreach ($this->sourceFiles() as $path) {
+            $relative = substr($path, strpos($path, 'resources/js'));
+
+            // DateField itself, and the helpers whose header explains the rule.
+            if (str_ends_with($relative, 'spa/shared/ui.jsx') || str_ends_with($relative, 'spa/shared/dates.js')) {
+                continue;
+            }
+
+            foreach (explode("\n", file_get_contents($path)) as $number => $line) {
+                if (preg_match('/type=["\'{]\s*["\']?(date|datetime-local)["\']/', $line)
+                    || str_contains($line, 'toLocaleDateString()')) {
+                    $offenders[] = sprintf('%s:%d  %s', $relative, $number + 1, trim($line));
+                }
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $offenders,
+            "Dates are shown and typed as dd/mm/yyyy (owner, 2026-10-26).\n"
+            ."Use <DateField> from shared/ui.jsx for a date field, and formatDate() from shared/dates.js for a numeric date on screen.\n\n"
+            .implode("\n", $offenders)."\n"
+        );
+    }
+
     public function test_every_file_using_the_hooks_also_imports_them(): void
     {
         $offenders = [];

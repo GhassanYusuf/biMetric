@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 import { useAuth } from './auth';
 import { useMqtt } from './useMqtt';
+import { formatDate } from './dates';
 
 /*
 | Powers the top bar's "Last sync" pill: the most recent successful device sync
@@ -68,5 +69,5 @@ export function shortAgo(date) {
     if (hrs < 24) return `${hrs}h ago`;
     const days = Math.round(hrs / 24);
     if (days < 7) return `${days}d ago`;
-    return date.toLocaleDateString();
+    return formatDate(date);
 }

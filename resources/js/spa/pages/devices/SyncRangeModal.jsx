@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useEscapeKey } from '../../shared/useEscapeKey';
-import { Button, Card, InlineAlert, TextField } from '../../shared/ui';
+import { Button, Card, DateField, InlineAlert } from '../../shared/ui';
 
 /*
 | Asks for the window of days to import from one terminal.
@@ -132,17 +132,15 @@ export default function SyncRangeModal({ device, onSubmit, onClose }) {
                           | max is today: a terminal cannot have recorded tomorrow, and
                           | a window that ends in the future silently imports nothing.
                         */}
-                        <TextField
+                        <DateField
                             label="From"
-                            type="date"
                             value={form.from}
                             max={todayIso}
                             onChange={(e) => set('from', e.target.value)}
                             error={errors.from?.[0]}
                         />
-                        <TextField
+                        <DateField
                             label="To"
-                            type="date"
                             value={form.to}
                             max={todayIso}
                             onChange={(e) => set('to', e.target.value)}

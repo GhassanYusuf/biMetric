@@ -14,6 +14,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom';
 import { ELEVATION, FOCUS, TREND } from './theme';
 import { useEscapeKey } from './useEscapeKey';
+import { dmyToIso, isoToDmy, maskDmy } from './dates';
 
 export function Card({ children, className = '', as: Tag = 'div', ...props }) {
     return (
@@ -457,6 +458,135 @@ export function TextField({ label, error, hint, className = '', id, ...props }) 
             />
             {error ? (
                 <span role="alert" className="mt-1 block text-xs font-medium text-rose-600">{error}</span>
+            ) : hint ? (
+                <span className="mt-1 block text-xs text-slate-500">{hint}</span>
+            ) : null}
+        </div>
+    );
+}
+
+/*
+| A date, shown and typed as dd/mm/yyyy whatever the browser's language (owner,
+| 2026-10-26; shared/dates.js says why <input type="date"> cannot). A drop-in for
+| <TextField type="date">: the same props, and onChange still receives an event whose
+| target.value is ISO yyyy-mm-dd (or "" when cleared), so callers and the API are
+| unchanged. The calendar button opens the browser's own picker on a hidden ISO input.
+| A half-typed or impossible date is never sent; on leaving the field it says why.
+*/
+export function DateField({ label, error, hint, className = '', id, value = '', onChange, min, max, disabled, required, name }) {
+    const inputId = id || (label ? `f-${label.replace(/\W+/g, '-').toLowerCase()}` : undefined);
+    const [text, setText] = useState(() => isoToDmy(value));
+    const [problem, setProblem] = useState(null);
+    const picker = useRef(null);
+
+    // A value changed from outside (a reset, a preset range) replaces what is shown.
+    useEffect(() => {
+        if (dmyToIso(text) !== (value || null)) {
+            setText(isoToDmy(value));
+            setProblem(null);
+        }
+    }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const emit = (iso) => onChange?.({ target: { value: iso, name } });
+
+    const outOfRange = (iso) => (min && iso < min ? `On or after ${isoToDmy(min)}` : max && iso > max ? `On or before ${isoToDmy(max)}` : null);
+
+    const typed = (e) => {
+        const next = maskDmy(e.target.value);
+        setText(next);
+        setProblem(null);
+        if (next === '') {
+            emit('');
+            return;
+        }
+        const iso = dmyToIso(next);
+        if (iso && !outOfRange(iso) && iso !== value) emit(iso);
+    };
+
+    const left = () => {
+        if (text === '') return;
+        const iso = dmyToIso(text);
+        setProblem(!iso ? 'Enter the date as dd/mm/yyyy' : outOfRange(iso));
+    };
+
+    const picked = (e) => {
+        setText(isoToDmy(e.target.value));
+        setProblem(null);
+        emit(e.target.value);
+    };
+
+    const openPicker = () => {
+        const el = picker.current;
+        if (!el) return;
+        try {
+            el.showPicker();
+        } catch {
+            el.focus();
+            el.click();
+        }
+    };
+
+    const shown = error || problem;
+
+    return (
+        <div className="block">
+            {label && (
+                <label htmlFor={inputId} className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
+            )}
+            <div className="relative">
+                <input
+                    id={inputId}
+                    name={name}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder="dd/mm/yyyy"
+                    maxLength={10}
+                    value={text}
+                    onChange={typed}
+                    onBlur={left}
+                    disabled={disabled}
+                    required={required}
+                    aria-invalid={shown ? 'true' : undefined}
+                    className={`block w-full rounded-xl border bg-slate-50/70 py-2.5 pl-3.5 pr-10 text-sm tabular-nums text-slate-900 transition-colors duration-150 placeholder:text-slate-500 focus:bg-white focus:outline-none focus:ring-2 disabled:opacity-50 ${
+                        shown
+                            ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100'
+                            : 'border-slate-200 focus:border-violet-400 focus:ring-violet-100'
+                    } ${className}`}
+                />
+                <button
+                    type="button"
+                    onClick={openPicker}
+                    disabled={disabled}
+                    aria-label={label ? `Pick ${label.toLowerCase()} from a calendar` : 'Pick a date from a calendar'}
+                    className={`absolute inset-y-0 right-1 my-1 flex w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 ${FOCUS}`}
+                >
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-4 w-4" aria-hidden="true">
+                        <rect x="3" y="4.5" width="14" height="12" rx="2" />
+                        <path d="M3 8.5h14M7 3v3M13 3v3" strokeLinecap="round" />
+                    </svg>
+                </button>
+                {/*
+                  | The browser's picker, opened by the button; never shown or focused itself.
+                  | Its form attribute names a form that does not exist, so it belongs to no
+                  | form: its min/max can never block a save with the browser's own popup
+                  | (rule 1).
+                */}
+                <input
+                    ref={picker}
+                    form="date-field-picker-detached"
+                    type="date"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    value={value || ''}
+                    min={min}
+                    max={max}
+                    onChange={picked}
+                    className="pointer-events-none absolute bottom-0 right-0 h-px w-px opacity-0"
+                />
+            </div>
+            {shown ? (
+                <span role="alert" className="mt-1 block text-xs font-medium text-rose-600">{shown}</span>
             ) : hint ? (
                 <span className="mt-1 block text-xs text-slate-500">{hint}</span>
             ) : null}

@@ -1,5 +1,5 @@
 import { FOCUS } from '../../shared/theme';
-import { ActionMenu, Button, Card, EmptyState, PageHeader, Pager, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
+import { ActionMenu, Button, Card, DateField, EmptyState, PageHeader, Pager, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
 import UnmatchedName from './UnmatchedName';
 import DepartmentTree from '../employees/DepartmentTree';
 import { formatPunch, verifyLabel } from './parts';
@@ -68,8 +68,8 @@ export default function AttendanceDesktop({
                             <option key={d.id} value={d.id}>{d.name}</option>
                         ))}
                     </SelectField>
-                    <TextField label="From" type="date" value={filters.from} onChange={(e) => set('from', e.target.value)} />
-                    <TextField label="To" type="date" value={filters.to} onChange={(e) => set('to', e.target.value)} />
+                    <DateField label="From" value={filters.from} onChange={(e) => set('from', e.target.value)} />
+                    <DateField label="To" value={filters.to} onChange={(e) => set('to', e.target.value)} />
                     {hasFilters && (
                         <Button variant="ghost" onClick={() => onFilter(NO_FILTERS)}>
                             Clear filters

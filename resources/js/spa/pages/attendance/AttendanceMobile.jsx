@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FOCUS } from '../../shared/theme';
-import { ActionMenu, Badge, Button, Card, EmptyState, PageHeader, Pager, SelectField, Skeleton, TextField } from '../../shared/ui';
+import { ActionMenu, Badge, Button, Card, DateField, EmptyState, PageHeader, Pager, SelectField, Skeleton, TextField } from '../../shared/ui';
 import UnmatchedName from './UnmatchedName';
 import DepartmentTree from '../employees/DepartmentTree';
 import { formatPunch, groupByDay, verifyLabel } from './parts';
@@ -69,8 +69,8 @@ export default function AttendanceMobile({
                         ))}
                     </SelectField>
                     <div className="grid grid-cols-2 gap-3">
-                        <TextField label="From" type="date" value={filters.from} onChange={(e) => set('from', e.target.value)} />
-                        <TextField label="To" type="date" value={filters.to} onChange={(e) => set('to', e.target.value)} />
+                        <DateField label="From" value={filters.from} onChange={(e) => set('from', e.target.value)} />
+                        <DateField label="To" value={filters.to} onChange={(e) => set('to', e.target.value)} />
                     </div>
                     {hasFilters && (
                         <Button variant="secondary" className="w-full" onClick={() => onFilter(NO_FILTERS)}>

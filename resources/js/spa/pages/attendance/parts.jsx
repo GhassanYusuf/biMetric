@@ -18,6 +18,8 @@
 | A code the dictionary does not list (Camelot logged 48–51 once each) renders as
 | "Unknown (n)", never as a guess: a wrong method is worse than an undecoded one.
 */
+
+import { formatDate } from '../../shared/dates';
 const VERIFY_METHODS = {
     0: 'Any',
     1: 'Fingerprint',
@@ -63,7 +65,7 @@ export function formatPunch(iso) {
     if (!iso) return { date: '—', time: '' };
     const d = new Date(iso);
     return {
-        date: d.toLocaleDateString(),
+        date: formatDate(d),
         time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 }

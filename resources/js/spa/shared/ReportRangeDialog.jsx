@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ApiError } from './api';
-import { Button, Card, SelectField, TextField } from './ui';
+import { Button, Card, DateField, SelectField } from './ui';
 import { FOCUS } from './theme';
 import { useEscapeKey } from './useEscapeKey';
 import EmployeePicker from './EmployeePicker';
@@ -102,8 +102,8 @@ export default function ReportRangeDialog({ title, intro, confirmLabel, initial,
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 gap-3">
-                        <TextField label="From" type="date" value={from} max={today} onChange={(e) => setFrom(e.target.value)} error={errors.from?.[0]} required />
-                        <TextField label="To" type="date" value={to} max={today} onChange={(e) => setTo(e.target.value)} error={errors.to?.[0]} required />
+                        <DateField label="From" value={from} max={today} onChange={(e) => setFrom(e.target.value)} error={errors.from?.[0]} required />
+                        <DateField label="To" value={to} max={today} onChange={(e) => setTo(e.target.value)} error={errors.to?.[0]} required />
                     </div>
 
                     {allowPeople && (

@@ -1,4 +1,5 @@
 import { Badge } from '../../shared/ui';
+import { formatDate } from '../../shared/dates';
 
 /*
 | Rule 9: the UI must HIDE an action the device cannot do. A button that returns
@@ -69,7 +70,7 @@ export function relativeTime(iso) {
     if (mins < 60) return `${mins}m ago`;
     const hrs = Math.round(mins / 60);
     if (hrs < 24) return `${hrs}h ago`;
-    return then.toLocaleDateString();
+    return formatDate(then);
 }
 
 /**

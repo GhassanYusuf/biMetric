@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../../shared/api';
-import { Button, Card, SelectField, Spinner, TextField } from '../../shared/ui';
+import { Button, Card, DateField, SelectField, Spinner, TextField } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 import { enrolledTargets, writableTargets } from './DeviceTargets';
 import { useEscapeKey } from '../../shared/useEscapeKey';
@@ -815,13 +815,12 @@ export default function EmployeeFormModal({
                                         </SelectField>
                                     </Row>
                                     <Row label="Hired date" htmlFor="employee-hired">
-                                        <TextField id="employee-hired" type="date" value={form.hired_date} onChange={(e) => set('hired_date', e.target.value)} error={err('hired_date')} />
+                                        <DateField id="employee-hired" value={form.hired_date} onChange={(e) => set('hired_date', e.target.value)} error={err('hired_date')} />
                                     </Row>
                                     {isEdit && (
                                         <Row label="Resigned on" htmlFor="employee-resigned">
-                                            <TextField
+                                            <DateField
                                                 id="employee-resigned"
-                                                type="date"
                                                 max={new Date().toLocaleDateString('en-CA')}
                                                 value={form.resigned_at}
                                                 onChange={(e) => set('resigned_at', e.target.value)}
@@ -833,7 +832,7 @@ export default function EmployeeFormModal({
                                         </Row>
                                     )}
                                     <Row label="Birthday" htmlFor="employee-birthday">
-                                        <TextField id="employee-birthday" type="date" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} error={err('birthday')} />
+                                        <DateField id="employee-birthday" value={form.birthday} onChange={(e) => set('birthday', e.target.value)} error={err('birthday')} />
                                     </Row>
                                     <Row label="Device role" htmlFor="employee-privilege">
                                         <div>
@@ -1010,10 +1009,10 @@ export default function EmployeeFormModal({
                                 </Row>
                                 <div className="hidden md:block" />
                                 <Row label="Start date" htmlFor="employee-valid-from">
-                                    <TextField id="employee-valid-from" type="date" disabled={!form.valid_period_enabled} value={form.access_valid_from} onChange={(e) => set('access_valid_from', e.target.value)} error={err('access_valid_from')} />
+                                    <DateField id="employee-valid-from" disabled={!form.valid_period_enabled} value={form.access_valid_from} onChange={(e) => set('access_valid_from', e.target.value)} error={err('access_valid_from')} />
                                 </Row>
                                 <Row label="End date" htmlFor="employee-valid-to">
-                                    <TextField id="employee-valid-to" type="date" disabled={!form.valid_period_enabled} value={form.access_valid_to} min={form.access_valid_from || undefined} onChange={(e) => set('access_valid_to', e.target.value)} error={err('access_valid_to')} />
+                                    <DateField id="employee-valid-to" disabled={!form.valid_period_enabled} value={form.access_valid_to} min={form.access_valid_from || undefined} onChange={(e) => set('access_valid_to', e.target.value)} error={err('access_valid_to')} />
                                 </Row>
                             </div>
 

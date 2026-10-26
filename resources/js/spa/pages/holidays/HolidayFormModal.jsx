@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ApiError } from '../../shared/api';
-import { Button, Card, Spinner, TextField } from '../../shared/ui';
+import { Button, Card, DateField, Spinner, TextField } from '../../shared/ui';
 
 // Add / edit a holiday. One holiday per date per tenant is enforced server-side,
 // so a clash returns 422 on `date` and renders inline under the field.
@@ -39,7 +39,7 @@ export default function HolidayFormModal({ holiday, onSubmit, onClose }) {
                         {isEdit ? 'Edit holiday' : 'Add holiday'}
                     </h2>
                     <div className="space-y-3">
-                        <TextField label="Date" type="date" value={form.date} onChange={(e) => set('date', e.target.value)} error={errors.date?.[0]} required />
+                        <DateField label="Date" value={form.date} onChange={(e) => set('date', e.target.value)} error={errors.date?.[0]} required />
                         <TextField label="Name" placeholder="National Day" value={form.name} onChange={(e) => set('name', e.target.value)} error={errors.name?.[0]} required />
                     </div>
                     <div className="mt-5 flex justify-end gap-2">
