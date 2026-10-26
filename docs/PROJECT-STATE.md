@@ -849,6 +849,19 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-26 — Camelot's 4995 fixed by a remote restart; Restart terminal added
+
+Camelot refused every new user (reply 4995, "Error inserting database"; RAGESH and Test
+User, eight times since 2026-10-25) while its data read normally. A remote `RESTART`, the
+first on any terminal here, cleared it in 25 s, as the on-site power cycle did in DC-029
+(DC-034). At the owner's request: library 2.20.0 names ZKTeco's error replies
+(`ReplyCode`) and confirms `device.restart` on the F18 (the F22 keeps its own
+"implemented"); the app has Devices → Restart terminal (`DeviceRestartService`, done only
+once the terminal has gone away and answers again; one attempt), and a 4994/4995 refusal
+says to restart and retry. Queued `DomainException` refusals now show their own text
+instead of "internal error". **Operational fact: if Camelot refuses pushes with 4994 or
+4995, restart it from Devices; nobody needs to go there.**
+
 ### 2026-10-26 — Dates are dd/mm/yyyy everywhere (owner)
 
 Owner: every date field and filter, then also the Monthly Statement, in dd/mm/yyyy. The

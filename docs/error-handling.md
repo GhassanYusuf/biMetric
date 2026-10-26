@@ -207,7 +207,17 @@ twice — in `ProcessDeviceCommand` and, differently worded, in each controller 
 device did not respond in time." in another.
 
 A non-`DeviceException` never shows its raw message on screen. It would be
-meaningless to an operator and can leak internals; the detail is in the log.
+meaningless to an operator and can leak internals; the detail is in the log. **Except a
+`\DomainException`** (2026-10-26): that is how this app words a refusal for an operator
+("Nothing was wiped from …", "… acknowledged the restart but has not answered"), so it is
+shown as written. Before, a queued wipe's or restart's refusal read "internal error".
+
+**What to do about a refusal** (2026-10-26, `App\Support\DeviceRefusalAdvice`): a
+`DeviceException` whose `context()['reply']` is 4994 or 4995 (the terminal refusing changes
+to its own database) gets "Restart it (Devices → Restart terminal), then try again."
+appended, on the command path (the reporter) and the push path (`EmployeeDevicePropagator`).
+Keyed on the code, never on the text. Camelot, three times; a restart cleared it each time
+(DC-029, DC-034).
 
 ## Logging happens exactly once
 

@@ -282,6 +282,15 @@ interface BiometricDeviceDriver
     public function deleteAllUsers(Device $device): int;
 
     /**
+     * Reboots the terminal. Returns as soon as it has ACKed and dropped the session; it is
+     * then away for some seconds (25 s on Camelot), so the caller waits for it to answer
+     * again. Nothing in its tables changes. Throws when it refuses. Gated by
+     * device.restart; call through DeviceRestartService. Added 2026-10-26 (DC-034: a
+     * restart clears the state in which Camelot refuses every user insert).
+     */
+    public function restart(Device $device): void;
+
+    /**
      * The terminal's clock as it shows it (LOCAL time in the device's zone), or null
      * when this family has no way to read it — "not read", never midnight (rule 10).
      * Added 2026-10-11 so the clock can be read on every family, each its own way.

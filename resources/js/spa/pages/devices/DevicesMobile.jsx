@@ -8,7 +8,7 @@ import { SyncProgressRow } from './DevicesDesktop';
 export default function DevicesMobile({
     rows, busy, resultOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe, onRestart,
 }) {
     return (
         <div className="space-y-4">
@@ -111,6 +111,12 @@ export default function DevicesMobile({
                                         )}
                                         {/* Same gate and same words as the desktop menu item
                                             — rule 5, and rule 9 for when it appears at all. */}
+                                        {/* Same gate and words as the desktop menu item (rules 5 and 9). */}
+                                        {canUpdate && can(d, 'device.restart') && (
+                                            <Button variant="secondary" className="col-span-3 text-xs" disabled={!!running} loading={running === 'restart'} result={resultOf(`${d.id}:restart`)} onClick={() => onRestart(d)}>
+                                                Restart terminal…
+                                            </Button>
+                                        )}
                                         {/* Same gate and words as the desktop menu item (rules 5 and 9). */}
                                         {canUpdate && can(d, 'attendance.clear') && (
                                             <Button variant="secondary" className="col-span-3 text-xs text-rose-600" disabled={!!running} loading={running === 'clear-attendance'} result={resultOf(`${d.id}:clear-attendance`)} onClick={() => onClearPunches(d)}>

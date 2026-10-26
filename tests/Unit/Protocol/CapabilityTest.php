@@ -94,7 +94,6 @@ class CapabilityTest extends TestCase
             Capability::TEMPLATE_DELETE,
             Capability::ATTENDANCE_REALTIME,
             Capability::ATTENDANCE_CLEAR,
-            Capability::RESTART,
             Capability::USER_DISABLE,
         ];
 
@@ -112,6 +111,12 @@ class CapabilityTest extends TestCase
      * Library 2.19.0: the F18 reads a tapped card but never hands its number over, so
      * card scanning is NOT offered on it (casebook DC-033, IT ROOM 2026-10-26).
      */
+    /** Library 2.20.0: restart ran on Camelot (F18/ID) 2026-10-26, DC-034. */
+    public function test_restart_is_confirmed_on_the_f18(): void
+    {
+        $this->assertTrue(CapabilitySet::defaults()->isConfirmed(Capability::RESTART));
+    }
+
     public function test_card_scanning_is_not_offered_on_the_f18(): void
     {
         $set = CapabilitySet::defaults();

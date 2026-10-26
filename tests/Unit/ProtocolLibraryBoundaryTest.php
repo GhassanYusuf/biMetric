@@ -191,6 +191,10 @@ class ProtocolLibraryBoundaryTest extends TestCase
             // attendance.clear, refuses with ProtocolException, reports a dropped delete
             // as VerificationException; reaches hardware only through the contract.
             'app/Services/Devices/DeviceWipeService.php',
+            // Restart a terminal (2026-10-26, DC-034): asks for device.restart and treats
+            // a DeviceException from ping() as "still away"; reaches hardware only through
+            // the contract.
+            'app/Services/Devices/DeviceRestartService.php',
             /*
              * Adoption: reads an existing terminal's roster before it is writable.
              * Names Capability to gate the read and DeviceUser to receive what
@@ -264,6 +268,9 @@ class ProtocolLibraryBoundaryTest extends TestCase
              * test would trade a real type check for a typo waiting to happen.
              */
             'app/Support/DeviceErrorReporter.php',
+            // Same category as the reporter (2026-10-26): reads the reply code a
+            // DeviceException carries to add what an operator can do about it.
+            'app/Support/DeviceRefusalAdvice.php',
             // Binds the contract to the driver — the one place allowed to name both.
             'app/Providers/AppServiceProvider.php',
             /*

@@ -517,6 +517,25 @@ Not confirmed by a controlled punch (an operator presenting a known credential a
 reading back the code). Until then this is the vendor's word plus a consistent card
 correlation, which is why the codes stay stored raw.
 
+### Restarting — `CMD_RESTART` (1004) (CONFIRMED F18, 2026-10-26)
+
+Sent in an ordinary session; the terminal answers `ACK_OK` and reboots, which ends the
+session. On Camelot (F18/ID, Ver 6.60 Apr 26 2016, over the internet) it stopped answering
+`CONNECT` within 2 s and answered again at 25 s. Users (14, max uid 16), templates (22),
+records (119), capacities, firmware and serial were the same after. The clock was 7 s fast
+before and 2 s slow after, so it stops for about 9 s across the reboot. The restart cleared
+a state in which every `USER_WRQ` for a new uid had been refused with **4995**, "Error
+inserting database" (casebook DC-034). `tools/zkprobe/restart.php`,
+`traces-2026-10-26/restart-01.json`.
+
+### Error replies 4981-4999 (DOCUMENTED, ZKTeco's own dictionary)
+
+ZKAccess 3.5.5 names them in `Languages/language_en-US.xml`, `<SDKError_StandAlone>`,
+as negative SDK errors (-4995 = reply 4995). Seen on this project's hardware: **4991**
+"Operation database has no corresponding data" (F22, windowed user read), **4994** "Error
+updating database" and **4995** "Error inserting database" (both F18 Camelot, user writes,
+cleared by a restart). Library `Protocol\ReplyCode` (2.20.0) holds the full block.
+
 ### Packed timestamp (`Codec\Timestamp`)
 
 A 32-bit value decoded as:

@@ -14,7 +14,7 @@ import DevicesMobile from './DevicesMobile';
 import DeviceFormModal from './DeviceFormModal';
 import SyncRangeModal from './SyncRangeModal';
 import WipeDeviceModal from './WipeDeviceModal';
-import { FULL_RESYNC_CONFIRM, adoptConfirm, clearPunchesConfirm } from './parts';
+import { FULL_RESYNC_CONFIRM, adoptConfirm, clearPunchesConfirm, restartConfirm } from './parts';
 
 // Actions that QUEUE a device read rather than returning a result inline. The POST
 // comes back at once with a queued command; the read then runs on the worker and
@@ -249,6 +249,40 @@ export default function Devices() {
         }
     }
 
+    /**
+     * Reboots the terminal (2026-10-26, DeviceRestartService, casebook DC-034). Queued;
+     * the row stays busy until the command finishes, which is when the terminal has gone
+     * away and answers again. The toast is the command's own message: how long it took,
+     * or why it is not back.
+     */
+    async function restartDevice(device) {
+        if (!(await confirm(restartConfirm(device)))) return;
+
+        const key = 'restart';
+        setBusy((b) => ({ ...b, [device.id]: key }));
+        try {
+            const res = await api.post(`/devices/${device.id}/restart`);
+            toast.info(res.message);
+
+            const done = await waitForCommand(res.data.id);
+            if (done === null) {
+                toast.info(`Still restarting ${device.name} — the result will appear in its command history.`);
+            } else if (done.status === 'succeeded') {
+                toast.success(done.message);
+                settle(device.id, key, 'success');
+            } else {
+                toast.error(done.message ?? `${device.name} did not restart.`);
+                settle(device.id, key, 'error');
+            }
+            await load();
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : `Could not reach ${device.name}.`);
+            settle(device.id, key, 'error');
+        } finally {
+            setBusy((b) => ({ ...b, [device.id]: undefined }));
+        }
+    }
+
     async function rangeSync(device, { from, to }) {
         await runAction(device, 'sync-attendance', { body: { from, to }, busyKey: 'range-read' });
         setRangeFor(null);
@@ -336,6 +370,7 @@ export default function Devices() {
         onAdopt: adoptDevice,
         onImport: (d) => runAction(d, 'import-employees'),
         onClearPunches: clearPunches,
+        onRestart: restartDevice,
         onWipe: (d) => setWipeFor(d),
     };
 

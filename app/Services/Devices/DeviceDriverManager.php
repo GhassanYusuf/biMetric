@@ -237,6 +237,11 @@ class DeviceDriverManager implements BiometricDeviceDriver
         return $this->exclusive($device, fn () => $this->driverFor($device)->deleteAllUsers($device));
     }
 
+    public function restart(Device $device): void
+    {
+        $this->exclusive($device, fn () => $this->driverFor($device)->restart($device));
+    }
+
     public function readClock(Device $device): ?\DateTimeImmutable
     {
         return $this->exclusive($device, fn () => $this->driverFor($device)->readClock($device));

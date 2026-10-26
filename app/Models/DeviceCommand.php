@@ -55,6 +55,9 @@ class DeviceCommand extends Model
     // CLAUDE.md rule 22). Payload: save_punches (bool).
     public const WIPE_DEVICE = 'wipe_device';
 
+    // Reboot the terminal; done when it answers again (2026-10-26, DC-034).
+    public const RESTART_DEVICE = 'restart_device';
+
     protected $fillable = [
         'tenant_id', 'device_id', 'command', 'payload', 'status',
         'attempts', 'max_attempts', 'available_at', 'started_at', 'finished_at',

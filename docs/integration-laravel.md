@@ -103,6 +103,14 @@ C3 and CSL throw `UnsupportedCommandException` for the two writes. Endpoints:
 like the other per-terminal writes on the employee dialog) and
 `POST /api/devices/{device}/clear-attendance` (queued, `devices.update`).
 
+**Restart (2026-10-26).** `restart($device)` on the contract: ZKTeco calls the library's
+`Device::restart()` (gated by `device.restart`, which also guards the driver), C3 and CSL
+throw `UnsupportedCommandException`. Call it through `DeviceRestartService`, which then
+pings every 2 s and returns only once the terminal has gone away and answers again (up to
+180 s); "never stopped answering" and "not back" are refusals (`\DomainException`) that
+say so. `POST /api/devices/{device}/restart` queues `restart_device` with ONE attempt (a
+retry would restart it again), `devices.update`. UI: Devices → Restart terminal…
+
 **There is no cursor on a C3 panel.** `readAttendance()` returns the whole table
 every time, so `AttendanceSyncService` owns the watermark and the dedupe — the same
 way it already does for the CSL driver's overlapping date windows.

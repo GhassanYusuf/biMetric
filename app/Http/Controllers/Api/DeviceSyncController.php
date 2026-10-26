@@ -458,6 +458,38 @@ class DeviceSyncController extends Controller
         );
     }
 
+    /**
+     * Reboots the terminal (2026-10-26, casebook DC-034): clears the state in which
+     * Camelot refused every user insert (4995). It is away for some seconds; the
+     * command is done when it answers again.
+     */
+    public function restart(Request $request, Device $device): JsonResponse
+    {
+        $this->authorize('update', $device);
+
+        if ($error = $this->capabilityRefusal($device, DeviceCommand::RESTART_DEVICE)) {
+            return ApiResponse::error($error, ['command' => [$error]], 422);
+        }
+
+        $pending = DeviceCommand::query()
+            ->where('device_id', $device->id)
+            ->where('command', DeviceCommand::RESTART_DEVICE)
+            ->whereIn('status', [DeviceCommand::STATUS_QUEUED, DeviceCommand::STATUS_RUNNING])
+            ->first();
+
+        if ($pending !== null) {
+            return ApiResponse::success(new DeviceCommandResource($pending), "A restart of {$device->name} is already queued.");
+        }
+
+        // One attempt: a retry would restart it again.
+        $command = $this->bus->dispatch($device, DeviceCommand::RESTART_DEVICE, [], maxAttempts: 1);
+
+        return ApiResponse::success(
+            new DeviceCommandResource($command),
+            "Queued: restart {$device->name}. It will be unreachable for about half a minute.",
+        );
+    }
+
     private function capabilityRefusal(Device $device, string $command): ?string
     {
         $required = match ($command) {
@@ -468,6 +500,7 @@ class DeviceSyncController extends Controller
             DeviceCommand::SYNC_TIME => Capability::SET_TIME,
             DeviceCommand::CLEAR_ATTENDANCE => Capability::ATTENDANCE_CLEAR,
             DeviceCommand::WIPE_DEVICE => Capability::DEVICE_WIPE,
+            DeviceCommand::RESTART_DEVICE => Capability::RESTART,
             default => null, // health/info/probe are always available
         };
 

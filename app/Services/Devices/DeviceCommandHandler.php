@@ -67,6 +67,8 @@ class DeviceCommandHandler
 
             DeviceCommand::WIPE_DEVICE => app(DeviceWipeService::class)->wipe($device, (bool) ($payload['save_punches'] ?? true), $command),
 
+            DeviceCommand::RESTART_DEVICE => app(DeviceRestartService::class)->restart($device),
+
             DeviceCommand::SYNC_ENROLLMENT => $this->users->syncEnrollmentState($device),
 
             DeviceCommand::IMPORT_EMPLOYEES => $this->users->importFromDevice($device),

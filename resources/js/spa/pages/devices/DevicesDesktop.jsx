@@ -9,7 +9,7 @@ import { can } from './parts';
 export default function DevicesDesktop({
     rows, busy, outcomeOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
-    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe,
+    onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe, onRestart,
 }) {
     const showActions = canSync || canUpdate || canDelete;
     const failing = rows.filter((d) => d.last_sync_status === 'error').length;
@@ -186,6 +186,16 @@ export default function DevicesDesktop({
                                                       | only where the model can (rule 9) — the C3
                                                       | panels and CSL never offer it.
                                                     */
+                                                    // Restart (DC-034): devices.update and the
+                                                    // model's own level, like the two below.
+                                                    canUpdate && can(d, 'device.restart') && {
+                                                        key: 'restart',
+                                                        label: 'Restart terminal…',
+                                                        description: 'Switch it off and on remotely. About half a minute away; nothing on it changes.',
+                                                        loading: running === 'restart',
+                                                        disabled: !!running,
+                                                        onSelect: () => onRestart(d),
+                                                    },
                                                     canUpdate && can(d, 'attendance.clear') && {
                                                         key: 'clear-attendance',
                                                         label: 'Clear punches from terminal…',

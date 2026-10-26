@@ -244,6 +244,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::post('devices/{device}/clear-attendance', [DeviceSyncController::class, 'clearAttendance']);
     // Remove every user and punch from the terminal (2026-10-21, CLAUDE.md rule 22).
     Route::post('devices/{device}/wipe', [DeviceSyncController::class, 'wipe']);
+    // Reboot the terminal (2026-10-26, DC-034). One attempt; done when it answers again.
+    Route::post('devices/{device}/restart', [DeviceSyncController::class, 'restart']);
     Route::get('devices/{device}/status-history', [DeviceSyncController::class, 'statusHistory']);
 
     /*

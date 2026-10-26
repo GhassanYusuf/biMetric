@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\Employee;
 use App\Services\Devices\DeviceIdentityResolver;
 use App\Services\Devices\DeviceUserSyncService;
+use App\Support\DeviceRefusalAdvice;
 use Illuminate\Support\Collection;
 
 /**
@@ -237,7 +238,9 @@ class EmployeeDevicePropagator
                 $failed[] = [
                     'device_id' => $device->id,
                     'device_name' => $device->name,
-                    'error' => $e->getMessage(),
+                    // With what to do about it, when the reply has a known remedy
+                    // (4994/4995: restart the terminal, DC-034).
+                    'error' => DeviceRefusalAdvice::message($e),
                     // What the operator can press to resolve it, when there is such a
                     // thing (2026-10-11): free a number held by an unlinked record, or
                     // test fingerprint writing on a model that never did it.

@@ -165,6 +165,24 @@ export function adoptConfirm(device) {
  * clears anything, so the body says that too. Rule 9: a level that is implemented
  * but not yet proven on this model is offered WITH a warning.
  */
+/*
+| Restart terminal (2026-10-26, casebook DC-034). Not `danger`: nothing is removed. It is
+| still asked, because the terminal cannot take punches while it restarts.
+*/
+export function restartConfirm(device) {
+    const proven = device?.capabilities?.['device.restart']?.confirmed === true;
+
+    return {
+        title: `Restart ${device.name}?`,
+        body: [
+            'The terminal switches itself off and on. It is unreachable for about half a minute, and nobody can punch at it meanwhile. Everything stored on it stays: people, cards, fingerprints and punches.',
+            'Use it when the terminal keeps refusing changes, for example "Error inserting database". A restart cleared that on Camelot.',
+            ...(proven ? [] : ['This has not yet been run on this model of terminal. The system checks that it goes away and comes back.']),
+        ],
+        confirmLabel: 'Restart terminal',
+    };
+}
+
 export function clearPunchesConfirm(device) {
     const proven = device?.capabilities?.['attendance.clear']?.confirmed === true;
 

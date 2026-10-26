@@ -273,6 +273,11 @@ class CslHttpDriver implements BiometricDeviceDriver
         throw new UnsupportedCommandException("{$device->name} (CSL web portal) does not support a wipe through this driver.");
     }
 
+    public function restart(Device $device): void
+    {
+        throw new UnsupportedCommandException("{$device->name} (CSL web portal) does not support a restart through this driver.");
+    }
+
     /** The CSL portal exposes no clock this driver reads. Null = "not read" (rule 10). */
     public function readClock(Device $device): ?\DateTimeImmutable
     {

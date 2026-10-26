@@ -152,6 +152,7 @@ export const COMMAND_LABELS = {
     rebuild_remove: 'Rebuild: remove an unlinked record',
     clear_attendance: 'Clear punches',
     wipe_device: 'Wipe terminal',
+    restart_device: 'Restart terminal',
 };
 
 export function commandLabel(command) {

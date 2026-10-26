@@ -94,7 +94,10 @@ class DeviceErrorReporter
      *
      * Anything that is NOT a DeviceException is a bug in our code. Its message
      * would be meaningless (or leak internals) on screen, so it is replaced —
-     * the detail went to the `device` channel in report() above.
+     * the detail went to the `device` channel in report() above. Except a
+     * DomainException: that is how this app words a refusal for an operator
+     * ("Nothing was wiped from …", "… never stopped answering"), so it is shown as
+     * written (2026-10-26; queued wipes and restarts used to read "internal error").
      */
     public function operatorMessage(\Throwable $e, string $operation): string
     {
@@ -105,7 +108,8 @@ class DeviceErrorReporter
             $e instanceof ConnectionException => "{$what}: could not reach the device. Check it is powered on and on the network.",
             $e instanceof UnsupportedCommandException => "{$what}: this device or firmware does not support that operation.",
             $e instanceof VerificationException => "{$what}: the device accepted the change but did not keep it. This firmware occasionally drops writes — try again.",
-            $e instanceof DeviceException => "{$what}: {$e->getMessage()}",
+            $e instanceof DeviceException => "{$what}: ".DeviceRefusalAdvice::message($e),
+            $e instanceof \DomainException => "{$what}: {$e->getMessage()}",
             default => "{$what} because of an internal error. It has been logged for the developers.",
         };
     }

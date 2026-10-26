@@ -157,9 +157,11 @@ Template:
 - **Verified:** on Camelot, 2026-10-26 ~11:45 UTC, both users read back as above.
 - **Evidence:** laravel.log WARNINGs "Device rejected the user write (UNKNOWN(4995))"
   (context uid 17); traces-2026-10-26/camelot-user-insert-12-01.json.
-- **Status:** FIXED — remote restart, then both pushes worked and read back. Follow-ups, not
-  this problem: the library still reports these codes as UNKNOWN(4995) instead of ZKTeco's
-  own wording; device.restart could become a button in the app.
+- **Status:** FIXED — remote restart, then both pushes worked and read back. Follow-ups done
+  the same day at the owner's request: library 2.20.0 names these replies in ZKTeco's words
+  ("4995 Error inserting database") and confirms `device.restart` on the F18; the app has
+  Devices → Restart terminal (`DeviceRestartService`, done only when the terminal has gone
+  away and answers again), and a 4994/4995 refusal now says to restart and retry.
 - **Keywords:** Camelot, 4995, Error inserting database, UNKNOWN(4995), user write rejected, push failed, uid 17, restart, power cycle
 
 ### DC-033 — Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF)

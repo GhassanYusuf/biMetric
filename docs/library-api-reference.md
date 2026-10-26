@@ -61,7 +61,7 @@ close it in a `finally`.
 | `info(): array` | confirmed | model, firmware, platform, serial, MAC, capacities |
 | `time(): ?DateTimeImmutable` | confirmed | device-local, anchored to `config()->timezone` |
 | `syncTime(?DateTimeInterface $to = null): void` | **implemented** | never confirmed on hardware |
-| `restart(): void` | **implemented** | deliberately never exercised |
+| `restart(): void` | **confirmed** on the F18 (2.20.0) | Camelot 2026-10-26: back after 25 s, tables unchanged. Closes the session; the caller waits for the terminal to answer again. Throws `ProtocolException` when refused (before 2.20.0 a refusal passed silently) |
 | `capabilities(): CapabilitySet` | | the set in effect |
 | `probeCapabilities(): CapabilitySet` | | non-destructive probe, returns an upgraded set |
 
@@ -530,3 +530,14 @@ four session bytes. A session-less reader is then shifted four bytes on every
 payload: `~SerialNumber` disappears and `GET_DATA` answers a well-formed `0xC8`
 with ten useless bytes. **It does not error — it returns zero records**, so a panel
 holding 21,005 rows reports as reachable, healthy and empty.
+
+## `Protocol\ReplyCode` (2.20.0)
+
+`ReplyCode::meaning(int $reply): ?string` gives ZKTeco's own meaning of a standalone
+terminal's error reply, 4981-4999, transcribed from ZKAccess 3.5.5
+`language_en-US.xml` (`<SDKError_StandAlone>`, where the SDK reports reply N as -N).
+`Command::name()` uses it, so a refusal reads `4995 Error inserting database` instead of
+`UNKNOWN(4995)`. Seen on hardware: 4991 (F22), 4994 and 4995 (F18 Camelot). The user
+write, user delete and user+template save refusals carry the raw code as
+`context()['reply']`.
+

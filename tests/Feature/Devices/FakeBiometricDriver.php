@@ -64,6 +64,13 @@ class FakeBiometricDriver implements BiometricDeviceDriver
 
     public function ping(Device $device): array
     {
+        // After restart(): away for $downForPings pings, then back; null = never back.
+        if ($this->pingsWhileDown !== PHP_INT_MAX
+            && ($this->downForPings === null || $this->pingsWhileDown < $this->downForPings)) {
+            $this->pingsWhileDown++;
+            throw new \Promoseven\Biometric\Exception\TimeoutException('Device connection timed out or closed unexpectedly.');
+        }
+
         return ['alive' => true, 'device_time' => null, 'latency_ms' => 1.0];
     }
 
@@ -245,6 +252,19 @@ class FakeBiometricDriver implements BiometricDeviceDriver
 
     /** How many deleteAllUsers() calls were made. */
     public int $wipes = 0;
+
+    public int $restarts = 0;
+
+    /** Unreachable for this many ping() calls after a restart, then back (null = never). */
+    public ?int $downForPings = 0;
+
+    public function restart(Device $device): void
+    {
+        $this->restarts++;
+        $this->pingsWhileDown = 0;
+    }
+
+    private int $pingsWhileDown = PHP_INT_MAX;
 
     public function deleteAllUsers(Device $device): int
     {

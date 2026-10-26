@@ -409,6 +409,11 @@ class C3Driver implements BiometricDeviceDriver
         throw new UnsupportedCommandException("{$device->name} is a C3 panel; wiping its users is not implemented (device.wipe).");
     }
 
+    public function restart(Device $device): void
+    {
+        throw new UnsupportedCommandException("{$device->name} is a C3 panel; restarting it is not implemented (device.restart).");
+    }
+
     /**
      * Writes a card onto a person the panel holds, keeping UID, doors and fingers,
      * refusing a card another Pin already carries. 0 clears it. EXPERIMENTAL.

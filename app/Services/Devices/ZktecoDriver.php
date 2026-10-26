@@ -408,6 +408,14 @@ class ZktecoDriver implements BiometricDeviceDriver
         return $this->run($device, fn (ProtocolDevice $d) => $d->users()->deleteAll());
     }
 
+    /** Library Device::restart() (RESTART 1004), which also requires device.restart. */
+    public function restart(Device $device): void
+    {
+        $this->capabilities($device)->require(Capability::RESTART);
+
+        $this->run($device, fn (ProtocolDevice $d) => $d->restart());
+    }
+
     /*
      * Adds stored fingerprints to a user the terminal already holds (2026-10-11,
      * owner's request: "store it in the webapp and whenever needed write it to a
