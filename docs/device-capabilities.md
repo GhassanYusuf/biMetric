@@ -168,7 +168,22 @@ undecodable. Camelot had 2,876 such "punches" stored, dated 1999-12-31 to 2030-0
 import a punch dated more than a day ahead of now (`AttendanceRawLog::SKIP_FUTURE`) on
 every family, so it can never become the watermark.
 
-### `card.enroll` — IMPLEMENTED, behind a safety net (F18, IT Room `192.168.7.62`, 2026-09-23)
+### `card.enroll` — NOT_IMPLEMENTED on the F18 since 2.19.0 (2026-10-26)
+
+**Settled 2026-10-26 on IT Room** (casebook DC-033). The read-only probe this section was
+waiting for ran with a known card (2857525) tapped three times: `REG_EVENT 0xFFFF` (every
+bit, including those SDK sources give for OnHIDNum) produced only `EF_VERIFY` pushes,
+`ffffffff01`. Three write tests on Test User then sent captureCard()'s own sequence minus its
+write: `START_ENROLL` slot 11 is ACKed but starts no card enrolment. With `START_VERIFY` the
+screen showed "Verify: Badge, Badge number 2857525, Failed to verify"; without it, nothing;
+the user record never gained the card. **The terminal reads the card and does not hand the
+number over.** Research: ZKTeco's SDK has `OnHIDNum(CardNumber)` (pushed by the terminal;
+`GetHIDEventCardNumAsStr` only returns what that push delivered), adrobinoga/zk-protocol
+marks it "Todo", pyzatt has no card event. Scan card is hidden on the F18; cards are
+assigned by typing the number (`card.write`, CONFIRMED). Traces:
+`tools/zkprobe/traces-2026-10-26/f18-card-event-01.json`, `f18-card-enroll-mode-01..03.json`.
+
+### `card.enroll` — the history (F18, IT Room `192.168.7.62`, 2026-09-23)
 
 **Observed:** the first live card capture ever run. The operator tapped card
 **2862247** (`0x002BACA7`) for ali-test2 (PIN 960802797). The capture reported

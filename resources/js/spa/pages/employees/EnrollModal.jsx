@@ -202,9 +202,10 @@ export default function EnrollModal({ employee, devices, onClose, onEnrolled }) 
 
     /*
      * Scan card is offered where the terminal's capability says it is usable
-     * (rule 9), with a warning while it is only `implemented`. On 2026-09-23 IT Room
-     * mostly returned a non-card; the server now undoes those and reports a failed
-     * scan, so a retry or typing the number is always safe.
+     * (rule 9), with a warning while it is only `implemented`. No model offers it
+     * today: the F18 reads a tapped card but never hands its number over, so library
+     * 2.19.0 made it `not_implemented` there (casebook DC-033, 2026-10-26), and every
+     * other model has it unknown or not implemented. Typing the number is the way.
      */
     const cardScan = device?.capabilities?.['card.enroll'];
     const canScanCard = cardScan?.usable === true;

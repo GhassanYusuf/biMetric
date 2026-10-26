@@ -13,6 +13,7 @@ use App\Services\Devices\DeviceAdoptionService;
 use App\Services\Devices\EnrollmentOrchestratorService;
 use App\Support\Tenancy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Value\EnrollmentResult;
 use Promoseven\Biometric\Value\DeviceUser;
 use Tests\TestCase;
@@ -130,9 +131,27 @@ class CardAssignmentTest extends TestCase
     }
 
     /**
+     * Since library 2.19.0 the F18 offers no card scanning at all (DC-033): a scan is
+     * refused before anything is sent to the terminal.
+     */
+    public function test_a_scan_is_refused_on_the_f18(): void
+    {
+        [$device, $people] = $this->deviceWithClaimed([new DeviceUser(9, '5', 'Nadia', 0, 2862247, [5])]);
+
+        $this->expectException(\Promoseven\Biometric\Exception\UnsupportedCommandException::class);
+        try {
+            $this->service()->captureCard($device, $people['Nadia']);
+        } finally {
+            $this->assertSame(2862247, collect($this->driver->roster)->firstWhere('userId', '5')->cardNumber);
+        }
+    }
+
+    /**
      * What IT Room actually produced on 2026-09-23 when card 2862247 was tapped. The
      * library writes its "card" to the record before we see it, so a bad scan must be
-     * undone on the device and reported as a failure, never recorded.
+     * undone on the device and reported as a failure, never recorded. Scanning is now
+     * off on the F18, so these run on a terminal that offers it (the safety net stays
+     * for any model that ever does).
      */
     public function test_a_scan_that_returns_the_verify_marker_puts_the_previous_card_back(): void
     {
@@ -147,6 +166,7 @@ class CardAssignmentTest extends TestCase
     private function assertBogusScanUndone(int $bogus): void
     {
         [$device, $people] = $this->deviceWithClaimed([new DeviceUser(9, '5', 'Nadia', 0, 2862247, [5])]);
+        $this->driver->capabilityOverrides = [Capability::CARD_ENROLL => Capability::IMPLEMENTED];
         $this->driver->capture = function () use ($bogus) {
             $this->overwriteCard('5', $bogus); // what the library's captureCard() does
             return EnrollmentResult::card($bogus);
@@ -163,6 +183,7 @@ class CardAssignmentTest extends TestCase
     public function test_a_scan_that_returns_a_real_number_is_kept_and_read_back(): void
     {
         [$device, $people] = $this->deviceWithClaimed([new DeviceUser(9, '5', 'Nadia', 0, null, [5])]);
+        $this->driver->capabilityOverrides = [Capability::CARD_ENROLL => Capability::IMPLEMENTED];
         $this->driver->capture = function () {
             $this->overwriteCard('5', 2862247);
             return EnrollmentResult::card(2862247);

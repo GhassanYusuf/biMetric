@@ -1,0 +1,40 @@
+{
+    "label": "f18-card-event",
+    "host": "192.168.7.62",
+    "started_at": "2026-10-26T09:5x (see note)",
+    "note": "RECONSTRUCTED from the console: the probe could not write its trace (traces-2026-10-26/ had been recreated root-owned by a git branch switch). Lines copied verbatim.",
+    "card": 2857525,
+    "pin": "981122445",
+    "listen_seconds": 150,
+    "subscription": "REG_EVENT EF_ALL (0xFFFF)",
+    "events": [
+        {
+            "at_s": 25.503,
+            "command": 500,
+            "event": "0x0080",
+            "length": 5,
+            "first4_le": 4294967295,
+            "hits": [],
+            "data_hex": "ffffffff01"
+        },
+        {
+            "at_s": 30.695,
+            "command": 500,
+            "event": "0x0080",
+            "length": 5,
+            "first4_le": 4294967295,
+            "hits": [],
+            "data_hex": "ffffffff01"
+        },
+        {
+            "at_s": 36.34,
+            "command": 500,
+            "event": "0x0080",
+            "length": 5,
+            "first4_le": 4294967295,
+            "hits": [],
+            "data_hex": "ffffffff01"
+        }
+    ],
+    "summary": "3 pushes, 0 containing the card. The owner tapped card 2857525 three times; IT ROOM held NO card on 981122445 at the time (cleared at 09:46:14 by the owner to reproduce)."
+}

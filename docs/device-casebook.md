@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-033 | 2026-10-26 | IT ROOM | Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF) | FIXED |
 | DC-032 | 2026-10-25 to 2026-10-26 | Catering | Catering missing from an employee's Access levels; it is a UA300, a model with no write proven | FIXED |
 | DC-031 | 2026-10-25 | Catering | Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112 | FIXED |
 | DC-030 | 2026-10-22 | Camelot | A person linked to a terminal but no longer on it could not be pushed, moved or removed — every path said "not found" | OPEN |
@@ -107,6 +108,70 @@ Template:
 ---
 
 ## Entries
+
+### DC-033 — Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF)
+
+- **Date:** 2026-10-26
+- **Devices:** IT ROOM (F18/ID, 192.168.7.62, Ver 6.60 Apr 26 2016, ZMM210_TFT)
+- **Direction:** device → software
+- **Symptom:** Owner: scanning a card for the test user on IT ROOM "is not reading the card".
+- **What was done:** read-only so far.
+  - enrollment_sessions 51 (09:45 UTC) and 52 (09:46): both failed safely, nothing
+    saved, Test User (#1827, 981122445) keeps card 2857525. 51 returned `0x31313839`,
+    ASCII "9811", the first four characters of his own user ID; 52 returned `0xFFFFFFFF`.
+  - The same problem as `card.enroll` in `docs/device-capabilities.md` (2026-09-23): the
+    capture takes the first realtime push of 4+ bytes as the card. Those are verify
+    pushes: the terminal reporting WHO it identified (his PIN text, so 51 was very likely
+    his own registered card) or ffffffff for "unidentified" (52, likely an unregistered
+    card). Neither carries the card number. The safety net (`isNotACard()`) refused both.
+  - Owner: typing the number works; Scan card does not. They cleared Test User's card on
+    IT ROOM at 09:46:14 UTC on purpose to reproduce (access_cards "Cleared from the
+    terminal"). So scan 51 (09:45) saw his card REGISTERED ("9811" = his PIN text in the
+    push); 52 and later saw it unregistered.
+  - Read-only probe `tools/zkprobe/f18-card-event.php`, first run, 2026-10-26 ~09:53 UTC,
+    holding IT ROOM's queue lock, owner tapping card 2857525 three times
+    (`traces-2026-10-26/f18-card-event-01.json`, reconstructed from the console: the run
+    could not write it because a branch switch had recreated the folder root-owned).
+    Subscribed `REG_EVENT EF_ALL` = 0xFFFF, which includes every bit an SDK source gives
+    for OnHIDNum (1<<10, 1<<11, 4096). Three pushes, all `cmd 500`, event `0x0080`
+    (EF_VERIFY), payload `ffffffff01` ("unidentified"). **No push carried the card number.**
+  - Library `EnrollmentService::captureCard()` (read): REG_EVENT EF_ALL, START_ENROLL with
+    slot 11 (a guess, "card is commonly 11") + START_VERIFY, then the FIRST push of 4+ bytes
+    is taken as the card and written with `writeUser()`, no read-back. On the F18 that first
+    push is always EF_VERIFY, so the method cannot work there. The app's safety net catches
+    it and restores the previous card.
+  - Research (rule 17): adrobinoga/zk-protocol lists OnHIDNum as "Todo"; the SDK manual's
+    real-time section could not be read. Not settled whether any F18 setting enables it.
+  - Write test with the owner's go-ahead, `tools/zkprobe/f18-card-enroll-mode.php` (Test
+    User only, queue lock held; captureCard()'s sequence minus its writeUser(); record read
+    before, after and after 5 s), owner tapping 2857525, traces
+    `traces-2026-10-26/f18-card-enroll-mode-01..03.json`:
+    - 01, 02 (with START_VERIFY, as captureCard() sends it): START_ENROLL slot 11 ACK_OK.
+      Screen: **"Verify: Badge, Badge number 2857525, Failed to verify, User ID:"**. One push,
+      EF_VERIFY `ffffffff01`. Record unchanged, no card. (01 was interrupted by the owner's
+      phone; 02 is the clean run.)
+    - 03 (`--no-verify`, one variable changed): START_ENROLL slot 11 ACK_OK, but **no enrol
+      screen at all**; the tap gave the same push; record unchanged.
+  - So the terminal READS the card (it displays the number) but neither pushes the number
+    nor stores it in any mode we can start remotely. The first push in 01/02 at 29.3 s both
+    times looked like a timeout; 03's at 61 s says it was the tap.
+- **Root cause:** on this F18 firmware (Ver 6.60 Apr 26 2016, ZMM210_TFT) no realtime push
+  carries a tapped card's number (EF_ALL), and START_ENROLL slot 11 starts no card enrolment
+  (ACKed, nothing on screen, nothing stored). `captureCard()` assumed both. Card scanning
+  from the system is not possible on it; typing the number is (card.write CONFIRMED).
+- **Fix:** owner's choice, 2026-10-26: hide Scan card on the F18 rather than build an
+  "enrol at the terminal, the system reads it back" flow. Library 2.19.0 sets `card.enroll`
+  NOT_IMPLEMENTED in the F18 set (`CapabilitySet::defaults()`; F18 only, as the finding is
+  the F18's; F22, UA300, unknown models and C3 panels already had it off). The enrol dialog
+  hides Scan and says "Type the number printed on the card."; the server refuses a scan
+  (`DeviceEnrollmentController`, `EnrollmentOrchestratorService`). Test:
+  `TerminalModelTest::test_the_f18_does_not_offer_card_scanning`.
+- **Verified:** after installing 2.19.0, IT ROOM, Camelot and Good Wheels report
+  `card.enroll` not usable (see the commit).
+- **Evidence:** enrollment_sessions 51, 52; access_cards for employee 1827; traces-2026-10-26/f18-card-event-01.json, f18-card-enroll-mode-01..03.json.
+- **Status:** FIXED — Scan card hidden on the F18. Test User has no card on IT ROOM (cleared by
+  the owner at 09:46 to reproduce); typing 2857525 restores it.
+- **Keywords:** scan card, card enroll, not reading the card, 0xFFFFFFFF, 4294967295, 9811, 0x31313839, realtime event, EF_VERIFY, OnHIDNum, IT ROOM, F18
 
 ### DC-032 — Catering missing from an employee's Access levels; it is a UA300, a model with no write proven
 

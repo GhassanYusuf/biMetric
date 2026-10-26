@@ -1,0 +1,93 @@
+{
+    "label": "f18-card-enroll-mode",
+    "host": "192.168.7.62",
+    "started_at": "2026-10-26T10:52:29+00:00",
+    "device": {
+        "id": 15,
+        "name": "IT ROOM",
+        "model": "F18"
+    },
+    "question": "Does START_ENROLL slot 11 make the terminal store a tapped card on the user itself?",
+    "test_pin": "981122445",
+    "test_card": 2857525,
+    "start_verify_sent": false,
+    "steps": [
+        {
+            "at": "2026-10-26T10:52:30+00:00",
+            "step": "record before",
+            "record": {
+                "name": "Test User",
+                "card": null,
+                "privilege": 0
+            }
+        },
+        {
+            "at": "2026-10-26T10:52:30+00:00",
+            "step": "CANCEL_CAPTURE",
+            "reply": {
+                "command": 2000,
+                "data": ""
+            }
+        },
+        {
+            "at": "2026-10-26T10:52:30+00:00",
+            "step": "REG_EVENT EF_ALL",
+            "reply": {
+                "command": 2000,
+                "data": ""
+            }
+        },
+        {
+            "at": "2026-10-26T10:52:30+00:00",
+            "step": "START_ENROLL slot 11",
+            "reply": {
+                "command": 2000,
+                "data": ""
+            },
+            "ack_ok": true
+        },
+        {
+            "at": "2026-10-26T10:54:00+00:00",
+            "step": "CANCEL_CAPTURE",
+            "reply": {
+                "command": 2000,
+                "data": ""
+            }
+        },
+        {
+            "at": "2026-10-26T10:54:01+00:00",
+            "step": "record after",
+            "record": {
+                "name": "Test User",
+                "card": null,
+                "privilege": 0
+            }
+        },
+        {
+            "at": "2026-10-26T10:54:07+00:00",
+            "step": "record after 5 s",
+            "record": {
+                "name": "Test User",
+                "card": null,
+                "privilege": 0
+            }
+        },
+        {
+            "at": "2026-10-26T10:54:07+00:00",
+            "step": "verdict",
+            "verdict": "the record did not change"
+        }
+    ],
+    "events": [
+        {
+            "t": 61.251,
+            "command": 500,
+            "event": "0x0080",
+            "length": 5,
+            "hits": [],
+            "data_hex": "ffffffff01"
+        }
+    ],
+    "verdict": "the record did not change",
+    "finished_at": "2026-10-26T10:54:07+00:00"
+}

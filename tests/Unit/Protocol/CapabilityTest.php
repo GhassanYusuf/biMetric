@@ -92,7 +92,6 @@ class CapabilityTest extends TestCase
         $unproven = [
             Capability::SET_TIME,
             Capability::TEMPLATE_DELETE,
-            Capability::CARD_ENROLL,
             Capability::ATTENDANCE_REALTIME,
             Capability::ATTENDANCE_CLEAR,
             Capability::RESTART,
@@ -107,6 +106,19 @@ class CapabilityTest extends TestCase
             );
             $this->assertTrue($set->supports($key), "{$key} should still be offered, labelled unproven");
         }
+    }
+
+    /**
+     * Library 2.19.0: the F18 reads a tapped card but never hands its number over, so
+     * card scanning is NOT offered on it (casebook DC-033, IT ROOM 2026-10-26).
+     */
+    public function test_card_scanning_is_not_offered_on_the_f18(): void
+    {
+        $set = CapabilitySet::defaults();
+
+        $this->assertSame(Capability::NOT_IMPLEMENTED, $set->level(Capability::CARD_ENROLL));
+        $this->assertFalse($set->supports(Capability::CARD_ENROLL));
+        $this->assertTrue($set->isConfirmed(Capability::CARD_WRITE), 'typing the number is the way');
     }
 
     public function test_capabilities_never_probed_stay_unknown(): void

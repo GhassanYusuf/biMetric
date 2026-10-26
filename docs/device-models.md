@@ -60,7 +60,7 @@ The reference model: `CapabilitySet::defaults()` is the F18. Calibrated on IT RO
 | Privilege | set **from the form's Device role** (2026-10-20) | `EmployeeDevicePropagator::applyRole()` → the same `setPrivilege()`: Admin / Super admin → 14, User → 0, Enroller / Not set → untouched. Only when the save CHANGED the role (`apply_role`), only where `user.privilege` is **C** (`Device::canSetPrivilegeOnSave()`); elsewhere the result says it was held back. Real roles differ per terminal, so an unchanged role never levels them | follows `user.privilege` |
 | Card | read | field in the user record (one card per user; `0xFFFFFFFF` = probably none) | C |
 | Card | write / clear | `UserService::setCard` (record rewrite, 0 clears), read back | C |
-| Card | enroll (tap) | card-scan capture | I |
+| Card | enroll (tap) | **none.** The F18 reads a tapped card but no realtime push carries the number, and `START_ENROLL` slot 11 starts no card enrolment (IT ROOM 2026-10-26, DC-033). Scan card hidden since 2.19.0; type the number | N |
 | Fingerprint | read | template table (`TemplateCodec::decodeWithBlobs`), blobs byte-exact | C |
 | Fingerprint | enroll | `STARTENROLL` at the terminal — trigger confirmed | C (trigger) |
 | Fingerprint | write | `TemplateService::addTemplates()` — `SAVE_USERTEMPS` with the device's own record, add-only, read back. Write CONFIRMED on IT ROOM 2026-10-11; a real finger match not yet observed | I |

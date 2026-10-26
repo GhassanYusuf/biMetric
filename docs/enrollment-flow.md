@@ -275,7 +275,9 @@ not a finding, and it needs a control (rule 16).
 
 `PUT /api/employees/{employee}/devices/{device}/card` with `{card_number: "2857525"}`,
 behind the **Save card** field in the enrollment dialog. It exists because Scan card
-means walking to the terminal to tap a card whose number is already printed on it.
+means walking to the terminal to tap a card whose number is already printed on it. Since
+2026-10-26 (library 2.19.0) it is the ONLY way on the F18: Scan card is hidden there,
+because the terminal never hands a tapped card's number over (casebook DC-033).
 
 - **App → contract, never `run()`.** `EnrollmentOrchestratorService::assignCard()` calls
   `BiometricDeviceDriver::setUserCard()`. `ZktecoDriver` maps it to the library's
