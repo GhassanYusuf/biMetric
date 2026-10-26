@@ -1,0 +1,71 @@
+{
+    "label": "restart",
+    "host": "87.237.196.60",
+    "started_at": "2026-10-26T11:33:23+00:00",
+    "device": {
+        "id": 12,
+        "name": "Camelot",
+        "model": "F18/ID"
+    },
+    "question": "What does RESTART (1004) reply, how long is the terminal away, and what is different after?",
+    "steps": [
+        {
+            "at": "2026-10-26T11:33:26+00:00",
+            "step": "before",
+            "firmware": "Ver 6.60 Apr 26 2016",
+            "serial": "AIOR204860816",
+            "clock": "2026-10-26 14:33:30",
+            "drift_s": 7,
+            "free_sizes": {
+                "users": 14,
+                "fingers": 22,
+                "records": 119,
+                "cards": 0,
+                "fingers_capacity": 3000,
+                "users_capacity": 5000,
+                "records_capacity": 100000
+            },
+            "users_read": 14,
+            "max_uid": 16,
+            "templates_read": 22
+        },
+        {
+            "at": "2026-10-26T11:33:26+00:00",
+            "step": "RESTART sent",
+            "reply_command": 2000,
+            "reply_data": "",
+            "no_reply": false
+        },
+        {
+            "at": "2026-10-26T11:33:28+00:00",
+            "step": "not answering",
+            "after_s": 2
+        },
+        {
+            "at": "2026-10-26T11:33:51+00:00",
+            "step": "answering again",
+            "after_s": 25.1
+        },
+        {
+            "at": "2026-10-26T11:34:11+00:00",
+            "step": "after",
+            "firmware": "Ver 6.60 Apr 26 2016",
+            "serial": "AIOR204860816",
+            "clock": "2026-10-26 14:34:02",
+            "drift_s": -2,
+            "free_sizes": {
+                "users": 14,
+                "fingers": 22,
+                "records": 119,
+                "cards": 0,
+                "fingers_capacity": 3000,
+                "users_capacity": 5000,
+                "records_capacity": 100000
+            },
+            "users_read": 14,
+            "max_uid": 16,
+            "templates_read": 22
+        }
+    ],
+    "finished_at": "2026-10-26T11:34:11+00:00"
+}

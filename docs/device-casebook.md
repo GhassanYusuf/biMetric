@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-034 | 2026-10-25 to 2026-10-26 | Camelot | Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17 | FIXED |
 | DC-033 | 2026-10-26 | IT ROOM | Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF) | FIXED |
 | DC-032 | 2026-10-25 to 2026-10-26 | Catering | Catering missing from an employee's Access levels; it is a UA300, a model with no write proven | FIXED |
 | DC-031 | 2026-10-25 | Catering | Catering's workers show 0 punches on Employees while the terminal and the system both hold 2,112 | FIXED |
@@ -108,6 +109,58 @@ Template:
 ---
 
 ## Entries
+
+### DC-034 — Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17
+
+- **Date:** 2026-10-25 to 2026-10-26
+- **Devices:** Camelot (F18/ID, 87.237.196.60, Ver 6.60 Apr 26 2016, ZMM210_TFT)
+- **Direction:** software → device
+- **Symptom:** Owner: "every time I push to Camelot I get: Test User was not written to any
+  terminal. FAILED on Camelot — Device rejected the user write (UNKNOWN(4995))."
+- **What was done:** read-only so far.
+  - laravel.log: eight refusals, 2026-10-25 11:33 to 2026-10-26 11:24 UTC, all `uid 17`:
+    RAGESH 870156500 four times, Test User 981122445 four times. Not one person's problem.
+  - The vendor dictionary (`draft/extracted/Languages/language_en-US.xml`, ZKAccess 3.5.5)
+    names it: **-4995 = "Error inserting database"** (-4994, seen on Camelot 2026-09-24, is
+    "Error updating database"). The library reports it as `UNKNOWN(4995)`.
+  - User table read (queue lock held): 14 users at uids 1, 2, 4-11, 13-16 (Gretchen, Firoj,
+    Winnie and Monir re-added since DC-029/DC-030). So the next uid is 17. Neither
+    870156500 nor 981122445 is on it.
+  - `GET_FREE_SIZES` (`tools/zkprobe/free-sizes.php`, trace
+    `traces-2026-10-26/camelot-user-insert-12-01.json`): users 14, fingers 22, records
+    119, user capacity 5,000. No hidden record, not full.
+  - Template table: 22 templates, every one at a uid that holds a user. No orphans.
+  - DC-029 (2026-10-22): Camelot refused writes it ACKed until a power cycle on site,
+    after which writes worked. Same unit, same kind of refusal. The owner says the same
+    happened before and an on-site restart fixed pushing then too.
+  - **First remote RESTART on any terminal here**, owner's go-ahead, 2026-10-26 11:33 UTC
+    (`tools/zkprobe/restart.php`, queue lock held, trace `traces-2026-10-26/restart-01.json`):
+    `RESTART` (1004) → `ACK_OK`; not answering from +2 s; answering again at **+25 s**.
+    Before and after identical: firmware, serial, 14 users (max uid 16), 22 fingers, 119
+    records, capacities. **Unfamiliar:** the clock was 7 s fast before and 2 s slow after,
+    so it lost ~9 s across the reboot (it appears to stop while restarting). Harmless; the
+    daily clock job corrects it.
+  - After the restart the owner pushed Test User and RAGESH from the browser, then edited
+    and saved both: no error. Read back (queue lock held): 16 users; Test User at **uid
+    17**, card 2857525, finger 0; RAGESH at uid 18, card 7459039 (his Camelot card),
+    fingers 3, 6; both equal to the system's copies, links in_sync. No 4995 since.
+- **Root cause:** a stuck state inside Camelot that refuses every user INSERT ("Error
+  inserting database") while its data is consistent (counts, capacity and templates all
+  normal). Not the uid: the refused uid 17 took Test User once restarted. What puts the
+  unit in that state is not known; it has now happened at least three times (2026-09-24
+  as 4994, 2026-10-22 DC-029, 2026-10-25 here), always on this unit, which is reached
+  over the internet.
+- **Fix:** none to the software. A REMOTE restart clears it, as the on-site power cycle
+  did in DC-029, so nobody has to go to Camelot: `tools/zkprobe/restart.php 12` (owner's
+  go-ahead each time, rule 16). Lesson: when Camelot refuses writes with 4994/4995 and its
+  reads look normal, restart it remotely, then retry.
+- **Verified:** on Camelot, 2026-10-26 ~11:45 UTC, both users read back as above.
+- **Evidence:** laravel.log WARNINGs "Device rejected the user write (UNKNOWN(4995))"
+  (context uid 17); traces-2026-10-26/camelot-user-insert-12-01.json.
+- **Status:** FIXED — remote restart, then both pushes worked and read back. Follow-ups, not
+  this problem: the library still reports these codes as UNKNOWN(4995) instead of ZKTeco's
+  own wording; device.restart could become a button in the app.
+- **Keywords:** Camelot, 4995, Error inserting database, UNKNOWN(4995), user write rejected, push failed, uid 17, restart, power cycle
 
 ### DC-033 — Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF)
 
