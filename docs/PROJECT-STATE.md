@@ -849,6 +849,46 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-10-27 — Bahrain ID card (CPR) reading: the reader works on Ubuntu through a Windows VM
+
+New feature in flight, **with the owner's colleague** (who built the browser kit on Windows):
+read the Bahrain smart ID card at a PC and fill an employee's CPR, name, birth date,
+gender and photo. **Nothing is built in this app yet**, by the owner's choice: "don't try to
+develop the feature, we will work together". The colleague's kit (`@ahl/id-card-reader`,
+browser client + React parts + a setup kit) is in `draft/card-reading/` (gitignored: it
+contains iGA-licensed files; keep it out of git). It talks to iGA's Windows service
+"GCC CardRead Server" on `http://localhost:5050` / `ws://localhost:5060`; our server is
+not involved in reading.
+
+The owner's PC is **Ubuntu**; iGA ships no Linux software and publishes no card
+documentation (researched 2026-10-26). Chosen route (owner, option B): **a Windows 11 VM
+on the owner's Ubuntu** (virt-manager/KVM). Findings, in the order they cost time:
+- Reader: **Dell SK-3205 SmartCard Reader Keyboard** (USB 413c:2101, one composite
+  device). Works on Ubuntu with `pcscd` (fix: restart `pcscd.socket` after install).
+  Card ATR `3B7F96000080318065B085040011120FFF829000`, the one the kit was tested with.
+- **SPICE "smartcard passthrough" does NOT carry this card**: it emulates a certificate
+  card. Its leftover `<controller type='ccid'>` showed up as a second, empty reader
+  (VID_08E6&PID_4433); removed with `virt-xml … --remove-device --controller type=ccid`.
+  The keyboard has to be handed to Windows as a USB device; the reader comes with it.
+- `passt` user networking is blocked by Ubuntu's AppArmor (file_mmap DENIED); a libvirt NAT
+  network `cardnet` (10.66.0.0/24) is used instead. The spice-space.org guest tools'
+  drivers are refused by Windows 11 (Code 52); `virtio-win-guest-tools` works (clipboard).
+- bahrain.bh's download: "Application" = **eRevealer.GCC 5.4.0.4** (viewer, no service);
+  the **SDK** installs the service (`SCardReadWebApi.exe` 1.5.0.0, IDCardManager 3.6.1.0),
+  the same versions as the colleague's working PC.
+- iGA programs only find a reader that is present **when they start**.
+- **The fix that made the service read (2026-10-27):** the kit's 1-Setup copies only four
+  Bahrain files; on a fresh SDK install the 2025 Bahrain extension also needs eRevealer's
+  helper DLLs. Copying eRevealer's whole `Extensions\BAH` into the service's
+  `Extensions\BAH` (backup kept in the service folder) → the kit's 2-Check passes:
+  "Test read worked (card country: BAH)". **Tell the colleague**: the kit should copy that
+  whole folder on a fresh install.
+
+**Next (owner, when ready):** attach the keyboard as a VM *USB Host Device* so it is there
+before the service starts; forward Ubuntu `localhost:5050/5060` to the VM; then plan the
+"Read ID card" screens in this app with the colleague (open questions: name split, an
+Arabic-name field).
+
 ### 2026-10-26 — Camelot's 4995 fixed by a remote restart; Restart terminal added
 
 Camelot refused every new user (reply 4995, "Error inserting database"; RAGESH and Test
