@@ -133,14 +133,25 @@ Template:
     The restart did not change a lock or door setting. Names this firmware does not have
     (LockDelay, DoorSensorMode, NormalOpenTZ, …) answer **4999 "Read error"** on all three:
     that is how ZMM210 firmware says "no such option" (a ReplyCode finding).
-  - Working theory: the lock is not powered (a fail-safe magnetic lock is free without power,
+  - First theory (ruled out below): the lock is not powered (a fail-safe magnetic lock is free without power,
     and a valid punch then has nothing to release, so no click). Owner to check the lock's LED
     and power supply. A second restart is the other cheap test, after the power check.
 - **Root cause:** —
 - **Fix:** —
 - **Verified:** —
 - **Evidence:** device_commands for device 15 since 2026-10-26.
-- **Status:** OPEN — settings ruled out; owner to check the lock's power at the door.
+  - Owner, at the door: the lock's LED is on and its power supply looks fine; the F18 outside
+    flashes green slowly (normal standby); there is an exit button inside. **Test: with the
+    door closed and no finger, the handle opens it** (before, a finger was needed).
+  - Second restart from the Devices button, owner, 2026-10-27 13:40 UTC (command 10505): the door still opens without a
+    finger. So neither the terminal's settings nor its state after a reboot is the cause; the
+    timing (after the 2026-10-26 restart) is most likely a coincidence.
+  - Remaining, physical, for an electrician or the installer: whether the exit button or a
+    valid finger makes the lock click at all; a manual hold-open switch on the lock; the
+    NO/NC/COM wiring at the F18 (power off first).
+- **Status:** OPEN — software ruled out (settings identical to the working F18s; a second
+  restart, command 10505 at 13:40 UTC, changed nothing); a physical check of the lock and its
+  wiring is owed.
 - **Keywords:** door, lock, relay, unlock, access, door stays open, IT ROOM, restart, magnetic lock
 
 ### DC-034 — Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17
