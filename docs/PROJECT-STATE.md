@@ -896,8 +896,18 @@ http://localhost:5050/api/operation/ReadCard` → HTTP 200, CardCountry BAH. The
 - Ubuntu: systemd `cardread-forward@5050` / `@5060` (socat, bound to 127.0.0.1 only) →
   10.66.0.10:1%i. **Trap:** VS Code on the Ubuntu auto-forwarded 5050 and 5060 from this
   server and held both ports; its "Remote: Auto Forward Ports" is now off.
-**Next:** the "Read ID card" screens in this app, with the colleague (open questions,
-owner: name split; an Arabic-name field; where the button goes). The page is served over
+**App side BUILT 2026-10-27 and confirmed working by the owner.** Employee form (Add and
+Edit) → **Read ID card**, using the colleague's client UNCHANGED
+(`resources/js/spa/shared/idCard/client.ts`, a verbatim copy of @ahl/id-card-reader 0.1.0;
+update it by copying a newer one over). `pages/employees/IdCardReader.jsx`. Owner's
+mapping: CPR → Personnel ID; English name, last word → Last name, the rest → First name;
+gender; birthday; photo (through the form's own pickPhoto, so it uploads after Save). No
+Arabic name, no mobile number (the owner first asked for the number, then the photo
+instead). Add fills the form when nothing would be replaced; Edit (or a conflict) opens a
+card | on file | apply dialog with the differences ticked; a CPR that is not the
+employee's ticks nothing and says so; replacing an existing photo is never pre-ticked.
+Nothing is saved until Save. The Employees list now shows each photo (or initials) left
+of the name (`Avatar` in `shared/ui.jsx`). The page is served over
 http from 192.168.0.39 and calls http://localhost, so Chrome/Edge will ask once for local
 network access.
 

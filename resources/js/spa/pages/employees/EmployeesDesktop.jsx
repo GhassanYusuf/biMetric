@@ -1,4 +1,4 @@
-import { ActionMenu, Button, EmptyState, Pager, PageHeader, TableShell, Thead } from '../../shared/ui';
+import { ActionMenu, Avatar, Button, EmptyState, Pager, PageHeader, TableShell, Thead } from '../../shared/ui';
 import AutoPushToggle from './AutoPushToggle';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, DeviceUserIdCell, FingerprintCell, TerminalsCell, syncedAgo } from './enrollmentCells';
@@ -207,8 +207,13 @@ export default function EmployeesDesktop({
                         >
                             <td className="px-5 py-3.5 text-center tabular-nums text-slate-600">{i + 1}</td>
                             <td className="px-5 py-3.5">
-                                <span className="font-medium text-slate-900">{[e.name, e.last_name].filter(Boolean).join(' ')}</span>
-                                <EmploymentBadges employee={e} className="ml-2" />
+                                <div className="flex items-center gap-3">
+                                    <Avatar src={e.photo_url} name={[e.name, e.last_name].filter(Boolean).join(' ')} />
+                                    <span>
+                                        <span className="font-medium text-slate-900">{[e.name, e.last_name].filter(Boolean).join(' ')}</span>
+                                        <EmploymentBadges employee={e} className="ml-2" />
+                                    </span>
+                                </div>
                             </td>
                             <td className="px-5 py-3.5 font-mono text-xs text-slate-600">{e.employee_code}</td>
                             <td className="px-5 py-3.5">

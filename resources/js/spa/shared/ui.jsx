@@ -690,6 +690,26 @@ export function ProgressBar({ percent = null, label, detail, tone = 'violet', cl
     );
 }
 
+/*
+| A person's photo as a small circle, or their initials when there is none or it fails to
+| load (2026-10-27: the Employees list shows each photo left of the name). Decorative: the
+| name next to it is the accessible label, so the image itself is alt="".
+*/
+export function Avatar({ src, name, size = 'h-8 w-8', className = '' }) {
+    const [failed, setFailed] = useState(false);
+    const initials = (name ?? '').trim().split(/\s+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+
+    if (src && !failed) {
+        return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} className={`${size} shrink-0 rounded-full object-cover ring-1 ring-slate-200 ${className}`} />;
+    }
+
+    return (
+        <span aria-hidden="true" className={`${size} inline-flex shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700 ${className}`}>
+            {initials}
+        </span>
+    );
+}
+
 export function Badge({ children, tone = 'slate', className = '', title }) {
     const tones = {
         slate: 'bg-slate-100 text-slate-700',

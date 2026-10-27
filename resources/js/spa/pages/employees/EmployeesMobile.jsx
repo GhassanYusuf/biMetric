@@ -1,4 +1,4 @@
-import { Badge, Button, Card, EmptyState, PageHeader, Pager, ActionMenu } from '../../shared/ui';
+import { Avatar, Badge, Button, Card, EmptyState, PageHeader, Pager, ActionMenu } from '../../shared/ui';
 import AutoPushToggle from './AutoPushToggle';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, DeviceUserIdCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
@@ -157,6 +157,8 @@ export default function EmployeesMobile({
                                         the number but not the stripe — and `active:` is
                                         the touch equivalent of the desktop hover. */}
                                     <span className="shrink-0 tabular-nums text-slate-600">{i + 1}</span>
+                                    {/* Rule 5: the same photo as the desktop name cell. */}
+                                    <Avatar src={e.photo_url} name={[e.name, e.last_name].filter(Boolean).join(' ')} size="h-10 w-10" />
                                     <div className="min-w-0">
                                         <div className="truncate font-semibold text-slate-900">{[e.name, e.last_name].filter(Boolean).join(" ")}</div>
                                         <div className="font-mono text-xs text-slate-500">{e.employee_code}</div>

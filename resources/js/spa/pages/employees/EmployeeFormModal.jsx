@@ -10,6 +10,7 @@ import { formatDeviceError } from '../devices/statusParts';
 import { can as canDevice, idMoveMethod } from '../devices/parts';
 import { FixButton, useTerminalFix } from './TerminalFixes';
 import Combobox from '../../shared/Combobox';
+import IdCardReadButton from './IdCardReader';
 import { CountrySelect, PhoneField, phoneError } from '../../shared/CountryFields';
 
 /*
@@ -330,7 +331,9 @@ export default function EmployeeFormModal({
     const busy = submitting || retrying.length > 0;
     const close = outcome ? onDone : onClose;
 
-    useEscapeKey(close, !busy);
+    // Paused while the ID card dialog is open over the form: Escape closes that one only.
+    const [idCardOpen, setIdCardOpen] = useState(false);
+    useEscapeKey(close, !busy && !idCardOpen);
 
     useEffect(() => {
         // An existing employee already has a code, and changing it changes the PIN
@@ -655,6 +658,19 @@ export default function EmployeeFormModal({
                           | column first, as the original does.
                         */}
                         <div role="tabpanel" id="employee-tab-profile" aria-labelledby="employee-tabtrigger-profile" hidden={tab !== 'profile'} className="space-y-5">
+                            {/* Bahrain ID card → Personnel ID, names, gender, birthday (2026-10-27). */}
+                            <div className="flex flex-wrap items-center gap-3">
+                                <IdCardReadButton
+                                    form={form}
+                                    isEdit={isEdit}
+                                    disabled={busy}
+                                    onDialogChange={setIdCardOpen}
+                                    onApply={(patch) => setForm((f) => ({ ...f, ...patch }))}
+                                    onPhoto={pickPhoto}
+                                    currentPhoto={shownPhoto}
+                                />
+                                <span className="text-xs text-slate-500">On a PC with the ID card reader: insert the card, then press Read ID card.</span>
+                            </div>
                             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_13rem]">
                                 {/* Fills down then across, so the row count must hold every field:
                                     15 when editing (Resigned on is edit-only), 14 when adding. Too few
