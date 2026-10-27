@@ -884,10 +884,22 @@ on the owner's Ubuntu** (virt-manager/KVM). Findings, in the order they cost tim
   "Test read worked (card country: BAH)". **Tell the colleague**: the kit should copy that
   whole folder on a fresh install.
 
-**Next (owner, when ready):** attach the keyboard as a VM *USB Host Device* so it is there
-before the service starts; forward Ubuntu `localhost:5050/5060` to the VM; then plan the
-"Read ID card" screens in this app with the colleague (open questions: name split, an
-Arabic-name field).
+**PC side DONE 2026-10-27 ~11:50 UTC.** From the owner's Ubuntu, `POST
+http://localhost:5050/api/operation/ReadCard` → HTTP 200, CardCountry BAH. The chain:
+- VM `Win11-cardReader` (libvirt, owner's Ubuntu): the Dell keyboard attached as a **USB
+  Host Device** (present from boot, before the service starts); a second plain keyboard
+  types on Ubuntu. Fixed address 10.66.0.10 on `cardnet` (DHCP host entry for MAC
+  52:54:00:fb:fc:d1).
+- **iGA's service answers 403 Forbidden to any request that is not from Windows itself.**
+  Fixed with a relay inside Windows: `netsh interface portproxy` 10.66.0.10:15050 →
+  127.0.0.1:5050 and :15060 → :5060, firewall rules allowing only 10.66.0.1.
+- Ubuntu: systemd `cardread-forward@5050` / `@5060` (socat, bound to 127.0.0.1 only) →
+  10.66.0.10:1%i. **Trap:** VS Code on the Ubuntu auto-forwarded 5050 and 5060 from this
+  server and held both ports; its "Remote: Auto Forward Ports" is now off.
+**Next:** the "Read ID card" screens in this app, with the colleague (open questions,
+owner: name split; an Arabic-name field; where the button goes). The page is served over
+http from 192.168.0.39 and calls http://localhost, so Chrome/Edge will ask once for local
+network access.
 
 ### 2026-10-26 — Camelot's 4995 fixed by a remote restart; Restart terminal added
 
