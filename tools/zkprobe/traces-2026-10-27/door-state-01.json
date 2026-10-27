@@ -1,0 +1,30 @@
+{
+    "label": "door-state",
+    "host": "46.184.163.106,87.237.196.60,192.168.7.62",
+    "started_at": "2026-10-27T13:43:43+00:00",
+    "question": "What does CMD_DOORSTATE_RRQ (75) report on IT ROOM vs F18s whose doors lock?",
+    "devices": [
+        {
+            "id": 5,
+            "name": "Good Wheels",
+            "host": "46.184.163.106",
+            "reply": "ACK_OK",
+            "data_hex": "01"
+        },
+        {
+            "id": 12,
+            "name": "Camelot",
+            "host": "87.237.196.60",
+            "reply": "ACK_OK",
+            "data_hex": "01"
+        },
+        {
+            "id": 15,
+            "name": "IT ROOM",
+            "host": "192.168.7.62",
+            "reply": "ACK_OK",
+            "data_hex": "01"
+        }
+    ],
+    "finished_at": "2026-10-27T13:43:43+00:00"
+}

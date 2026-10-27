@@ -149,9 +149,21 @@ Template:
   - Remaining, physical, for an electrician or the installer: whether the exit button or a
     valid finger makes the lock click at all; a manual hold-open switch on the lock; the
     NO/NC/COM wiring at the F18 (power off first).
+  - `tools/zkprobe/door-state.php` (CMD_DOORSTATE_RRQ 75, from pyzk, read-only): IT ROOM,
+    Camelot and Good Wheels all answer `01` (`traces-2026-10-27/door-state-01.json`). Polled
+    IT ROOM once a second for 40 s while the owner pressed the exit button, opened the door and
+    pressed the lock: `01` throughout (`door-state-poll-01.json`). So 75 does NOT reflect the
+    door or the relay on this firmware; dead end, no conclusion drawn from it.
+  - Owner: **the exit button makes no click either.** Nothing makes the lock click.
+  - Realtime listen (REG_EVENT 0xFFFF, 45 s, `f18-card-event-01.json` in today's folder) while
+    the owner pressed the exit button: no push at all. Not conclusive without a control (a
+    valid finger, which always pushes, in the same run); not yet run.
+  - Owner moved on to other work; the fix is physical (the F18's NO/NC/COM and exit-button
+    terminals, or the lock).
 - **Status:** OPEN — software ruled out (settings identical to the working F18s; a second
-  restart, command 10505 at 13:40 UTC, changed nothing); a physical check of the lock and its
-  wiring is owed.
+  restart, command 10505 at 13:40 UTC, changed nothing; no lock click from finger or exit
+  button). An electrician or the installer to check the F18's lock and exit-button wiring and
+  the lock itself. Until then the IT ROOM door does not lock.
 - **Keywords:** door, lock, relay, unlock, access, door stays open, IT ROOM, restart, magnetic lock
 
 ### DC-034 — Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17
