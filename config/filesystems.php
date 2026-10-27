@@ -41,7 +41,12 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+            // Relative (2026-10-27): the system is used at https://zkt.takeone.bh AND at
+            // http://192.168.0.39, and APP_URL can only be one of them. A full URL built from
+            // APP_URL made employee photos http://192.168.0.39/… on the https site, which the
+            // browser blocks (mixed content). '/storage/…' loads from whatever host the page
+            // is on. Set PUBLIC_STORAGE_URL for a host that needs a full URL.
+            'url' => env('PUBLIC_STORAGE_URL', '/storage'),
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
