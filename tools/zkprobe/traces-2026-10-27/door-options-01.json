@@ -1,0 +1,321 @@
+{
+    "label": "door-options",
+    "host": "46.184.163.106,87.237.196.60,192.168.7.62",
+    "started_at": "2026-10-27T13:32:14+00:00",
+    "question": "Lock/door options per F18; does IT ROOM differ from terminals whose doors work?",
+    "names": [
+        "~Platform",
+        "~LockFunOn",
+        "LockOn",
+        "LockDelay",
+        "OpenDoorDelay",
+        "LockPowerOn",
+        "DoorSensorMode",
+        "DoorSensorType",
+        "~DoorSensorType",
+        "DoorSensorTimeout",
+        "DSensorTimeOut",
+        "DoorCloseTimeZone",
+        "NormalOpenTZ",
+        "~NormalOpenTZ",
+        "LockGroup",
+        "~ExtendFmt",
+        "AntiPassback",
+        "MasterState",
+        "WiegandFmt",
+        "WiegandOutFmt",
+        "~SRBOn",
+        "SRBOn"
+    ],
+    "devices": [
+        {
+            "id": 5,
+            "name": "Good Wheels",
+            "model": "F18/ID",
+            "host": "46.184.163.106",
+            "options": {
+                "~Platform": {
+                    "reply": "ACK_OK",
+                    "value": "~Platform=ZMM210_TFT"
+                },
+                "~LockFunOn": {
+                    "reply": "ACK_OK",
+                    "value": "~LockFunOn=15"
+                },
+                "LockOn": {
+                    "reply": "ACK_OK",
+                    "value": "LockOn=10"
+                },
+                "LockDelay": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "OpenDoorDelay": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "LockPowerOn": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorMode": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorType": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~DoorSensorType": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorTimeout": {
+                    "reply": "ACK_OK",
+                    "value": "DoorSensorTimeout=30"
+                },
+                "DSensorTimeOut": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorCloseTimeZone": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "NormalOpenTZ": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~NormalOpenTZ": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "LockGroup": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~ExtendFmt": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "AntiPassback": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "MasterState": {
+                    "reply": "ACK_OK",
+                    "value": "MasterState=0"
+                },
+                "WiegandFmt": {
+                    "reply": "ACK_OK",
+                    "value": "WiegandFmt=Wiegand26"
+                },
+                "WiegandOutFmt": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~SRBOn": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "SRBOn": {
+                    "reply": "ACK_OK",
+                    "value": "SRBOn=0"
+                }
+            }
+        },
+        {
+            "id": 12,
+            "name": "Camelot",
+            "model": "F18/ID",
+            "host": "87.237.196.60",
+            "options": {
+                "~Platform": {
+                    "reply": "ACK_OK",
+                    "value": "~Platform=ZMM210_TFT"
+                },
+                "~LockFunOn": {
+                    "reply": "ACK_OK",
+                    "value": "~LockFunOn=15"
+                },
+                "LockOn": {
+                    "reply": "ACK_OK",
+                    "value": "LockOn=10"
+                },
+                "LockDelay": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "OpenDoorDelay": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "LockPowerOn": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorMode": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorType": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~DoorSensorType": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorTimeout": {
+                    "reply": "ACK_OK",
+                    "value": "DoorSensorTimeout=30"
+                },
+                "DSensorTimeOut": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorCloseTimeZone": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "NormalOpenTZ": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~NormalOpenTZ": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "LockGroup": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~ExtendFmt": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "AntiPassback": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "MasterState": {
+                    "reply": "ACK_OK",
+                    "value": "MasterState=0"
+                },
+                "WiegandFmt": {
+                    "reply": "ACK_OK",
+                    "value": "WiegandFmt=Wiegand26"
+                },
+                "WiegandOutFmt": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~SRBOn": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "SRBOn": {
+                    "reply": "ACK_OK",
+                    "value": "SRBOn=0"
+                }
+            }
+        },
+        {
+            "id": 15,
+            "name": "IT ROOM",
+            "model": "F18",
+            "host": "192.168.7.62",
+            "options": {
+                "~Platform": {
+                    "reply": "ACK_OK",
+                    "value": "~Platform=ZMM210_TFT"
+                },
+                "~LockFunOn": {
+                    "reply": "ACK_OK",
+                    "value": "~LockFunOn=15"
+                },
+                "LockOn": {
+                    "reply": "ACK_OK",
+                    "value": "LockOn=10"
+                },
+                "LockDelay": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "OpenDoorDelay": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "LockPowerOn": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorMode": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorType": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~DoorSensorType": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorSensorTimeout": {
+                    "reply": "ACK_OK",
+                    "value": "DoorSensorTimeout=30"
+                },
+                "DSensorTimeOut": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "DoorCloseTimeZone": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "NormalOpenTZ": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~NormalOpenTZ": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "LockGroup": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~ExtendFmt": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "AntiPassback": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "MasterState": {
+                    "reply": "ACK_OK",
+                    "value": "MasterState=0"
+                },
+                "WiegandFmt": {
+                    "reply": "ACK_OK",
+                    "value": "WiegandFmt=Wiegand26"
+                },
+                "WiegandOutFmt": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "~SRBOn": {
+                    "reply": "4999 Read error",
+                    "value": ""
+                },
+                "SRBOn": {
+                    "reply": "ACK_OK",
+                    "value": "SRBOn=0"
+                }
+            }
+        }
+    ],
+    "finished_at": "2026-10-27T13:32:16+00:00"
+}

@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-26**
+**Last updated: 2026-10-27**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-035 | 2026-10-27 | IT ROOM | IT ROOM's door does not lock: open to anyone | OPEN |
 | DC-034 | 2026-10-25 to 2026-10-26 | Camelot | Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17 | FIXED |
 | DC-033 | 2026-10-26 | IT ROOM | Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF) | FIXED |
 | DC-032 | 2026-10-25 to 2026-10-26 | Catering | Catering missing from an employee's Access levels; it is a UA300, a model with no write proven | FIXED |
@@ -109,6 +110,38 @@ Template:
 ---
 
 ## Entries
+
+### DC-035 — IT ROOM's door does not lock: open to anyone
+
+- **Date:** 2026-10-27
+- **Devices:** IT ROOM (F18/ID, 192.168.7.62, Ver 6.60 Apr 26 2016, ZMM210_TFT)
+- **Direction:** device → software (the door hardware; what the software did is checked)
+- **Symptom:** Owner: "our IT room does not lock, it is always open, anyone can enter".
+- **What was done:** read-only so far.
+  - Casebook searched for door, lock and relay: nothing before.
+  - The app has never written a door or lock setting: `access.relay` and the other
+    `access.*` capabilities are UNKNOWN/not implemented on every model.
+  - Everything sent to IT ROOM since 2026-10-26 00:00 UTC: clock sets (02:00, 07:00 daily),
+    punch reads, roster reads, and ONE restart from the new Devices → Restart terminal button,
+    command 8985, 2026-10-26 12:58 UTC (15:58 local), back after 8 s. The restart is the only
+    new action, so the first question is whether the door stopped locking before or after it.
+  - Owner: it started after that restart; the lock does not click on a valid punch.
+  - Read-only probe `tools/zkprobe/door-options.php` (CMD_OPTIONS_RRQ 11 per name, queue lock
+    held), IT ROOM with Camelot and Good Wheels as controls, trace
+    `traces-2026-10-27/door-options-01.json`. **All three identical:** `~LockFunOn=15`,
+    `LockOn=10`, `DoorSensorTimeout=30`, `MasterState=0`, `SRBOn=0`, `WiegandFmt=Wiegand26`.
+    The restart did not change a lock or door setting. Names this firmware does not have
+    (LockDelay, DoorSensorMode, NormalOpenTZ, …) answer **4999 "Read error"** on all three:
+    that is how ZMM210 firmware says "no such option" (a ReplyCode finding).
+  - Working theory: the lock is not powered (a fail-safe magnetic lock is free without power,
+    and a valid punch then has nothing to release, so no click). Owner to check the lock's LED
+    and power supply. A second restart is the other cheap test, after the power check.
+- **Root cause:** —
+- **Fix:** —
+- **Verified:** —
+- **Evidence:** device_commands for device 15 since 2026-10-26.
+- **Status:** OPEN — settings ruled out; owner to check the lock's power at the door.
+- **Keywords:** door, lock, relay, unlock, access, door stays open, IT ROOM, restart, magnetic lock
 
 ### DC-034 — Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17
 
