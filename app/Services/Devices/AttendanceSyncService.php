@@ -12,6 +12,7 @@ use App\Models\DeviceCommand;
 use App\Models\EmployeeDeviceMap;
 use App\Services\Attendance\PunchAttribution;
 use App\Support\Timezone;
+use App\Support\Utf8;
 use Illuminate\Support\Carbon;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Exception\DeviceException;
@@ -232,6 +233,30 @@ class AttendanceSyncService
             $device->forceFill([
                 'last_sync_status' => 'error',
                 'last_sync_error' => $e->getMessage(),
+            ])->save();
+
+            throw $e;
+        } catch (\Throwable $e) {
+            /*
+             * Not a device failure — e.g. the database refusing the import — but the run
+             * must close all the same. Before DC-036 (2026-10-29) only DeviceException
+             * did, so a refused MERGE left the run `running` / `importing` for ever and
+             * the operator's screen spinning. The technical message goes to `error`,
+             * scrubbed: it can quote bytes straight off the terminal.
+             */
+            (new SyncProgressRecorder($run))->finish();
+
+            $run->forceFill([
+                'status' => AttendanceSyncRun::STATUS_FAILED,
+                'finished_at' => now(),
+                'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                'message' => 'The read could not be stored. The details are in the log.',
+                'error' => Utf8::scrub(['exception' => $e::class, 'message' => $e->getMessage()]),
+            ])->save();
+
+            $device->forceFill([
+                'last_sync_status' => 'error',
+                'last_sync_error' => 'The read could not be stored. The details are in the log.',
             ])->save();
 
             throw $e;

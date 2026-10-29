@@ -1,0 +1,16 @@
+{
+    "label": "attendance-guard-check",
+    "host": "46.184.163.106",
+    "started_at": "2026-10-29T15:33:18+00:00",
+    "question": "Does \"user id must be all digits\" (2.21.0) reject any record the installed decoder accepts?",
+    "devices": [
+        {
+            "id": 5,
+            "name": "Good Wheels",
+            "model": "F18/ID",
+            "host": "46.184.163.106",
+            "error": "Promoseven\\Biometric\\Exception\\TimeoutException: Device connection timed out or closed unexpectedly."
+        }
+    ],
+    "finished_at": "2026-10-29T15:35:23+00:00"
+}

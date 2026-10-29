@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-27**
+**Last updated: 2026-10-29**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-036 | 2026-10-29 | Camelot | No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever | OPEN |
 | DC-035 | 2026-10-27 | IT ROOM | IT ROOM's door does not lock: open to anyone | OPEN |
 | DC-034 | 2026-10-25 to 2026-10-26 | Camelot | Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17 | FIXED |
 | DC-033 | 2026-10-26 | IT ROOM | Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF) | FIXED |
@@ -110,6 +111,74 @@ Template:
 ---
 
 ## Entries
+
+### DC-036 — No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever
+
+- **Date:** 2026-10-29
+- **Devices:** Camelot (F18/ID, 87.237.196.60)
+- **Direction:** device → software
+- **Symptom:** Owner, 2026-10-29 ~15:20 UTC: "I am trying full read from the camelot
+  device, it took long time, why still importing loading".
+- **What was done:** reads only on hardware; one hand correction of sync-run rows (below).
+  - Command 13547 (`sync_attendance`, `{"full":true}`, 15:17:14 UTC) failed in 0.16 s.
+    `storage/logs/device-2026-10-29.log`: the import's MERGE into `attendance_logs` was
+    refused by SQL Server (`IMSSP … translating string … to UCS-2`) because the decoded
+    rows carried `device_user_id` values such as `L`, `Fl!`, `ERMISSION`, `ption`, `]`
+    with dates 1999-12-31 → 2000-03-15 and 2021-07-03: text from some other buffer read
+    as punches (cf. DC-020). They passed the decoder's misalignment guard (2.14.0),
+    which evidently only catches some shapes. Nothing was stored (the MERGE failed whole).
+  - Then `ProcessDeviceCommand` → `DeviceCommand::markFailed()` could not save the
+    exception, because its message holds those non-UTF-8 bytes
+    (`JsonEncodingException: Malformed UTF-8` on the `error` cast; `laravel.log` line
+    49294). The command was recorded as "job lost", and **sync run 471 was never closed:
+    it stays `running` / `importing`, which is the endless spinner the owner saw.**
+  - Every Camelot sync since 2026-10-23 is the same: runs 373, 380, 417, 424, 438, 466,
+    471 stuck `running` (commands "job lost"); runs 387–459 `partial` with nearly every
+    record undecodable (e.g. run 459, 2026-10-29 02:00: read 184, imported 0, 154
+    undecodable and archived, 30 outside the range). **Last imported Camelot punch:
+    2026-10-22 14:20:23 UTC.** Older stuck `running` runs on Camelot go back to run 217
+    (2026-09-27).
+  - The punches themselves are not lost: Camelot holds them (184 records at 02:00 UTC,
+    growing since its wipe in DC-028), and the undecodable reads are archived raw in
+    `attendance_raw_logs` (rule 11). **Camelot must not be wiped or cleared until they
+    are recovered.**
+  - **2026-10-29 ~15:35 UTC, production data (owner: "yes"):** the 15 Camelot sync runs
+    stuck `running` (217, 222, 240, 272, 277, 289, 295, 335, 373, 380, 417, 424, 438, 466,
+    471; each with its command already `failed`) set to `failed`, `finished_at` = their
+    last update, progress cleared, message "This read crashed and was never closed; closed
+    by hand on 2026-10-29 (casebook DC-036)". Rows saved first:
+    `storage/app/dc-036-stuck-runs-before-2026-10-29.json` (14) and `…-b.json` (471). To
+    undo, write those rows back. No punch, device or command row was touched.
+  - Evidence for the decoder guard: every `device_user_id` stored from a ZKTeco standalone
+    terminal (`attendance_logs`, `employee_device_maps`, `device_roster_entries`) is digits
+    only; the only non-digit values are blanks from the C3 panels (Glass Door, Entrance),
+    which have their own decoder.
+  - **F18 re-confirmation (rule 15), read-only,** `tools/zkprobe/attendance-guard-check.php`
+    (the scheduled sync's own read, installed decoder, then the new rule applied to what it
+    decoded): IT ROOM (F18, 192.168.7.62) 11,624 records, 11,624 decoded, **0 rejected**; On
+    The Road (F22) 8,535 / 0; Catering (UA300) 2,133 / 0. Good Wheels (F18/ID, internet
+    link) failed twice (windowed transfer stalled; then connection timeout): unchecked,
+    not evidence. Trace `traces-2026-10-29/attendance-guard-check-01.json`, `-02.json`.
+- **Root cause:** not established. Two software faults are certain: (1) the decoder's
+  misalignment guard admits non-digit, control-byte user ids; (2) a failure whose message
+  is not UTF-8 cannot be recorded, so its sync run is never closed. The device-side cause
+  (why Camelot's reads come back misaligned again since 2026-10-23; the DC-034 restart was
+  2026-10-26, so it predates that) is open — DC-002 / DC-020 / DC-028 are its cousins.
+- **Fix:** the two software faults: library 2.21.0, `AttendanceCodec::decode40Byte()` refuses a
+  non-digit user id (`AttendanceDecodeGuardTest`); `AttendanceSyncService::sync()` closes the
+  run on any `Throwable`; `DeviceCommand::markFailed()` / `markSucceeded()` and the run's
+  `error` go through `App\Support\Utf8::scrub()` (`SyncFailureClosesRunTest`). The
+  device-side misalignment is not fixed.
+- **Verified:** the software faults by tests; the guard on IT ROOM, the F22 and the UA300
+  (above). Not yet: a Camelot read after the release.
+- **Evidence:** commands 13547, 13039; sync runs 217–471; `storage/logs/device-2026-10-29.log`
+  line 10; `storage/logs/laravel.log` line 49294; traces above.
+- **Status:** OPEN — the software faults are fixed; why Camelot's reads come back
+  misaligned since 2026-10-23, and recovering its punches since 2026-10-22, are next. A
+  read of Camelot needs the owner's word first.
+- **Keywords:** Malformed UTF-8 characters, JsonEncodingException, IMSSP, UCS-2, job
+  processing this command was lost, importing, stuck running, undecodable, misaligned,
+  ERMISSION, full read, sync_attendance
 
 ### DC-035 — IT ROOM's door does not lock: open to anyone
 

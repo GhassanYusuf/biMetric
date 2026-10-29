@@ -168,6 +168,17 @@ undecodable. Camelot had 2,876 such "punches" stored, dated 1999-12-31 to 2030-0
 import a punch dated more than a day ahead of now (`AttendanceRawLog::SKIP_FUTURE`) on
 every family, so it can never become the watermark.
 
+### Nor is a record whose user id is not all digits (2.21.0, 2026-10-29)
+
+Camelot (F18/ID, 87.237.196.60) answered a full read on 2026-10-29 with 40-byte "records"
+whose user ids were `L`, `Fl!`, `ERMISSION`, `ption`, `]` and stamps from 1999-2000: text from
+another buffer. They passed the blank-id guard and broke the import (casebook DC-036).
+`AttendanceCodec` now treats a non-digit user id as undecodable. Every id ever stored from a
+ZKTeco standalone terminal here is digits only (checked 2026-10-29), and the new rule rejected
+nothing on IT ROOM (F18, 11,624 punches), On The Road (F22, 8,535) or Catering (UA300, 2,133)
+that day (`tools/zkprobe/traces-2026-10-29/attendance-guard-check-01.json`). Good Wheels did
+not answer that day and is unchecked. The C3 panels use their own decoder and are unaffected.
+
 ### `card.enroll` — NOT_IMPLEMENTED on the F18 since 2.19.0 (2026-10-26)
 
 **Settled 2026-10-26 on IT Room** (casebook DC-033). The read-only probe this section was

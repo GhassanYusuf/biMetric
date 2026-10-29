@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
+use App\Support\Utf8;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
 
 /**
  * One durable request for a device to do something.
@@ -114,8 +116,8 @@ class DeviceCommand extends Model
         $this->forceFill([
             'status' => self::STATUS_SUCCEEDED,
             'finished_at' => now(),
-            'message' => $message,
-            'raw_response' => $raw,
+            'message' => Utf8::scrub($message),
+            'raw_response' => Utf8::scrub($raw),
             'error' => null,
         ])->save();
     }
@@ -125,6 +127,9 @@ class DeviceCommand extends Model
      *
      * Backoff comes from config so it can be tuned per deployment; a terminal on a
      * flaky wireless bridge wants longer gaps than one on wired LAN.
+     *
+     * Both are scrubbed of invalid UTF-8 first: a message quoting bytes off a terminal
+     * must not stop the failure itself being recorded (DC-036).
      *
      * @param array<string,mixed>|null $error
      */
@@ -136,8 +141,8 @@ class DeviceCommand extends Model
         $this->forceFill([
             'status' => self::STATUS_FAILED,
             'finished_at' => now(),
-            'message' => $message,
-            'error' => $error,
+            'message' => Utf8::scrub($message),
+            'error' => Utf8::scrub($error),
             'available_at' => $exhausted
                 ? null
                 : now()->addSeconds($backoff[min($this->attempts - 1, count($backoff) - 1)] ?? 300),

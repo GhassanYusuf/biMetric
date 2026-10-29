@@ -99,6 +99,11 @@ punch. Before it existed Camelot's misaligned reads stored 1,497 punches dated u
 2030, and the newest of them could have become the watermark — after which every
 incremental read would have skipped real punches below it.
 
+Since library 2.21.0 (2026-10-29) a 40-byte record whose user id is not all digits is
+`undecodable` too, as a blank one has been since 2.14.0 (DC-036, `docs/device-capabilities.md`).
+A run that fails for any reason, the database included, is closed as `failed`; it never stays
+`running` (`docs/error-handling.md`).
+
 `out_of_range` exists for the same reason `undecodable` does: a record the importer
 decided not to store is **counted**, never silently dropped. It is what makes a
 range read's `read 9,579, imported 640` legible instead of alarming.

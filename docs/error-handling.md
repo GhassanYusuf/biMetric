@@ -137,6 +137,29 @@ because the system was working correctly.
 terminal. Domain retries are tracked on the `device_commands` row (`attempts`,
 `max_attempts`, `can_retry`) where an operator can see and re-fire them.
 
+## Every failure closes its sync run, and every failure can be recorded
+
+Casebook DC-036 (2026-10-29). `AttendanceSyncService::sync()` used to close its run only on a
+`DeviceException`. When Camelot's full read decoded junk and SQL Server refused the import
+(`IMSSP … translating string … to UCS-2`), the `QueryException` skipped that, and then
+`DeviceCommand::markFailed()` could not store the exception either: its message quoted the
+junk bytes, which are not UTF-8 (`JsonEncodingException: Malformed UTF-8`). The command read
+"job lost" and the run stayed `running` / `importing` for ever, so the operator's screen
+spun. 15 such runs had piled up on Camelot since 2026-09-27; they were closed by hand
+2026-10-29 (backups in `storage/app/dc-036-stuck-runs-before-2026-10-29*.json`).
+
+Now:
+
+- any `Throwable` closes the run as `failed`; the operator sees "The read could not be
+  stored. The details are in the log.", the technical message goes to `error`;
+- `markFailed()`, `markSucceeded()` and the run's `error` pass through `App\Support\Utf8::scrub()`,
+  which replaces invalid UTF-8 with `?`.
+
+Test: `tests/Feature/Devices/SyncFailureClosesRunTest.php`.
+
+**If a run is ever found `running` with its command already finished**, it was left by a
+failure this missed. Close it as `failed` (save the row first) and open a casebook entry.
+
 ## A killed worker holds its lock
 
 `WithoutOverlapping` locks live in `cache_locks`. Killing a worker mid-command

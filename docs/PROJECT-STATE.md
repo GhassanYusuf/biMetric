@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-10-26**
+**Last updated: 2026-10-29**
 
 ---
 
@@ -78,6 +78,18 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 ---
 
 ## Where we stopped
+
+### ⚠ Camelot has imported NO punch since 2026-10-22 14:20 UTC — DC-036 OPEN (2026-10-29)
+
+Every Camelot read since 2026-10-23 came back misaligned (mostly undecodable) or crashed. The
+crashes left 15 sync runs `running`, so a "Full read" spun for ever; those were closed by hand
+2026-10-29 and the two software faults fixed (library 2.21.0: non-digit user ids are
+undecodable; any failure now closes its run and is recordable). **The misalignment itself is
+not fixed**, so Camelot still imports nothing. Its punches since 2026-10-22 exist only on the
+terminal and as raw archived reads: **do not wipe or clear Camelot.** Next: a read-only
+investigation with IT ROOM as the control, then recovery as in DC-028. Owner's go-ahead
+needed before reading Camelot (asked 2026-10-29). Also: Good Wheels did not answer two reads
+on 2026-10-29 (stall, then timeout).
 
 ### Catering is a UA300 — writes on since library 2.18.0 — 2026-10-26
 
@@ -883,6 +895,26 @@ on the owner's Ubuntu** (virt-manager/KVM). Findings, in the order they cost tim
   `Extensions\BAH` (backup kept in the service folder) → the kit's 2-Check passes:
   "Test read worked (card country: BAH)". **Tell the colleague**: the kit should copy that
   whole folder on a fresh install.
+- **Dead end, 2026-10-27: iGA's unmodified DLLs under Mono on Ubuntu (no VM).** Our own
+  test program (`draft/card-reading/mono-test/`, not committed) calling iGA's public
+  `CardManager` API, with a dllmap `winscard.dll → libpcsclite.so.1` beside their DLLs.
+  Two Windows-isms were bridged without touching their files (a symlink named
+  `iga\Extensions`, because their code joins paths with `\`; folder permissions from the
+  zip). Then **SIGSEGV in their `BH.CIO.Smartcard.PCSC.SCReader.ListReaders`**
+  (`Marshal.PtrToStringAuto`): their PC/SC P/Invoke is written for Windows' winscard
+  (32-bit DWORD, Windows string handling), and Linux pcsc-lite differs. Fixing that means
+  changing iGA's code, which the owner ruled out, so the experiment stopped there. The
+  Windows VM stays the route.
+- **Open, owner + company (2026-10-28): move the VM to the Proxmox server, and licence it.**
+  The owner wants the Windows VM on Proxmox instead of their PC. The current VM's Windows
+  is **not activated**, so there is no key to move; the company does not want to pay.
+  Advised: no modified "lite" builds (e.g. "Phoenix", Tiny11: unlicensed, unknown contents,
+  may break iGA's service); build and test on the free **Windows Server 2025 Evaluation**
+  (legal for testing only, 180 days; iGA only states Windows 10/11, so Server is untested),
+  and get one real licence (IT's spare, or one bought) before daily use. **Decided
+  2026-10-28:** Windows 11 Pro (one retail licence, about 75 BHD, is the legal route), and
+  the USB reader plugs into the Proxmox host and is passed through to the VM. The owner
+  does the Proxmox clicks; the Proxmox host is not reachable from the app's LXC container.
 
 **PC side DONE 2026-10-27 ~11:50 UTC.** From the owner's Ubuntu, `POST
 http://localhost:5050/api/operation/ReadCard` → HTTP 200, CardCountry BAH. The chain:
