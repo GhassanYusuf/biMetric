@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-036 | 2026-10-29 | Camelot | No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever | OPEN |
+| DC-036 | 2026-10-29 | Camelot | No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever | WORKAROUND |
 | DC-035 | 2026-10-27 | IT ROOM | IT ROOM's door does not lock: open to anyone | OPEN |
 | DC-034 | 2026-10-25 to 2026-10-26 | Camelot | Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17 | FIXED |
 | DC-033 | 2026-10-26 | IT ROOM | Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF) | FIXED |
@@ -159,7 +159,19 @@ Template:
     The Road (F22) 8,535 / 0; Catering (UA300) 2,133 / 0. Good Wheels (F18/ID, internet
     link) failed twice (windowed transfer stalled; then connection timeout): unchecked,
     not evidence. Trace `traces-2026-10-29/attendance-guard-check-01.json`, `-02.json`.
-- **Root cause:** not established. Two software faults are certain: (1) the decoder's
+  - **Owner's diagnosis, proven 2026-10-29 (owner ran both from the app):** "Camelot needs
+    to be restarted before any read". Command 13573, full read 15:44 UTC: 199 read, **199
+    undecodable** (2.21.0 archived them; no crash). Command 13585, restart 15:53 UTC, back
+    after ~8 s. Command 13586, full read 15:54 UTC: 199 read, **0 undecodable, 171
+    imported, 28 already known** (sync runs 472, 474). Same terminal, same records, ten
+    minutes apart: the restart is the only difference. Camelot now has punches every day
+    2026-10-22 → 2026-10-29 (newest 15:12 UTC), all attributed, no non-digit user id.
+  - Fits the history: the DC-034 restart (2026-10-26 ~11:45) was followed by no read until
+    2026-10-27 02:00, by which time reads were misaligned again (run 431: 115 of 138
+    undecodable). So Camelot goes bad again within hours of a restart; how many is unknown.
+- **Root cause:** a state inside Camelot (F18/ID, Ver 6.60 Apr 26 2016, over the internet)
+  that makes its bulk reads come back misaligned, cleared by a restart and returning
+  within hours. Why it builds up is not known. Two software faults made it worse: (1) the decoder's
   misalignment guard admits non-digit, control-byte user ids; (2) a failure whose message
   is not UTF-8 cannot be recorded, so its sync run is never closed. The device-side cause
   (why Camelot's reads come back misaligned again since 2026-10-23; the DC-034 restart was
@@ -170,12 +182,15 @@ Template:
   `error` go through `App\Support\Utf8::scrub()` (`SyncFailureClosesRunTest`). The
   device-side misalignment is not fixed.
 - **Verified:** the software faults by tests; the guard on IT ROOM, the F22 and the UA300
-  (above). Not yet: a Camelot read after the release.
+  (above); on Camelot itself, a misaligned read after the release archived 199 records
+  without crashing (command 13573). The workaround on Camelot: restart then read (13585,
+  13586).
 - **Evidence:** commands 13547, 13039; sync runs 217–471; `storage/logs/device-2026-10-29.log`
   line 10; `storage/logs/laravel.log` line 49294; traces above.
-- **Status:** OPEN — the software faults are fixed; why Camelot's reads come back
-  misaligned since 2026-10-23, and recovering its punches since 2026-10-22, are next. A
-  read of Camelot needs the owner's word first.
+- **Status:** WORKAROUND — restart Camelot, then read. Open, owner to decide: should the
+  system restart Camelot automatically before its scheduled reads (a per-device setting,
+  not per model, rule 15), and how soon after a restart its reads go bad (the 02:00 and
+  07:00 UTC reads of 2026-10-30 will show it without a restart).
 - **Keywords:** Malformed UTF-8 characters, JsonEncodingException, IMSSP, UCS-2, job
   processing this command was lost, importing, stuck running, undecodable, misaligned,
   ERMISSION, full read, sync_attendance

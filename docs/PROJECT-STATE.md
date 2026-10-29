@@ -79,17 +79,19 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 
 ## Where we stopped
 
-### ⚠ Camelot has imported NO punch since 2026-10-22 14:20 UTC — DC-036 OPEN (2026-10-29)
+### Camelot reads only straight after a restart — DC-036 WORKAROUND (2026-10-29)
 
-Every Camelot read since 2026-10-23 came back misaligned (mostly undecodable) or crashed. The
-crashes left 15 sync runs `running`, so a "Full read" spun for ever; those were closed by hand
-2026-10-29 and the two software faults fixed (library 2.21.0: non-digit user ids are
-undecodable; any failure now closes its run and is recordable). **The misalignment itself is
-not fixed**, so Camelot still imports nothing. Its punches since 2026-10-22 exist only on the
-terminal and as raw archived reads: **do not wipe or clear Camelot.** Next: a read-only
-investigation with IT ROOM as the control, then recovery as in DC-028. Owner's go-ahead
-needed before reading Camelot (asked 2026-10-29). Also: Good Wheels did not answer two reads
-on 2026-10-29 (stall, then timeout).
+Camelot's reads came back misaligned from 2026-10-23, so nothing imported, and the crashes
+left 15 sync runs `running` (a "Full read" spun for ever). Fixed in software 2026-10-29:
+library 2.21.0 (non-digit user ids are undecodable) and any failure now closes its run. The
+owner's diagnosis, proven the same day: **restart Camelot, then read**. 15:44 UTC 199 read /
+199 undecodable; restart; 15:54 UTC 199 read / 171 imported / 0 undecodable. Camelot's
+punches 2026-10-22 → 2026-10-29 are now in the system. It goes bad again within hours
+(after the 2026-10-26 restart the next morning's read was misaligned).
+- **Owner to decide:** should the system restart Camelot automatically before each
+  scheduled read? (A per-device setting, not per model.) The 2026-10-30 02:00/07:00 UTC
+  reads, without a restart, will show how fast it degrades.
+- Good Wheels did not answer two reads on 2026-10-29 (stall, then timeout).
 
 ### Catering is a UA300 — writes on since library 2.18.0 — 2026-10-26
 
