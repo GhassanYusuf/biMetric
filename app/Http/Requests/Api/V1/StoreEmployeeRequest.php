@@ -17,6 +17,8 @@ use Illuminate\Validation\Rule;
  */
 class StoreEmployeeRequest extends BaseRequest
 {
+    use CompanyDepartmentFields;
+
     protected function prepareForValidation(): void
     {
         if (! $this->filled('employee_code')) {
@@ -26,7 +28,8 @@ class StoreEmployeeRequest extends BaseRequest
 
     public function rules(): array
     {
-        return parent::rules() + self::deviceRules();
+        // company_id / department_id as two fields replace the SPA's single department_id.
+        return $this->companyDepartmentRules() + parent::rules() + self::deviceRules();
     }
 
     /** @return array<string,mixed> */
@@ -46,6 +49,8 @@ class StoreEmployeeRequest extends BaseRequest
     /** Fields of the employee, without the device instructions. */
     public function employeeData(): array
     {
-        return collect($this->safe()->except(['photo', 'access_level_ids', 'push_to_device_ids']))->all();
+        return $this->foldCompanyDepartment(
+            collect($this->safe()->except(['photo', 'access_level_ids', 'push_to_device_ids']))->all(),
+        );
     }
 }

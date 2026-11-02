@@ -445,6 +445,20 @@ enrollment over the API is next. The old generated collection (`/root/ZKT-attend
    (`test_an_employee_url_takes_the_personnel_id_never_the_row_id`), `PostmanCollectionTest`.
 2. Every id in a response is a number (some come back as text: `"employee_id": "1829"`).
 3. Accept `"Male"` / `"MALE"` as well as `"male"` for `gender`.
+4. **Company and department, owner 2026-11-02: option 1 DONE, option 2 planned.** Owner:
+   the company "is represented as department_id in the backend and api and db, can we change
+   that to be company, department?". Option 1 (API + a view, storage unchanged, low risk):
+   v1 takes and returns `company_id` and `department_id` as separate fields
+   (`App\Http\Requests\Api\V1\CompanyDepartmentFields`, `App\Http\Resources\V1\EmployeeResource`),
+   `/departments` says `is_company` / `company_id`, and the SQL view `v_employee_company`
+   (migration `2026_11_02_100000`). **The view's migration is not yet run on production**
+   (the run was refused from the assistant's session; the owner runs
+   `php artisan migrate --force`). Option 2, a real `companies` table with
+   `employees.company_id`, is the owner's next step: about 30 backend files, 36 website
+   files, 10 tests, and a live data migration (11 companies, every employee re-linked), with a
+   backup and a before/after check of every employee's company. Plan it before building.
+   The tenant "Default Company" is a separate, higher level and does not conflict; renaming
+   it to the group's name is suggested so "company" means one thing.
 
 Decisions and the reasoning:
 

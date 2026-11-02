@@ -112,7 +112,8 @@ $employeeFields = fields('Body fields', [
     ['email', 'email', false, ''],
     ['mobile_phone', 'string ≤32', false, 'Digits, spaces, `()` and `-`, optional leading `+`. The website stores `"+973 33445566"`.'],
     ['home_phone', 'string ≤32', false, 'As mobile_phone.'],
-    ['department_id', 'integer', false, 'A company or a department from `GET /departments` (e.g. 4 = PROMOSEVEN). Must exist.'],
+    ['company_id', 'integer', false, 'The company, from `GET /departments` where `is_company` is true (e.g. 4 = PROMOSEVEN, 19 = Camelot).'],
+    ['department_id', 'integer', false, 'A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company.'],
     ['job_title', 'string ≤255', false, ''],
     ['hired_date', 'date', false, ''],
     ['employment_type', '`full_time` \| `part_time`', false, 'Default `full_time`. Do not send `""`.'],
@@ -132,7 +133,9 @@ $employeeFields = fields('Body fields', [
     ['push_to_mapped_devices', 'boolean', false, 'Update only: re-push to every terminal they are on now.'],
 ]).'
 
-Not accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `department_id`).';
+Not accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `company_id` / `department_id`).
+
+**In answers:** `company_id` + `company` {id, name} is the company; `department_id` + `department_name` the department, or `null` when the employee only has a company.';
 
 $employeeBody = [
     'name' => 'API',
@@ -143,7 +146,8 @@ $employeeBody = [
     'birthday' => '1990-01-15',
     'email' => 'api.test@example.com',
     'mobile_phone' => '+973 17000000',
-    'department_id' => 4,
+    'company_id' => 4,
+    'department_id' => 12,
     'job_title' => 'Test',
     'hired_date' => '2026-11-01',
     'employment_type' => 'full_time',
@@ -182,7 +186,8 @@ $items = [
                 ['search', 'string', false, 'Name or code contains.'],
                 ['employee_code', 'string', false, 'Exact.'],
                 ['external_id', 'string', false, 'Exact.'],
-                ['department_id', 'integer', false, ''],
+                ['company_id', 'integer', false, 'Everyone in the company, its departments included.'],
+                ['department_id', 'integer', false, 'Everyone in the department.'],
                 ['is_active', 'boolean', false, ''],
                 ['resigned', '`1` \| `0`', false, '`1` only resigned, `0` none resigned.'],
                 ['employment_type', '`full_time` \| `part_time`', false, ''],
@@ -194,7 +199,7 @@ $items = [
             null, [
                 'per_page' => ['50', true, '≤ 200'],
                 'search' => ['', false, 'name or code'],
-                'department_id' => ['{{department_id}}', false, ''],
+                'company_id' => ['{{company_id}}', false, ''],
                 'is_active' => ['1', false, ''],
                 'updated_since' => ['2026-11-01T00:00:00Z', false, 'UTC'],
             ]),
@@ -209,7 +214,7 @@ $items = [
             "One employee by **your** id. `404` if none."),
         req('PUT api/v1/employees/by-external-id/{externalId}', 'Create or update by your id (upsert)', '/api/v1/employees/by-external-id/{{external_id}}',
             "**Safe to run twice.** Creates the employee if no one has this `external_id`, otherwise updates them. The URL's id wins over any `external_id` in the body.\n\n**Answer:** `201` + `meta.created: true`, or `200` + `meta.created: false`.".$employeeFields,
-            ['name' => 'API', 'last_name' => 'Test', 'email' => 'api.test@example.com', 'department_id' => 4, 'job_title' => 'Test'],
+            ['name' => 'API', 'last_name' => 'Test', 'email' => 'api.test@example.com', 'company_id' => 4, 'job_title' => 'Test'],
             [], saves(['employee_code' => 'j.data.employee_code'])),
         req('PATCH api/v1/employees/{employee}', 'Update employee', '/api/v1/employees/{{employee_code}}',
             "**Partial**: send only the fields that change. `PUT` behaves the same.\n\nTo update the terminals they are on in the same call, add `\"push_to_mapped_devices\": true`.".$employeeFields,
@@ -332,9 +337,9 @@ $items = [
             ]), null, ['from' => ['2026-10-01', true, ''], 'to' => ['2026-10-31', true, ''], 'department_id' => ['{{department_id}}', false, '']]),
     ]),
 
-    folder('6. Departments and access levels', "A **company** is a department with no `parent_id`; its departments name it as their parent (e.g. 4 = PROMOSEVEN, 12 = PROMOSEVEN › Information Technology).", [
+    folder('6. Departments and access levels', "Companies and departments share this list: `is_company: true` is a company, and every row says its `company_id` (e.g. 4 = PROMOSEVEN, 12 = PROMOSEVEN › Information Technology, `company_id` 4).", [
         req('GET api/v1/departments', 'List departments and companies', '/api/v1/departments', 'Every company and department with `parent_id` and employee counts.'),
-        req('GET api/v1/departments/{department}', 'Get department', '/api/v1/departments/{{department_id}}', 'One department.'),
+        req('GET api/v1/departments/{department}', 'Get department', '/api/v1/departments/{{department_id}}', 'One department or company.'),
         req('POST api/v1/departments', 'Create department', '/api/v1/departments',
             "Creates a company (no `parent_id`) or a department under one. Its id is saved to `{{new_department_id}}`.".fields('Body fields', [
                 ['name', 'string', true, 'Unique among its siblings.'],
@@ -477,7 +482,8 @@ $collection = [
         'new_external_id' => ['API-TEST-0002', 'For Create employee: an external_id nobody has yet.'],
         'device_id' => ['15', 'Terminal: 15 = IT ROOM (F18).'],
         'finger_slot' => ['6', '0–9; 6 = right index.'],
-        'department_id' => ['4', '4 = PROMOSEVEN.'],
+        'company_id' => ['4', '4 = PROMOSEVEN, 19 = Camelot.'],
+        'department_id' => ['12', '12 = PROMOSEVEN › Information Technology.'],
         'new_department_id' => ['', 'Set by Create department.'],
         'command_id' => ['', 'Set by any request that queues a command.'],
         'session_id' => ['', 'Set by Start fingerprint/card enrollment.'],

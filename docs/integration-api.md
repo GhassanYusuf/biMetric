@@ -122,9 +122,23 @@ Fields are the web form's (`name`, `employee_code`, `email`, `department_id`, `j
   The web form stores `"+973 33445566"`: the calling code, a space, the number.
 - **`country`** — free text; the web form stores the English country name (`"Bahrain"`).
 
-Read-only additions to every employee: **`company`** `{id, name}` — the top of the
-department's branch (the department itself when `department_id` is a company) — beside
-`department_id` / `department_name`. The free-text `department` follows `department_id`
+**Company and department are two fields** (2026-11-02, option 1 of 2):
+
+- **`company_id`** — the company (a `/departments` row with `is_company: true`, e.g. 4 =
+  PROMOSEVEN). In answers always the company, with `company` `{id, name}`.
+- **`department_id`** — a department, never a company (e.g. 12 = PROMOSEVEN › Information
+  Technology). In answers `null` when the employee only has a company; `department_name`
+  likewise.
+- Sent together, the department must belong to the company, or `422` ("Information
+  Technology belongs to PROMOSEVEN, not Camelot."). `department_id` alone sets the company
+  too; `company_id` alone keeps the department if it is in that company, else drops it;
+  `department_id: null` keeps the company. A company sent as `department_id` is refused.
+- `GET /employees?company_id=` includes everyone in that company's departments.
+
+Stored as before: `employees.department_id` holds the department, or the company when there
+is none. The website still reads that single column; only the API splits it. For SQL, the
+view **`v_employee_company`** (`company`, `department`, `company_id`, `department_id` per
+employee) walks the tree. Option 2 (a real `companies` table) is planned. The free-text `department` follows `department_id`
 when that changes, unless the same request sets `department` itself.
 
 Device writes the call asked for are reported in `meta`:
@@ -343,8 +357,8 @@ network and the customer's HR system is usually on it.
   symptom.
 - **Departments** are `/departments` (read `employees:read`, write `employees:write`).
   Create them before referencing `department_id`.
-  A company is a department with no `parent_id`; its departments name it as their
-  parent. `DELETE` answers 409 while the node still has employees or departments.
+  A company is a department with no `parent_id` (`is_company: true`); its departments name it
+  as their parent, and every row carries its `company_id`. `DELETE` answers 409 while the node still has employees or departments.
   Renaming one updates the free-text `department` of its employees that still held
   the old name.
 

@@ -6,7 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreEmployeeRequest;
 use App\Http\Requests\Api\V1\UpdateEmployeeRequest;
 use App\Http\Resources\DeviceCommandResource;
-use App\Http\Resources\EmployeeResource;
+use App\Http\Resources\V1\EmployeeResource;
+use App\Models\Department;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\Employee;
@@ -43,6 +44,8 @@ class EmployeeController extends Controller
         $request->validate([
             'updated_since' => ['nullable', 'date'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
+            'company_id' => ['nullable', 'integer'],
+            'department_id' => ['nullable', 'integer'],
         ]);
 
         $employees = Employee::query()
@@ -56,7 +59,9 @@ class EmployeeController extends Controller
             })
             ->when($request->filled('external_id'), fn ($q) => $q->where('external_id', $request->string('external_id')))
             ->when($request->filled('employee_code'), fn ($q) => $q->where('employee_code', $request->string('employee_code')))
-            ->when($request->filled('department_id'), fn ($q) => $q->where('department_id', $request->integer('department_id')))
+            // A company includes everyone in its departments (owner, 2026-11-02, option 1).
+            ->when($request->filled('company_id'), fn ($q) => $q->whereIn('department_id', Department::subtreeIds($request->integer('company_id'))))
+            ->when($request->filled('department_id'), fn ($q) => $q->whereIn('department_id', Department::subtreeIds($request->integer('department_id'))))
             ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
             ->when($request->filled('resigned') && Employee::hasEmploymentColumns(), fn ($q) => $request->boolean('resigned')
                 ? $q->whereNotNull('resigned_at')

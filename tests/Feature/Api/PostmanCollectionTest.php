@@ -58,6 +58,8 @@ class PostmanCollectionTest extends TestCase
         // The ids the collection's defaults name, so its bodies meet the same rows as production.
         $company = Department::create(['name' => 'PROMOSEVEN']);
         $company->forceFill(['id' => 4])->save();
+        $it = Department::create(['name' => 'Information Technology', 'parent_id' => 4]);
+        $it->forceFill(['id' => 12])->save();
         $test = Employee::create(['name' => 'Test', 'employee_code' => '90110121', 'external_id' => '1', 'is_active' => true]);
         $device = Device::create(['name' => 'IT ROOM', 'ip_address' => '192.0.2.62', 'port' => 4370, 'protocol' => 'zkteco']);
         Tenancy::clear();

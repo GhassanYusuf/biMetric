@@ -15,6 +15,12 @@ class DepartmentResource extends JsonResource
         return [
             'id' => $this->id,
             'parent_id' => $this->parent_id,
+            /*
+             * A company is a department with no parent (2026-10-12). Said outright so an
+             * integration need not know that rule (owner, 2026-11-02, option 1).
+             */
+            'is_company' => $this->parent_id === null,
+            'company_id' => $this->parent_id === null ? (int) $this->id : (int) $this->resource->company()->id,
             'name' => $this->name,
             'code' => $this->code,
             'manager_id' => $this->manager_id,
