@@ -1,6 +1,6 @@
 # Plan: a real `companies` table (option 2)
 
-**Status: PLANNED, not started.** Written 2026-11-02 at the owner's request ("let's plan for
+**Status: IN PROGRESS since 2026-11-02** on branch `companies`, in the worktree `/var/www/zkt-companies` (owner: "yes you can start"; decisions 1-3 accepted). Written 2026-11-02 at the owner's request ("let's plan for
 option 2 directly"). Option 1 (the API and the `v_employee_company` view, storage unchanged) is
 done and live; see `docs/PROJECT-STATE.md`, API change 4.
 
@@ -130,8 +130,7 @@ since there is no browser automation here.
 - **The app logs in to SQL Server as `sa`** (sysadmin). It should have its own login with
   rights on `NewAttendance` only. Separate from this plan; on the housekeeping list.
 - **"P7H" exists twice:** a company (id 5, 2 employees) and a department "p7h" under
-  PROMOSEVEN (id 21, 5 employees). Owner to say whether they are the same; if so, merge before
-  or during the migration.
+  PROMOSEVEN (id 21, 5 employees). **Owner, 2026-11-02: they are different; both stay.**
 
 ## Not part of this
 
