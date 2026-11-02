@@ -137,6 +137,12 @@ Template:
     as Camelot, over the internet from the same /24. So not an unknown firmware.
   - `sync_enrollment` again (19375), minutes later, same session conditions: decoded, "157
     mapped to employees". 255 fingers for 149 people stored in the system; 8 have none.
+  - **Production data, owner's request ("transfer the employees from the terminal JJs to the
+    company JJ's"), 2026-11-02 ~14:20 UTC:** the 157 employees linked to JJs (all created by
+    that import, none with a company, none on another terminal) set to company 22 "JJ'S", no
+    department, through the model (audited; the free-text `department` became "JJ'S"). Saved
+    first: `storage/app/jjs-move-to-company-22-before-2026-11-02.json`; to undo, set
+    `company_id`/`department_id`/`department` back from it. Nothing on the terminal changed.
 - **Root cause:** the fingerprint table came back misaligned once over the internet link,
   the transfer problem Camelot shows (DC-020, DC-036), and decoded on the next read. Not
   established why that read and not the next; Camelot's version comes back after hours and
