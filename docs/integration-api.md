@@ -32,6 +32,12 @@ curl -H "Authorization: Bearer $TOKEN" 'https://bridge.example/api/v1/attendance
 Tokens can also be minted over HTTP by a **signed-in** user (`POST /api/v1/tokens`), but
 never by another integration token — a scoped token cannot mint itself a wider one.
 
+**Postman:** `docs/postman/ZKT-Integration-API-v1.postman_collection.json` holds every
+`/api/v1` route with a working example body and its fields documented. Regenerate it with
+`php tools/postman/integration-collection.php` after changing a route: the script refuses to
+write a collection that misses a live route, and `PostmanCollectionTest` sends its example
+bodies to the API so they cannot drift into ones that fail validation (2026-11-02).
+
 ## 2. Conventions
 
 **Envelope** — identical to the rest of the app:
@@ -367,7 +373,7 @@ network and the customer's HR system is usually on it.
 
 ## 9. Not done, deliberately
 
-- **No OpenAPI file.** The tables above are the contract for now.
+- **No OpenAPI file.** The tables above are the contract; the Postman collection (§1) is the runnable form.
 - **No UI** for tokens or webhooks. They are API/CLI only.
 - **No per-token IP allow-list**, no token-scoped device allow-list (a token reaches every
   terminal its user may).

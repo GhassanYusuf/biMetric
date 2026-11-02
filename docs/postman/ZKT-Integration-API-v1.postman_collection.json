@@ -1,0 +1,2276 @@
+{
+    "info": {
+        "name": "ZKT Integration API v1",
+        "description": "The Integration API (`/api/v1`) for other software: HR, payroll, access control. Contract: `docs/integration-api.md` in the repository.\n\nGenerated 2026-11-02 by `tools/postman/integration-collection.php`. Every live `/api/v1` route is here; the generator refuses to run if one is missing.\n\n**Setup**\n1. Collection → Variables: set `base_url`, and `email` / `password` for signing in (or paste a token into `token`).\n2. Run **0. Start here → Sign in**: the token is saved for every other request.\n3. Ids are variables (`employee_id`, `device_id`, …). Requests that create something save its id for the next request.\n\n**Conventions**\n- Envelope: `{success, message, data, meta, errors}`. `401` no/bad token, `403` missing ability or permission, `404` not found, `422` validation (reason per field in `errors`), `429` rate limit (120/min per token).\n- Times are UTC ISO-8601.\n- Anything that touches a terminal answers `202` with a command or session: **queued, not done**. Poll it.\n- Writes accept an optional `Idempotency-Key` header (disabled by default in each request).\n\n⚠ **This is a live system.** Requests marked *Talks to a real terminal* write to real hardware. Default ids point at the test employee (1829, Personnel ID 90110121) and IT ROOM (15).",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "https://zkt.takeone.bh",
+            "description": "No trailing slash."
+        },
+        {
+            "key": "email",
+            "value": "",
+            "description": "For Sign in. Kept in your Postman only."
+        },
+        {
+            "key": "password",
+            "value": "",
+            "description": "For Sign in. Kept in your Postman only."
+        },
+        {
+            "key": "token",
+            "value": "",
+            "description": "Set by Sign in, or paste an integration token."
+        },
+        {
+            "key": "employee_id",
+            "value": "1829",
+            "description": "This system's id (the test employee)."
+        },
+        {
+            "key": "employee_code",
+            "value": "90110121",
+            "description": "Personnel ID (the test employee)."
+        },
+        {
+            "key": "external_id",
+            "value": "1",
+            "description": "Your id for the person (the test employee has \"1\")."
+        },
+        {
+            "key": "new_employee_code",
+            "value": "90110122",
+            "description": "For Create employee: a Personnel ID nobody has yet."
+        },
+        {
+            "key": "new_external_id",
+            "value": "API-TEST-0002",
+            "description": "For Create employee: an external_id nobody has yet."
+        },
+        {
+            "key": "device_id",
+            "value": "15",
+            "description": "Terminal: 15 = IT ROOM (F18)."
+        },
+        {
+            "key": "finger_slot",
+            "value": "6",
+            "description": "0–9; 6 = right index."
+        },
+        {
+            "key": "department_id",
+            "value": "4",
+            "description": "4 = PROMOSEVEN."
+        },
+        {
+            "key": "new_department_id",
+            "value": "",
+            "description": "Set by Create department."
+        },
+        {
+            "key": "command_id",
+            "value": "",
+            "description": "Set by any request that queues a command."
+        },
+        {
+            "key": "session_id",
+            "value": "",
+            "description": "Set by Start fingerprint/card enrollment."
+        },
+        {
+            "key": "run_id",
+            "value": "",
+            "description": "A sync run id."
+        },
+        {
+            "key": "token_id",
+            "value": "",
+            "description": "Set by Create token."
+        },
+        {
+            "key": "webhook_id",
+            "value": "",
+            "description": "Set by Create webhook."
+        },
+        {
+            "key": "delivery_id",
+            "value": "",
+            "description": "Set by List deliveries."
+        }
+    ],
+    "item": [
+        {
+            "name": "0. Start here",
+            "description": "Sign in, then check the token. Every other request sends `{{token}}` as a Bearer token.\n\nFor software that runs unattended, do not use a person's sign-in: create a scoped token for a service user on the server (`php artisan integration:token <email> <name> --ability=…`) and paste it into the `token` variable.",
+            "item": [
+                {
+                    "name": "Sign in (saves {{token}})",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/auth/login",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "login"
+                            ],
+                            "query": []
+                        },
+                        "description": "Signs in a website user and stores the token in `{{token}}`. A sign-in token carries every ability (`*`) but is still limited by that user's permissions.\n\nSet the collection variables `email` and `password` first (Collection → Variables). They stay on your PC.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `email` | email | yes |  |\n| `password` | string | yes |  |\n| `device_name` | string | no | A label for this token, e.g. `postman`. |\n",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"{{email}}\",\n    \"password\": \"{{password}}\",\n    \"device_name\": \"postman\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "const t = j && j.data && (j.data.token || (j.data.data && j.data.data.token));",
+                                    "if (t) { pm.collectionVariables.set('token', t); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Ping: check the token",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/ping",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "ping"
+                            ],
+                            "query": []
+                        },
+                        "description": "Answers who you are, which company (tenant) and the token's abilities. Use it to check a token works.\n\n**Answer:** `200`. `401` = no or bad token."
+                    }
+                },
+                {
+                    "name": "List token abilities",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/token-abilities",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "token-abilities"
+                            ],
+                            "query": []
+                        },
+                        "description": "The abilities a token can carry and what each grants:\n\n| Ability | Grants |\n|---|---|\n| `employees:read` | employees, departments, access levels |\n| `employees:write` | create / change / delete employees, departments, photos |\n| `devices:read` | terminals, commands, sync runs, enrollment sessions |\n| `devices:write` | push/remove people, enroll, trigger syncs, retry/cancel commands |\n| `attendance:read` | punches, summaries, reports |\n| `webhooks:manage` | webhooks (the user also needs `settings.manage`) |"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "1. Employees",
+            "description": "Create, read, change and delete employees.\n\nThree different numbers: `id` (this system's row id, used in URLs), `employee_code` (Personnel ID, also the user ID on terminals) and `external_id` (yours).\n\nEvery response uses the envelope `{success, message, data, meta, errors}`. `422` = validation, with the reason per field in `errors`.",
+            "item": [
+                {
+                    "name": "List employees",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees?per_page=50",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees"
+                            ],
+                            "query": [
+                                {
+                                    "key": "per_page",
+                                    "value": "50",
+                                    "disabled": false,
+                                    "description": "≤ 200"
+                                },
+                                {
+                                    "key": "search",
+                                    "value": "",
+                                    "disabled": true,
+                                    "description": "name or code"
+                                },
+                                {
+                                    "key": "department_id",
+                                    "value": "{{department_id}}",
+                                    "disabled": true,
+                                    "description": ""
+                                },
+                                {
+                                    "key": "is_active",
+                                    "value": "1",
+                                    "disabled": true,
+                                    "description": ""
+                                },
+                                {
+                                    "key": "updated_since",
+                                    "value": "2026-11-01T00:00:00Z",
+                                    "disabled": true,
+                                    "description": "UTC"
+                                }
+                            ]
+                        },
+                        "description": "Paged list, ordered by `id`.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `search` | string | no | Name or code contains. |\n| `employee_code` | string | no | Exact. |\n| `external_id` | string | no | Exact. |\n| `department_id` | integer | no |  |\n| `is_active` | boolean | no |  |\n| `resigned` | `1` \\| `0` | no | `1` only resigned, `0` none resigned. |\n| `employment_type` | `full_time` \\| `part_time` | no |  |\n| `device_id` | integer | no | Only people on this terminal. |\n| `updated_since` | UTC ISO-8601 | no | Changed since; for keeping a copy in sync. |\n| `per_page` | integer ≤200 | no |  |\n| `page` | integer | no |  |\n"
+                    }
+                },
+                {
+                    "name": "Create employee",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees"
+                            ],
+                            "query": []
+                        },
+                        "description": "Creates one employee. **Answer:** `201` with the employee; its `id` is saved to `{{employee_id}}`.\n\nThe example body passes validation as it is. It uses `{{new_employee_code}}` and `{{new_external_id}}`; change them before a second run, since both must be unique. Afterwards `{{employee_id}}` and `{{employee_code}}` point at the new employee.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Lowercase. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `department_id` | integer | no | A company or a department from `GET /departments` (e.g. 4 = PROMOSEVEN). Must exist. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `department_id`).",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"API\",\n    \"last_name\": \"Test\",\n    \"employee_code\": \"{{new_employee_code}}\",\n    \"external_id\": \"{{new_external_id}}\",\n    \"gender\": \"male\",\n    \"birthday\": \"1990-01-15\",\n    \"email\": \"api.test@example.com\",\n    \"mobile_phone\": \"+973 17000000\",\n    \"department_id\": 4,\n    \"job_title\": \"Test\",\n    \"hired_date\": \"2026-11-01\",\n    \"employment_type\": \"full_time\",\n    \"country\": \"Bahrain\",\n    \"access_level_ids\": [],\n    \"valid_period_enabled\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('employee_id', String(j.data.id)); }",
+                                    "if (j && j.data && j.data.employee_code !== undefined && j.data.employee_code !== null) { pm.collectionVariables.set('employee_code', String(j.data.employee_code)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get employee by id",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One employee by this system's `id`.\n\n`fingerprint_count: null` means **never read from a terminal**, not zero."
+                    }
+                },
+                {
+                    "name": "Get employee by Personnel ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/by-code/{{employee_code}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "by-code",
+                                "{{employee_code}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One employee by `employee_code`, matched exactly as text (`0099902` ≠ `99902`). `404` if no employee in your company has it."
+                    }
+                },
+                {
+                    "name": "Get employee by your id (external_id)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/by-external-id/{{external_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "by-external-id",
+                                "{{external_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One employee by **your** id. `404` if none."
+                    }
+                },
+                {
+                    "name": "Create or update by your id (upsert)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/by-external-id/{{external_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "by-external-id",
+                                "{{external_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "**Safe to run twice.** Creates the employee if no one has this `external_id`, otherwise updates them. The URL's id wins over any `external_id` in the body.\n\n**Answer:** `201` + `meta.created: true`, or `200` + `meta.created: false`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Lowercase. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `department_id` | integer | no | A company or a department from `GET /departments` (e.g. 4 = PROMOSEVEN). Must exist. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `department_id`).",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"API\",\n    \"last_name\": \"Test\",\n    \"email\": \"api.test@example.com\",\n    \"department_id\": 4,\n    \"job_title\": \"Test\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('employee_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Update employee",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "**Partial**: send only the fields that change. `PUT` behaves the same.\n\nTo update the terminals they are on in the same call, add `\"push_to_mapped_devices\": true`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Lowercase. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `department_id` | integer | no | A company or a department from `GET /departments` (e.g. 4 = PROMOSEVEN). Must exist. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `department_id`).",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"job_title\": \"Senior Test\",\n    \"mobile_phone\": \"+973 17000001\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Next free Personnel ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/next-code",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "next-code"
+                            ],
+                            "query": []
+                        },
+                        "description": "The `employee_code` a create without one would get."
+                    }
+                },
+                {
+                    "name": "Upload photo",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/photo",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "photo"
+                            ],
+                            "query": []
+                        },
+                        "description": "**Multipart form**, not JSON: Body → form-data → key `photo` (type File), pick an image. JPEG/PNG/GIF/WebP, at most 4 MB.",
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "photo",
+                                    "type": "file",
+                                    "src": [],
+                                    "description": "JPEG/PNG/GIF/WebP image, at most 4 MB."
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Remove photo",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/photo",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "photo"
+                            ],
+                            "query": []
+                        },
+                        "description": "Removes the photo. The employee is kept."
+                    }
+                },
+                {
+                    "name": "Attendance summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/attendance-summary?from=2026-10-01&to=2026-10-31",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "attendance-summary"
+                            ],
+                            "query": [
+                                {
+                                    "key": "from",
+                                    "value": "2026-10-01",
+                                    "disabled": false,
+                                    "description": ""
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "2026-10-31",
+                                    "disabled": false,
+                                    "description": ""
+                                }
+                            ]
+                        },
+                        "description": "Per-day breakdown and payroll hours for one employee, as on the website.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `from` | date | no | Office-local day. |\n| `to` | date | no |  |\n"
+                    }
+                },
+                {
+                    "name": "Delete employee (record only, or ?remove_from_devices=1)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}?remove_from_devices=1",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}"
+                            ],
+                            "query": [
+                                {
+                                    "key": "remove_from_devices",
+                                    "value": "1",
+                                    "disabled": false,
+                                    "description": "Also take them off every terminal."
+                                }
+                            ]
+                        },
+                        "description": "Without the flag: deletes the record only, **the person stays on the terminals** and can still punch. Prefer **Delete by Personnel ID**.\n\nWith `remove_from_devices=1`: `202`; removals are queued per terminal (card and fingers saved first), the employee is inactive at once and deleted only after every terminal confirms. A failed removal keeps the record, inactive.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    }
+                },
+                {
+                    "name": "Delete by Personnel ID (system AND terminals)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/by-code/{{employee_code}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "by-code",
+                                "{{employee_code}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Deletes the employee **and always takes them off every terminal**; there is no record-only form. Card and fingerprints are saved into the system before each terminal delete.\n\n- `200` + `meta.deleted: true`: on no terminal, deleted at once.\n- `202` + `meta.deleted: false`: removals queued (`meta.device_commands`); deleted once every terminal confirms.\n- `404`: no employee has that code.\n\n`data` = `{id, employee_code, name}` of who it was. Check it is the person you meant.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "2. Terminals and pushing people",
+            "description": "Terminals (devices), and putting people on them or taking them off.\n\n**Check `capabilities` on a terminal before offering an action**: not every model can do everything (the C3 panels cannot write users or capture fingers).",
+            "item": [
+                {
+                    "name": "List terminals",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/devices",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "devices"
+                            ],
+                            "query": []
+                        },
+                        "description": "Every terminal with `is_online`, `is_writable`, `write_refusal` and `capabilities` (`confirmed` / `implemented` / `not_implemented` / `unknown` per action)."
+                    }
+                },
+                {
+                    "name": "Get terminal",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/devices/{{device_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "devices",
+                                "{{device_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One terminal, with its capabilities."
+                    }
+                },
+                {
+                    "name": "Push employee to terminal",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/push",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "devices",
+                                "{{device_id}}",
+                                "push"
+                            ],
+                            "query": []
+                        },
+                        "description": "Queues writing this person onto this terminal: name, role, keypad password, and the card and fingers the system holds for them. A first push gives them their Personnel ID as the terminal's user ID (or the next free number when it is taken there).\n\nNo body.\n\n**Answer:** `202`, with a **command**. That only means *queued*. The result is the command's `status`: poll `GET /device-commands/{{command_id}}` until `is_finished` is true, and read `succeeded` / `failed`. The collection saves `command_id` for you.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('command_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Remove employee from terminal",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/remove",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "devices",
+                                "{{device_id}}",
+                                "remove"
+                            ],
+                            "query": []
+                        },
+                        "description": "Queues taking this person off this terminal. Their card and fingers are saved into the system first; **the employee record is kept**.\n\nNo body.\n\n**Answer:** `202`, with a **command**. That only means *queued*. The result is the command's `status`: poll `GET /device-commands/{{command_id}}` until `is_finished` is true, and read `succeeded` / `failed`. The collection saves `command_id` for you.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('command_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Assign card number (synchronous)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/card",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "devices",
+                                "{{device_id}}",
+                                "card"
+                            ],
+                            "query": []
+                        },
+                        "description": "Writes a typed card number to this terminal and reads it back. **Synchronous**: may take a few seconds; `502` if the terminal is unreachable.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `card_number` | **string** of digits, 1–10 | yes | The number printed on the card. |\n\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"card_number\": \"2857525\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "3. Fingerprint and card enrollment",
+            "description": "Enrollment needs **a person at the terminal**. The call returns at once with a **session**; the terminal then waits for a finger (~30 s) or a card tap (~20 s).\n\nSession `status`: `pending → sent → waiting → success | timeout | failed | cancelled`. `timeout` means nobody came, not a broken terminal.\n\nThe person must be on the terminal first (**Push employee to terminal**).",
+            "item": [
+                {
+                    "name": "Start fingerprint enrollment",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/fingerprint",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "devices",
+                                "{{device_id}}",
+                                "enrollment",
+                                "fingerprint"
+                            ],
+                            "query": []
+                        },
+                        "description": "Puts the terminal into capture mode for this person. **Be at the terminal**: press the same finger 3 times, lifting it in between.\n\n**Answer:** `202` with the session; its id is saved to `{{session_id}}`. Then **Get enrollment session** until `success`. `409` = a capture is already waiting for them there. `422` = this terminal cannot capture fingers.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `finger_slot` | integer 0–9 | yes | 0–4 left hand little→thumb, 5–9 right hand thumb→little. **6 = right index**. |\n\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"finger_slot\": 6\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('session_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Start card enrollment",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/card",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "devices",
+                                "{{device_id}}",
+                                "enrollment",
+                                "card"
+                            ],
+                            "query": []
+                        },
+                        "description": "Puts the terminal into card-capture mode (~20 s for a tap). `422` where the model cannot (e.g. the F18 cannot hand over a scanned card number: use **Assign card number** instead).\n\nNo body.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('session_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "List enrollment sessions",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/enrollment-sessions",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "enrollment-sessions"
+                            ],
+                            "query": []
+                        },
+                        "description": "Recent enrollment sessions."
+                    }
+                },
+                {
+                    "name": "Get enrollment session",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/enrollment-sessions/{{session_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "enrollment-sessions",
+                                "{{session_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Poll this after starting an enrollment. Final states: `success`, `timeout`, `failed`, `cancelled`."
+                    }
+                },
+                {
+                    "name": "Cancel enrollment session",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/enrollment-sessions/{{session_id}}/cancel",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "enrollment-sessions",
+                                "{{session_id}}",
+                                "cancel"
+                            ],
+                            "query": []
+                        },
+                        "description": "Releases the terminal. Do this if the person walked away.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    }
+                },
+                {
+                    "name": "Delete one fingerprint (destructive)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/fingerprints/{{finger_slot}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "devices",
+                                "{{device_id}}",
+                                "enrollment",
+                                "fingerprints",
+                                "{{finger_slot}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Deletes one finger from the terminal. **Destructive**: the person must stand at a terminal to enroll it again.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    }
+                },
+                {
+                    "name": "Clear card on terminal",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/card",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "employees",
+                                "{{employee_id}}",
+                                "devices",
+                                "{{device_id}}",
+                                "enrollment",
+                                "card"
+                            ],
+                            "query": []
+                        },
+                        "description": "Clears the card on this terminal; keeps the user and their fingers.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "4. Commands and sync runs",
+            "description": "Everything that touches a terminal is a **command**: `queued → running → succeeded | failed | cancelled`. Trust `is_finished`. `message` is for people; `error` / `raw_response` are for whoever debugs. One command runs per terminal at a time.",
+            "item": [
+                {
+                    "name": "List commands",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/device-commands",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "device-commands"
+                            ],
+                            "query": [
+                                {
+                                    "key": "device_id",
+                                    "value": "{{device_id}}",
+                                    "disabled": true,
+                                    "description": ""
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "failed",
+                                    "disabled": true,
+                                    "description": ""
+                                }
+                            ]
+                        },
+                        "description": "Recent commands, newest first.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `device_id` | integer | no |  |\n| `status` | `queued` \\| `running` \\| `succeeded` \\| `failed` \\| `cancelled` | no |  |\n| `command` | string | no | e.g. `push_user` |\n"
+                    }
+                },
+                {
+                    "name": "Get command (poll this)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/device-commands/{{command_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "device-commands",
+                                "{{command_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One command. Poll until `is_finished` is true, then read `status` and `message`."
+                    }
+                },
+                {
+                    "name": "Retry command",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/device-commands/{{command_id}}/retry",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "device-commands",
+                                "{{command_id}}",
+                                "retry"
+                            ],
+                            "query": []
+                        },
+                        "description": "Re-queues a failed command.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('command_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Cancel command",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/device-commands/{{command_id}}/cancel",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "device-commands",
+                                "{{command_id}}",
+                                "cancel"
+                            ],
+                            "query": []
+                        },
+                        "description": "Cancels a command that has not run yet."
+                    }
+                },
+                {
+                    "name": "Send a command to a terminal",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/devices/{{device_id}}/commands",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "devices",
+                                "{{device_id}}",
+                                "commands"
+                            ],
+                            "query": []
+                        },
+                        "description": "Queues one terminal command.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `command` | string | yes | `sync_attendance` (read punches), `sync_enrollment` (read fingers/cards), `import_employees`, `reconcile_users`, `health_check`, `read_info`, `probe_capabilities`, `sync_time` (set its clock) |\n| `full` | boolean | no | `sync_attendance` only: re-read everything instead of only what is new. |\n| `from` | date | no | `sync_attendance` only: first office-local day to import. |\n| `to` | date | no | `sync_attendance` only: last day. |\n\n\n**Answer:** `202`, with a **command**. That only means *queued*. The result is the command's `status`: poll `GET /device-commands/{{command_id}}` until `is_finished` is true, and read `succeeded` / `failed`. The collection saves `command_id` for you.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"command\": \"sync_attendance\",\n    \"full\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('command_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "List attendance sync runs",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/device-sync-runs",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "device-sync-runs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "device_id",
+                                    "value": "{{device_id}}",
+                                    "disabled": true,
+                                    "description": ""
+                                }
+                            ]
+                        },
+                        "description": "Each punch read with its counters: `records_read`, `records_imported`, `records_duplicate`, `records_undecodable` (any non-zero needs attention), `records_unmatched`, `records_out_of_range`."
+                    }
+                },
+                {
+                    "name": "Get sync run",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/device-sync-runs/{{run_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "device-sync-runs",
+                                "{{run_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One sync run."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "5. Attendance",
+            "description": "Punches. All times are **UTC ISO-8601**. A bare date in `from` / `to` means an office-local (Bahrain) day.",
+            "item": [
+                {
+                    "name": "Punch feed (cursor)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/attendance?after_id=0&limit=200",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "attendance"
+                            ],
+                            "query": [
+                                {
+                                    "key": "after_id",
+                                    "value": "0",
+                                    "disabled": false,
+                                    "description": "your saved cursor"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "200",
+                                    "disabled": false,
+                                    "description": "≤ 1000"
+                                },
+                                {
+                                    "key": "employee_id",
+                                    "value": "{{employee_id}}",
+                                    "disabled": true,
+                                    "description": ""
+                                },
+                                {
+                                    "key": "from",
+                                    "value": "2026-11-01",
+                                    "disabled": true,
+                                    "description": "office-local day"
+                                }
+                            ]
+                        },
+                        "description": "A **feed**, oldest first, keyed on the row `id`. Store `meta.next_after_id` and send it as `after_id` next time: you get every new punch exactly once, including punches synced late. `meta.has_more` = call again.\n\nA punch by a terminal user linked to no employee has `employee_id: null` and still appears, with `device_user_id`.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `after_id` | integer | no | Rows with a greater id. Start at 0. |\n| `limit` | integer ≤1000 | no | Default 200. |\n| `from` | date or UTC timestamp | no |  |\n| `to` | date or UTC timestamp | no |  |\n| `employee_id` | integer | no |  |\n| `external_id` | string | no | Unknown id returns nothing, never everyone. |\n| `device_id` | integer | no |  |\n| `matched` | boolean | no | `true` linked to an employee, `false` unlinked only. |\n"
+                    }
+                },
+                {
+                    "name": "Attendance report",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/reports/attendance?from=2026-10-01&to=2026-10-31",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "reports",
+                                "attendance"
+                            ],
+                            "query": [
+                                {
+                                    "key": "from",
+                                    "value": "2026-10-01",
+                                    "disabled": false,
+                                    "description": ""
+                                },
+                                {
+                                    "key": "to",
+                                    "value": "2026-10-31",
+                                    "disabled": false,
+                                    "description": ""
+                                },
+                                {
+                                    "key": "department_id",
+                                    "value": "{{department_id}}",
+                                    "disabled": true,
+                                    "description": ""
+                                }
+                            ]
+                        },
+                        "description": "The website's attendance report for a period.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `from` | date | no |  |\n| `to` | date | no |  |\n| `department_id` | integer | no |  |\n"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "6. Departments and access levels",
+            "description": "A **company** is a department with no `parent_id`; its departments name it as their parent (e.g. 4 = PROMOSEVEN, 12 = PROMOSEVEN › Information Technology).",
+            "item": [
+                {
+                    "name": "List departments and companies",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/departments",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "departments"
+                            ],
+                            "query": []
+                        },
+                        "description": "Every company and department with `parent_id` and employee counts."
+                    }
+                },
+                {
+                    "name": "Get department",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/departments/{{department_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "departments",
+                                "{{department_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One department."
+                    }
+                },
+                {
+                    "name": "Create department",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/departments",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "departments"
+                            ],
+                            "query": []
+                        },
+                        "description": "Creates a company (no `parent_id`) or a department under one. Its id is saved to `{{new_department_id}}`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string | yes | Unique among its siblings. |\n| `parent_id` | integer | no | The company it belongs to. Leave out to create a company. |\n| `code` | string ≤50 | no |  |\n| `manager_id` | integer | no | An employee id. |\n",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"API Test Department\",\n    \"parent_id\": 4\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('new_department_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Update department",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/departments/{{new_department_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "departments",
+                                "{{new_department_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Partial update. Renaming updates the old text `department` of its employees too.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"API Test Department (renamed)\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Delete department",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/departments/{{new_department_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "departments",
+                                "{{new_department_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Deletes a department. `409` while it still has employees or departments under it. Uses `{{new_department_id}}` (the one you created), never a real one by default."
+                    }
+                },
+                {
+                    "name": "List access levels",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/access-levels",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "access-levels"
+                            ],
+                            "query": []
+                        },
+                        "description": "The ids to use in an employee's `access_level_ids`."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "7. Tokens",
+            "description": "Tokens for other software. A token can only **narrow** its user's permissions. Only a signed-in user can create one, never another token.",
+            "item": [
+                {
+                    "name": "List my tokens",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/tokens",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "tokens"
+                            ],
+                            "query": []
+                        },
+                        "description": "Your integration tokens (never their secret)."
+                    }
+                },
+                {
+                    "name": "Create token",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/tokens",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "tokens"
+                            ],
+                            "query": []
+                        },
+                        "description": "**The token is shown ONCE** in the answer; only its hash is stored. Copy it to the other system.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤80 | yes | What it is for. |\n| `abilities` | array | yes | From **List token abilities**. |\n| `expires_at` | date | no | In the future. Leave out for no expiry. |\n",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"payroll-sync\",\n    \"abilities\": [\n        \"employees:read\",\n        \"attendance:read\"\n    ],\n    \"expires_at\": \"2027-11-01\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('token_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Revoke token",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/tokens/{{token_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "tokens",
+                                "{{token_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Revokes a token at once."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "8. Webhooks",
+            "description": "Instead of polling, this system calls **your** URL when something happens. Needs `webhooks:manage` and the `settings.manage` permission.\n\nEach call is signed: `X-Webhook-Signature: sha256=HMAC_SHA256(secret, \"{X-Webhook-Timestamp}.{raw body}\")`. Verify it, reject timestamps older than ~5 minutes, dedupe on `X-Webhook-Id`. Delivery is at-least-once and not ordered.",
+            "item": [
+                {
+                    "name": "List webhook events",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhook-events",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhook-events"
+                            ],
+                            "query": []
+                        },
+                        "description": "`attendance.punch` (batched, ≤100 per call), `employee.created`, `employee.updated`, `employee.deleted`, `employee.enrollment_changed`, `enrollment.finished`, `device_command.finished`, `device.status_changed`, `webhook.test`."
+                    }
+                },
+                {
+                    "name": "List webhooks",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks"
+                            ],
+                            "query": []
+                        },
+                        "description": "Your webhook endpoints."
+                    }
+                },
+                {
+                    "name": "Create webhook",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks"
+                            ],
+                            "query": []
+                        },
+                        "description": "**The `secret` is shown ONCE.** Store it in the receiving system. The id is saved to `{{webhook_id}}`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `url` | http(s) URL ≤2048 | yes | Your receiver. LAN addresses are allowed; loopback and link-local are refused. |\n| `events` | array | yes | Event names, or `[\"*\"]` for all. |\n| `description` | string ≤255 | no |  |\n| `is_active` | boolean | no |  |\n",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"url\": \"https://hr.example.com/hooks/zkt\",\n    \"events\": [\n        \"attendance.punch\",\n        \"employee.created\"\n    ],\n    \"description\": \"HR system\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('webhook_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get webhook",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks/{{webhook_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks",
+                                "{{webhook_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One endpoint."
+                    }
+                },
+                {
+                    "name": "Update webhook",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks/{{webhook_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks",
+                                "{{webhook_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Partial update. `\"is_active\": true` re-enables a disabled endpoint and resets its failure count.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"is_active\": true,\n    \"events\": [\n        \"*\"\n    ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Delete webhook",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks/{{webhook_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks",
+                                "{{webhook_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Deletes the endpoint."
+                    }
+                },
+                {
+                    "name": "Rotate secret",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks/{{webhook_id}}/rotate-secret",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks",
+                                "{{webhook_id}}",
+                                "rotate-secret"
+                            ],
+                            "query": []
+                        },
+                        "description": "New secret, shown once. **The old one stops working immediately.**"
+                    }
+                },
+                {
+                    "name": "Send test event",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks/{{webhook_id}}/test",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks",
+                                "{{webhook_id}}",
+                                "test"
+                            ],
+                            "query": []
+                        },
+                        "description": "Sends a signed `webhook.test` to the URL."
+                    }
+                },
+                {
+                    "name": "List deliveries",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhooks/{{webhook_id}}/deliveries",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhooks",
+                                "{{webhook_id}}",
+                                "deliveries"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "failed",
+                                    "disabled": true,
+                                    "description": "`pending` | `succeeded` | `failed`"
+                                }
+                            ]
+                        },
+                        "description": "What was sent and what came back."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data[0] && j.data[0].id !== undefined && j.data[0] && j.data[0].id !== null) { pm.collectionVariables.set('delivery_id', String(j.data[0] && j.data[0].id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Redeliver",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/webhook-deliveries/{{delivery_id}}/redeliver",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "webhook-deliveries",
+                                "{{delivery_id}}",
+                                "redeliver"
+                            ],
+                            "query": []
+                        },
+                        "description": "Sends the same delivery again: same event id, same body."
+                    }
+                }
+            ]
+        }
+    ]
+}

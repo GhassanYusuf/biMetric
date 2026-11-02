@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-10-29**
+**Last updated: 2026-11-02**
 
 ---
 
@@ -418,19 +418,21 @@ SQL Server database on 2026-10-12 at 07:58 UTC, with the owner's go-ahead**. All
 employees are `full_time`, and none is resigned. `Employee::hasEmploymentColumns()` stays
 in the code as a guard for any database that has not run it. Committed 2026-10-19.
 
-### Integration API `/api/v1` is BUILT, tested, and NOT DEPLOYED (2026-10-08)
+### Integration API `/api/v1` is LIVE; owner testing it from Postman (2026-11-02)
 
-Owner asked for an API so other software can integrate: employee CRUD, remove from
-devices, trigger fingerprint enrollment, read attendance, "and anything I missed".
-Contract and rationale: **`docs/integration-api.md`**. 24 new feature tests; full suite
-515 passed.
-
-**Two migrations exist and have been run NOWHERE except in-memory test databases** —
-production (SQL Server) does not have them, and the new endpoints will 500 on it until it
-does: `2026_10_08_100000_add_external_id_to_employees` (filtered unique index on sqlsrv)
-and `2026_10_08_100100_create_webhook_tables`. `php artisan migrate` on this box asks for
-confirmation (production env) and was cancelled on purpose. **Owner's go-ahead needed.**
-Nothing is committed (standing arrangement for the `employees` branch).
+Owner asked (2026-10-08) for an API so other software can integrate: employee CRUD, remove
+from devices, trigger fingerprint enrollment, read attendance, "and anything I missed".
+Contract and rationale: **`docs/integration-api.md`**. Both migrations
+(`add_external_id_to_employees`, `create_webhook_tables`) have run on production and the
+code is on `main` (58 routes). **2026-11-02:** the owner started testing from Postman;
+creating an employee worked, pushing a NEW employee to a terminal failed ("has no
+identity") in both the v1 push and the website's per-terminal push. Fixed (`83ef7fd`,
+`DeviceIdentityResolver::claimForPush()`), and the push then succeeded on IT ROOM (test
+employee 1829, Personnel ID 90110121, command 18967). A new Postman collection with working
+bodies: `docs/postman/` (generator `tools/postman/integration-collection.php`). Fingerprint
+enrollment over the API is next. The old generated collection (`/root/ZKT-attendance-API…`,
+2026-10-20, website routes mixed in, invalid placeholder bodies) should no longer be used.
+Candidate change noted by the owner's test: accept `"Male"` as well as `"male"`.
 
 Decisions and the reasoning:
 
@@ -459,8 +461,7 @@ Not done, on purpose (listed in the doc §9): OpenAPI file, UI for tokens/webhoo
 per-token IP/device allow-lists, a queued form of "assign card number" (the one
 synchronous device call in v1).
 
-Open for the owner: pick the deploy window for the two migrations; decide whether a
-tokens/webhooks screen is wanted.
+Open for the owner: decide whether a tokens/webhooks screen is wanted.
 
 ### ZKAccess legacy DB import is DONE (2026-10-06)
 
