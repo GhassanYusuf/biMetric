@@ -1,8 +1,23 @@
 # Plan: a real `companies` table (option 2)
 
-**Status: IN PROGRESS since 2026-11-02** on branch `companies`, in the worktree `/var/www/zkt-companies` (owner: "yes you can start"; decisions 1-3 accepted). Written 2026-11-02 at the owner's request ("let's plan for
-option 2 directly"). Option 1 (the API and the `v_employee_company` view, storage unchanged) is
-done and live; see `docs/PROJECT-STATE.md`, API change 4.
+**Status: BUILT AND REHEARSED, NOT DEPLOYED (2026-11-03).** Branch `companies` (`0cc2b7a`,
+pushed), worktree `/var/www/zkt-companies`; 795 tests pass, the website builds. Live production
+is still `main`, untouched. Next: the cut-over with the owner, at a time the owner picks.
+
+**Rehearsal, 2026-11-03, on SQL Server:** the owner restored this morning's backup as
+`NewAttendance_rehearsal` on 192.168.7.8 (DBeaver, `RESTORE … WITH MOVE`); the migration ran
+against it from the worktree (env override, database name checked before each run):
+- up in 0.23 s, its own check passed; compared independently with the live `NewAttendance`:
+  **217 employees, 0 differences** in company/department; 11 companies with their ids, 8
+  departments (all company 4), no `parent_id`, foreign keys as designed, Camelot 14,
+  free-text `department` consistent for everyone;
+- rollback in 0.22 s: `employees.department_id` and the `departments` table identical to
+  live again; migrated a second time, same result;
+- the new code against it: companies with counts (PROMOSEVEN 117 = 67 on the company + 50 in
+  its departments), 12 unassigned, labels "PROMOSEVEN › Information Technology", OrgScope,
+  attendance report / payroll / monthly statement by company and department all answer.
+`NewAttendance_rehearsal` is left migrated on the server; the owner drops it after the
+cut-over (`DROP DATABASE [NewAttendance_rehearsal];`).
 
 ## Why
 
