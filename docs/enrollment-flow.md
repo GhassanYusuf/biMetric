@@ -460,7 +460,10 @@ the earlier rule that template bytes are never stored (reasoning in
   post-push read-back); after every roster read (`SYNC_ENROLLMENT`), which is queued
   for every terminal nightly at 02:30 UTC (`fingerprint-copies-nightly` in
   `routes/console.php` — only runs once `schedule:run` is in cron); and **before
-  every "Remove from terminal"**, which refuses (409) if the copy cannot be taken.
+  every "Remove from terminal"**, which refuses (409) if the copy cannot be taken;
+  and **straight after Devices → Import staff** (2026-11-02, casebook DC-037), which now
+  reads the terminal's roster itself, creates the employees, then queues `SYNC_ENROLLMENT`
+  (`DeviceCommandHandler::importStaff()`).
   The read-backs are best effort; a failure there never fails the read.
 - **On demand, one person:** "Read fingerprints to system" in the roster row menu
   and "Read to system" beside Fingerprints in the edit form —

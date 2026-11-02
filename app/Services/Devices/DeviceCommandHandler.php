@@ -3,6 +3,7 @@
 namespace App\Services\Devices;
 
 use App\Contracts\BiometricDeviceDriver;
+use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\Employee;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
@@ -71,7 +72,7 @@ class DeviceCommandHandler
 
             DeviceCommand::SYNC_ENROLLMENT => $this->users->syncEnrollmentState($device),
 
-            DeviceCommand::IMPORT_EMPLOYEES => $this->users->importFromDevice($device),
+            DeviceCommand::IMPORT_EMPLOYEES => $this->importStaff($device),
 
             DeviceCommand::RECONCILE_USERS => $this->users->reconcile($device),
 
@@ -161,6 +162,33 @@ class DeviceCommandHandler
      *
      * @param  array<string,mixed>  $payload
      */
+    /**
+     * Devices → Import staff, start to finish (owner, 2026-11-02, casebook DC-037).
+     *
+     * 1. Reads the terminal's roster first (read-only). Import works from the roster, and
+     *    nothing else fills it for a new terminal: the nightly job copies fingerprints but
+     *    reads no roster, so the first terminal an operator added and imported themselves
+     *    (JJs) answered "has not had its roster read yet".
+     * 2. Creates and links the employees, as importFromDevice() always has.
+     * 3. Queues the fingerprint and card copy (SYNC_ENROLLMENT, read-only), which runs right
+     *    after this command (one command per terminal at a time), instead of the people
+     *    arriving now and their fingerprints only at the nightly read.
+     */
+    private function importStaff(Device $device): array
+    {
+        $roster = app(DeviceAdoptionService::class)->readRoster($device);
+        $result = $this->users->importFromDevice($device);
+
+        if (($result['raw']['created'] ?? 0) > 0) {
+            $read = app(DeviceCommandBus::class)->dispatch($device, DeviceCommand::SYNC_ENROLLMENT);
+            $result['message'] .= ' Their fingerprints and cards are being copied into the system now.';
+            $result['raw']['fingerprint_read_command_id'] = $read->id;
+        }
+        $result['raw']['roster'] = $roster['raw'] ?? null;
+
+        return $result;
+    }
+
     private function employee(array $payload): Employee
     {
         $id = $payload['employee_id'] ?? null;

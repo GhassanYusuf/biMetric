@@ -159,7 +159,7 @@ export default function DevicesDesktop({
                                                     canSync && can(d, 'user.read') && {
                                                         key: 'import',
                                                         label: 'Import staff',
-                                                        description: 'Pull the employee records the terminal holds.',
+                                                        description: 'Read who the terminal holds, add them as employees, then copy their fingerprints and cards.',
                                                         loading: running === 'import-employees',
                                                         disabled: !!running,
                                                         onSelect: () => onImport(d),

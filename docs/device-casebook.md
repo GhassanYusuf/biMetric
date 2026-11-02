@@ -147,9 +147,14 @@ Template:
   the transfer problem Camelot shows (DC-020, DC-036), and decoded on the next read. Not
   established why that read and not the next; Camelot's version comes back after hours and
   clears on restart, so JJs may develop the same pattern.
-- **Fix:** none needed for the data: the second read stored everything. Gaps recorded: no
-  website button to read a roster (a new terminal waits for the nightly job or the command
-  line), and Import staff does not chain a fingerprint read.
+- **Fix:** none needed for the data: the second read stored everything. The two gaps, closed
+  the same day (owner: "make the small change"): Devices → Import staff now reads the roster
+  itself first (read-only) and queues the fingerprint/card copy (`SYNC_ENROLLMENT`) straight
+  after it, so a new terminal needs nothing else (`DeviceCommandHandler::importStaff()`;
+  tests `test_import_staff_on_a_new_terminal_reads_the_roster_and_queues_the_fingerprint_copy`,
+  `test_import_staff_with_nobody_new_queues_no_fingerprint_copy`). Why the earlier terminals
+  never hit it: their rosters were read by hand from the command line during setup
+  (27 Sep, 11 Oct, 25 Oct); JJs was the first an operator added and imported alone.
 - **Verified:** on JJs, 2026-11-02 ~14:10 UTC: 255 templates stored for 149 people.
 - **Evidence:** commands 19373, 19374, 19375; `device:roster 19` output.
 - **Status:** FIXED — watch the nightly reads of JJs over the next days; if they come back

@@ -6,16 +6,19 @@ use App\Contracts\BiometricDeviceDriver;
 use App\Exceptions\DeviceIdentityConflictException;
 use App\Exceptions\DeviceNotAdoptedException;
 use App\Models\Device;
+use App\Models\DeviceCommand;
 use App\Models\DeviceRosterEntry;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
 use App\Models\Tenant;
 use App\Services\Devices\DeviceAdoptionService;
+use App\Services\Devices\DeviceCommandHandler;
 use App\Services\Devices\DeviceIdentityResolver;
 use App\Services\Devices\DeviceUserSyncService;
 use App\Support\DeviceProgress;
 use App\Support\Tenancy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Promoseven\Biometric\Capability\Capability;
 use Promoseven\Biometric\Capability\CapabilitySet;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
@@ -511,6 +514,49 @@ class DeviceIdentityGuardTest extends TestCase
         $this->assertSame(3, $result['raw']['punches_linked']);
         $this->assertStringContainsString('3 punch(es) already stored from it are now theirs', $result['message']);
         $this->assertSame(0, \App\Models\AttendanceLog::where('device_id', $device->id)->whereNull('employee_id')->count());
+    }
+
+    /**
+     * DC-037 (2026-11-02): the owner added JJs and pressed Import staff; nothing had read its
+     * roster, so it answered "has not had its roster read yet", and once imported the people
+     * had no fingerprints until the nightly read. Import staff now reads the roster itself
+     * and queues the fingerprint copy straight after.
+     */
+    public function test_import_staff_on_a_new_terminal_reads_the_roster_and_queues_the_fingerprint_copy(): void
+    {
+        Queue::fake();
+        $device = $this->device('JJs');
+        $this->assertNull($device->roster_read_at);
+        $this->driver->roster = [new DeviceUser(1, '1', 'Ghassan'), new DeviceUser(2, '261', 'Ragesh')];
+
+        $command = DeviceCommand::create([
+            'tenant_id' => $device->tenant_id, 'device_id' => $device->id,
+            'command' => DeviceCommand::IMPORT_EMPLOYEES, 'status' => DeviceCommand::STATUS_RUNNING, 'max_attempts' => 1,
+        ]);
+        $result = app(DeviceCommandHandler::class)->handle($command->load('device'));
+
+        $this->assertSame(2, $result['raw']['created']);
+        $this->assertNotNull($device->fresh()->roster_read_at);
+        $this->assertStringContainsString('fingerprints and cards are being copied', $result['message']);
+        $read = DeviceCommand::find($result['raw']['fingerprint_read_command_id']);
+        $this->assertSame(DeviceCommand::SYNC_ENROLLMENT, $read->command);
+        $this->assertSame($device->id, (int) $read->device_id);
+    }
+
+    public function test_import_staff_with_nobody_new_queues_no_fingerprint_copy(): void
+    {
+        Queue::fake();
+        $device = $this->device('Empty');
+        $this->driver->roster = [];
+
+        $command = DeviceCommand::create([
+            'tenant_id' => $device->tenant_id, 'device_id' => $device->id,
+            'command' => DeviceCommand::IMPORT_EMPLOYEES, 'status' => DeviceCommand::STATUS_RUNNING, 'max_attempts' => 1,
+        ]);
+        $result = app(DeviceCommandHandler::class)->handle($command->load('device'));
+
+        $this->assertSame(0, $result['raw']['created']);
+        $this->assertSame(0, DeviceCommand::where('command', DeviceCommand::SYNC_ENROLLMENT)->count());
     }
 
     // ------------------------------------------------------------------- helpers
