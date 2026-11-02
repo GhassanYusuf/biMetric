@@ -10,6 +10,7 @@ use App\Models\Device;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\EmployeeReportService;
+use App\Services\Devices\DeviceIdentityResolver;
 use App\Services\Devices\DeviceUserSyncService;
 use App\Services\Devices\EnrollmentOrchestratorService;
 use App\Services\Employees\EmployeeCodeAllocator;
@@ -42,6 +43,7 @@ class EmployeeController extends Controller
     public function __construct(
         private readonly DeviceUserSyncService $users,
         private readonly EnrollmentOrchestratorService $enrollment,
+        private readonly DeviceIdentityResolver $identity,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -448,7 +450,14 @@ class EmployeeController extends Controller
             return ApiResponse::error("{$employee->name} has resigned, so is not put on terminals. Clear the resignation date first.", [], 409);
         }
 
+        if ($refusal = $device->userWriteRefusal()) {
+            return ApiResponse::error("Cannot write to {$device->name}: {$refusal}.", ['device_id' => [$refusal]], 422);
+        }
+
         try {
+            // A first push here needs a user ID there; pushEmployee() refuses to invent one.
+            $this->identity->claimForPush($device, $employee);
+
             $result = $this->users->pushEmployee($device, $employee);
 
             return ApiResponse::success($result['raw'], $result['message']);

@@ -397,7 +397,7 @@ viewing the design before real attendance exists.
 | GET | `/api/employees/{employee}/attendance-summary` | |
 | GET | `/api/employees/{employee}/report` | `?period=30\|90\|365` (default 30), optional `to`. The Report screen's data — see below |
 | POST | `/api/employees/{employee}/propagate` | queues a write onto several terminals |
-| POST | `/api/employees/{employee}/devices/{device}/push` | |
+| POST | `/api/employees/{employee}/devices/{device}/push` | synchronous; a first push there takes the Personnel ID as the user ID, or the next free number (2026-11-02) |
 | POST | `/api/employees/{employee}/devices/{device}/remove` | |
 | GET | `/api/employees/{employee}/devices/{device}/enrollment` | live read from the terminal |
 | POST | `/api/employees/{employee}/waivers` | |

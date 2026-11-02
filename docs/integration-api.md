@@ -174,7 +174,7 @@ differently.
 |---|---|---|
 | GET | `/devices`, `/devices/{id}` | `devices:read` — includes `capabilities`, `is_online`, `is_writable`, `write_refusal` |
 | POST | `/devices/{id}/commands` | `devices:write` — body `{command, full?, from?, to?}`; `command` ∈ `sync_attendance`, `sync_enrollment`, `import_employees`, `reconcile_users`, `health_check`, `read_info`, `probe_capabilities`, `sync_time` |
-| POST | `/employees/{e}/devices/{d}/push` | `devices:write` — queue one person onto one terminal → `202` + command |
+| POST | `/employees/{e}/devices/{d}/push` | `devices:write` — queue one person onto one terminal → `202` + command. A first push there gives them their Personnel ID as the terminal's user ID, or the next free number when it is taken (fixed 2026-11-02: it used to fail with "has no identity"). |
 | POST | `/employees/{e}/devices/{d}/remove` | `devices:write` — queue removal from one terminal (**record kept**) |
 | POST | `/employees/{e}/devices/{d}/enrollment/fingerprint` | **Trigger fingerprint enrollment.** Body `{finger_slot: 0–9}`. The terminal beeps and waits ~30 s for a finger. |
 | POST | `/employees/{e}/devices/{d}/enrollment/card` | Trigger card enrollment (terminal waits ~20 s for a tap). |

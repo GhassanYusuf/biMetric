@@ -6,6 +6,7 @@ use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\Employee;
 use App\Services\Devices\DeviceCommandBus;
+use App\Services\Devices\DeviceIdentityResolver;
 use Illuminate\Support\Collection;
 
 /**
@@ -21,7 +22,10 @@ use Illuminate\Support\Collection;
  */
 class EmployeeDevicePusher
 {
-    public function __construct(private readonly DeviceCommandBus $bus) {}
+    public function __construct(
+        private readonly DeviceCommandBus $bus,
+        private readonly DeviceIdentityResolver $identity,
+    ) {}
 
     /**
      * @param  iterable<Device>  $devices
@@ -45,6 +49,9 @@ class EmployeeDevicePusher
 
                 continue;
             }
+
+            // A first push here needs a user ID there; the queued write refuses to invent one.
+            $this->identity->claimForPush($device, $employee);
 
             $commands[] = $this->bus->dispatch($device, DeviceCommand::PUSH_USER, ['employee_id' => $employee->id]);
         }

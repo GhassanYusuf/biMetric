@@ -73,6 +73,35 @@ class DeviceIdentityResolver
     }
 
     /**
+     * The identity a push needs: the one they have here, else their Personnel ID when it is
+     * digits and free here, else the next free number. EmployeeDevicePropagator's rule,
+     * for the pushes that queue a single PUSH_USER and used to skip it, so a new employee
+     * pushed by the v1 API or the per-terminal button failed with "has no identity"
+     * (2026-11-02). Reserves in OUR records only; pushEmployee() still reads the terminal
+     * before it writes.
+     */
+    public function claimForPush(Device $device, Employee $employee): EmployeeDeviceMap
+    {
+        if ($existing = $this->activeMap($device, $employee)) {
+            return $existing;
+        }
+
+        $code = (string) $employee->employee_code;
+
+        if (preg_match('/^\d{1,9}$/', $code) === 1) {
+            try {
+                $this->assertPinFreeFor($device, $employee, $code);
+
+                return $this->claim($device, $employee, $code);
+            } catch (\RuntimeException) {
+                // Taken here: fall through to the next free number, as the propagator does.
+            }
+        }
+
+        return $this->claim($device, $employee);
+    }
+
+    /**
      * Allocates this employee an identity on this device, without touching the device.
      *
      * The caller is responsible for calling guardSlot() inside the session before it
