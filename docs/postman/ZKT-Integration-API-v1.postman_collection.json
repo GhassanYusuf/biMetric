@@ -20,7 +20,7 @@
             "script": {
                 "type": "text/javascript",
                 "exec": [
-                    "const how = { token: 'run 0. Start here → Sign in', command_id: 'send a request that queues a command first (Push, Start enrollment, …)', session_id: 'run 3. → Find enrollment session (for this command) first', new_department_id: 'run Create department first', webhook_id: 'run Create webhook first', delivery_id: 'run List deliveries first', token_id: 'run Create token first', run_id: 'copy an id from List attendance sync runs' };",
+                    "const how = { token: 'run 0. Start here → Sign in', command_id: 'send a request that queues a command first (Push, Start enrollment, …)', session_id: 'run 3. → Find enrollment session (for this command) first', new_department_id: 'run Create department first', new_company_id: 'run Create company first', webhook_id: 'run Create webhook first', delivery_id: 'run List deliveries first', token_id: 'run Create token first', run_id: 'copy an id from List attendance sync runs' };",
                     "const names = (pm.request.url.toString().match(/{{(\\w+)}}/g) || []).map(v => v.slice(2, -2));",
                     "if (pm.request.auth === undefined || pm.request.auth === null || pm.request.auth.type !== 'noauth') { names.push('token'); }",
                     "for (const n of names) { if (n === 'token' && pm.info.requestName.startsWith('Sign in')) { continue; } const v = pm.variables.get(n); if (v === undefined || v === null || String(v).trim() === '') { throw new Error('{{' + n + '}} is empty: ' + (how[n] || 'set it under Collection → Variables') + '. (If it is filled under Variables, check no Environment is selected, top right.)'); } }"
@@ -88,6 +88,11 @@
             "key": "department_id",
             "value": "12",
             "description": "12 = PROMOSEVEN › Information Technology."
+        },
+        {
+            "key": "new_company_id",
+            "value": "",
+            "description": "Set by Create company."
         },
         {
             "key": "new_department_id",
@@ -331,7 +336,7 @@
                             ],
                             "query": []
                         },
-                        "description": "Creates one employee. **Answer:** `201` with the employee; its Personnel ID is saved to `{{employee_code}}`, so the next requests address the new employee.\n\nThe example body passes validation as it is. It uses `{{new_employee_code}}` and `{{new_external_id}}`; change them before a second run, since both must be unique.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Any capitalisation: `\"Male\"` is stored as `male`. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `company_id` | integer | no | The company, from `GET /departments` where `is_company` is true (e.g. 4 = PROMOSEVEN, 19 = Camelot). |\n| `department_id` | integer | no | A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `company_id` / `department_id`).\n\n**In answers:** `company_id` + `company` {id, name} is the company; `department_id` + `department_name` the department, or `null` when the employee only has a company.",
+                        "description": "Creates one employee. **Answer:** `201` with the employee; its Personnel ID is saved to `{{employee_code}}`, so the next requests address the new employee.\n\nThe example body passes validation as it is. It uses `{{new_employee_code}}` and `{{new_external_id}}`; change them before a second run, since both must be unique.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Any capitalisation: `\"Male\"` is stored as `male`. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `company_id` | integer | no | The company, from `GET /companies` (e.g. 4 = PROMOSEVEN, 19 = Camelot). |\n| `department_id` | integer | no | A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `company_id` / `department_id`).\n\n**In answers:** `company_id` + `company` {id, name} is the company; `department_id` + `department_name` the department, or `null` when the employee only has a company.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n    \"name\": \"API\",\n    \"last_name\": \"Test\",\n    \"employee_code\": \"{{new_employee_code}}\",\n    \"external_id\": \"{{new_external_id}}\",\n    \"gender\": \"male\",\n    \"birthday\": \"1990-01-15\",\n    \"email\": \"api.test@example.com\",\n    \"mobile_phone\": \"+973 17000000\",\n    \"company_id\": 4,\n    \"department_id\": 12,\n    \"job_title\": \"Test\",\n    \"hired_date\": \"2026-11-01\",\n    \"employment_type\": \"full_time\",\n    \"country\": \"Bahrain\",\n    \"access_level_ids\": [],\n    \"valid_period_enabled\": false\n}",
@@ -469,7 +474,7 @@
                             ],
                             "query": []
                         },
-                        "description": "**Safe to run twice.** Creates the employee if no one has this `external_id`, otherwise updates them. The URL's id wins over any `external_id` in the body.\n\n**Answer:** `201` + `meta.created: true`, or `200` + `meta.created: false`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Any capitalisation: `\"Male\"` is stored as `male`. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `company_id` | integer | no | The company, from `GET /departments` where `is_company` is true (e.g. 4 = PROMOSEVEN, 19 = Camelot). |\n| `department_id` | integer | no | A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `company_id` / `department_id`).\n\n**In answers:** `company_id` + `company` {id, name} is the company; `department_id` + `department_name` the department, or `null` when the employee only has a company.",
+                        "description": "**Safe to run twice.** Creates the employee if no one has this `external_id`, otherwise updates them. The URL's id wins over any `external_id` in the body.\n\n**Answer:** `201` + `meta.created: true`, or `200` + `meta.created: false`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Any capitalisation: `\"Male\"` is stored as `male`. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `company_id` | integer | no | The company, from `GET /companies` (e.g. 4 = PROMOSEVEN, 19 = Camelot). |\n| `department_id` | integer | no | A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `company_id` / `department_id`).\n\n**In answers:** `company_id` + `company` {id, name} is the company; `department_id` + `department_name` the department, or `null` when the employee only has a company.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n    \"name\": \"API\",\n    \"last_name\": \"Test\",\n    \"email\": \"api.test@example.com\",\n    \"company_id\": 4,\n    \"job_title\": \"Test\"\n}",
@@ -526,7 +531,7 @@
                             ],
                             "query": []
                         },
-                        "description": "**Partial**: send only the fields that change. `PUT` behaves the same.\n\nTo update the terminals they are on in the same call, add `\"push_to_mapped_devices\": true`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Any capitalisation: `\"Male\"` is stored as `male`. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `company_id` | integer | no | The company, from `GET /departments` where `is_company` is true (e.g. 4 = PROMOSEVEN, 19 = Camelot). |\n| `department_id` | integer | no | A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `company_id` / `department_id`).\n\n**In answers:** `company_id` + `company` {id, name} is the company; `department_id` + `department_name` the department, or `null` when the employee only has a company.",
+                        "description": "**Partial**: send only the fields that change. `PUT` behaves the same.\n\nTo update the terminals they are on in the same call, add `\"push_to_mapped_devices\": true`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Any capitalisation: `\"Male\"` is stored as `male`. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `company_id` | integer | no | The company, from `GET /companies` (e.g. 4 = PROMOSEVEN, 19 = Camelot). |\n| `department_id` | integer | no | A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `company_id` / `department_id`).\n\n**In answers:** `company_id` + `company` {id, name} is the company; `department_id` + `department_name` the department, or `null` when the employee only has a company.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n    \"job_title\": \"Senior Test\",\n    \"mobile_phone\": \"+973 17000001\"\n}",
@@ -1617,11 +1622,195 @@
             ]
         },
         {
-            "name": "6. Departments and access levels",
-            "description": "Companies and departments share this list: `is_company: true` is a company, and every row says its `company_id` (e.g. 4 = PROMOSEVEN, 12 = PROMOSEVEN › Information Technology, `company_id` 4).",
+            "name": "6. Companies, departments and access levels",
+            "description": "Companies and departments are two lists since 2026-11-03. A department belongs to exactly one company (e.g. 12 = Information Technology, `company_id` 4 = PROMOSEVEN); there are no sub-departments. Company ids and department ids are separate: company 21 and department 21 can both exist.",
             "item": [
                 {
-                    "name": "List departments and companies",
+                    "name": "List companies",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/companies",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "companies"
+                            ],
+                            "query": []
+                        },
+                        "description": "Every company with `departments_count` and `employees_count` (everyone in it, its departments included). `meta.unassigned_count` = employees in no company."
+                    }
+                },
+                {
+                    "name": "Get company",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/companies/{{company_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "companies",
+                                "{{company_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "One company."
+                    }
+                },
+                {
+                    "name": "Create company",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/companies",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "companies"
+                            ],
+                            "query": []
+                        },
+                        "description": "Creates a company. Its id is saved to `{{new_company_id}}`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string | yes | Unique. |\n| `code` | string ≤50 | no |  |\n| `manager_id` | integer | no | An employee id. |\n",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"API Test Company\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('new_company_id', String(j.data.id)); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Update company",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/companies/{{new_company_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "companies",
+                                "{{new_company_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Partial update. Renaming updates the old text `department` of people placed directly in the company.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"name\": \"API Test Company (renamed)\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Delete company",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Idempotency-Key",
+                                "value": "{{$guid}}",
+                                "disabled": true,
+                                "description": "Optional. Repeat a timed-out write with the same key: the first answer comes back and nothing runs twice."
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/companies/{{new_company_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "companies",
+                                "{{new_company_id}}"
+                            ],
+                            "query": []
+                        },
+                        "description": "Deletes a company. `409` while it still has employees or departments. Uses `{{new_company_id}}` (the one you created), never a real one by default."
+                    }
+                },
+                {
+                    "name": "List departments",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -1640,9 +1829,16 @@
                                 "v1",
                                 "departments"
                             ],
-                            "query": []
+                            "query": [
+                                {
+                                    "key": "company_id",
+                                    "value": "{{company_id}}",
+                                    "disabled": true,
+                                    "description": ""
+                                }
+                            ]
                         },
-                        "description": "Every company and department with `parent_id` and employee counts."
+                        "description": "Every department with its `company_id`, `company_name` and `employees_count`.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `company_id` | integer | no | Only this company's departments. |\n"
                     }
                 },
                 {
@@ -1668,7 +1864,7 @@
                             ],
                             "query": []
                         },
-                        "description": "One department or company."
+                        "description": "One department."
                     }
                 },
                 {
@@ -1703,10 +1899,10 @@
                             ],
                             "query": []
                         },
-                        "description": "Creates a company (no `parent_id`) or a department under one. Its id is saved to `{{new_department_id}}`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string | yes | Unique among its siblings. |\n| `parent_id` | integer | no | The company it belongs to. Leave out to create a company. |\n| `code` | string ≤50 | no |  |\n| `manager_id` | integer | no | An employee id. |\n",
+                        "description": "Creates a department in a company. Its id is saved to `{{new_department_id}}`.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `company_id` | integer | yes | The company it belongs to. |\n| `name` | string | yes | Unique within its company: \"Finance\" may exist in two companies. |\n| `code` | string ≤50 | no |  |\n| `manager_id` | integer | no | An employee id. |\n",
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"name\": \"API Test Department\",\n    \"parent_id\": 4\n}",
+                            "raw": "{\n    \"company_id\": 4,\n    \"name\": \"API Test Department\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
@@ -1760,7 +1956,7 @@
                             ],
                             "query": []
                         },
-                        "description": "Partial update. Renaming updates the old text `department` of its employees too.",
+                        "description": "Partial update. Renaming updates the old text `department` of its employees too. A new `company_id` moves the department to that company, and its people with it.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n    \"name\": \"API Test Department (renamed)\"\n}",
@@ -1801,7 +1997,7 @@
                             ],
                             "query": []
                         },
-                        "description": "Deletes a department. `409` while it still has employees or departments under it. Uses `{{new_department_id}}` (the one you created), never a real one by default."
+                        "description": "Deletes a department. `409` while it still has employees. Uses `{{new_department_id}}` (the one you created), never a real one by default."
                     }
                 },
                 {

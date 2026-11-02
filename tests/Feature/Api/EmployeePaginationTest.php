@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Tenant;
@@ -243,8 +244,10 @@ class EmployeePaginationTest extends TestCase
     {
         Tenancy::set(Tenant::where('slug', 'acme')->value('id'));
 
+        $company = Company::create(['tenant_id' => Tenant::where('slug', 'acme')->value('id'), 'name' => 'Freight Co']);
         $dept = Department::create([
             'tenant_id' => Tenant::where('slug', 'acme')->value('id'),
+            'company_id' => $company->id,
             'name' => 'Logistics',
         ]);
         $employee = Employee::create([

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\AttendanceLog;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
@@ -403,16 +404,13 @@ class ExportTest extends TestCase
         $this->assertStringNotContainsString('Yusuf Khalid', $text);
     }
 
-    /** "Engineering and below" means what it says: a company's statement holds its departments' people. */
+    /** A company's statement holds its departments' people (two tables since 2026-11-03). */
     public function test_the_statement_for_a_company_includes_its_departments(): void
     {
-        Tenancy::set($this->acme->id);
-        $company = Department::create(['tenant_id' => $this->acme->id, 'name' => 'Acme Holding']);
-        Department::where('name', 'Engineering')->update(['parent_id' => $company->id]);
-        Tenancy::clear();
+        $company = $this->moveEngineeringTo('Acme Holding');
 
         $res = $this->login('admin@acme.test')
-            ->get("/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14&department_id={$company->id}");
+            ->get("/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14&company_id={$company->id}");
 
         $res->assertOk();
         $text = $this->workbookText($res);
@@ -449,13 +447,12 @@ class ExportTest extends TestCase
      */
     public function test_the_employee_list_for_a_company_holds_only_that_company(): void
     {
+        $company = $this->moveEngineeringTo('Acme Holding');
         Tenancy::set($this->acme->id);
-        $company = Department::create(['tenant_id' => $this->acme->id, 'name' => 'Acme Holding']);
-        Department::where('name', 'Engineering')->update(['parent_id' => $company->id]);
-        Employee::create(['tenant_id' => $this->acme->id, 'name' => 'Gone Person', 'employee_code' => '9901', 'department_id' => $company->id, 'is_active' => false, 'resigned_at' => '2026-10-01']);
+        Employee::create(['tenant_id' => $this->acme->id, 'name' => 'Gone Person', 'employee_code' => '9901', 'company_id' => $company->id, 'is_active' => false, 'resigned_at' => '2026-10-01']);
         Tenancy::clear();
 
-        $res = $this->login('admin@acme.test')->get("/api/exports/employees/excel?department_id={$company->id}&resigned=0");
+        $res = $this->login('admin@acme.test')->get("/api/exports/employees/excel?company_id={$company->id}&resigned=0");
 
         $res->assertOk();
         $text = $this->workbookText($res);
@@ -465,7 +462,20 @@ class ExportTest extends TestCase
         $this->assertStringNotContainsString('Mona Hassan', $text);
         $this->assertStringNotContainsString('Gone Person', $text);
 
-        $this->login('admin@acme.test')->get("/api/exports/employees?department_id={$company->id}")->assertOk();
+        $this->login('admin@acme.test')->get("/api/exports/employees?company_id={$company->id}")->assertOk();
+    }
+
+    /** The seeder's Engineering, moved into a company of its own, people and all. */
+    private function moveEngineeringTo(string $name): Company
+    {
+        Tenancy::set($this->acme->id);
+        $company = Company::create(['tenant_id' => $this->acme->id, 'name' => $name]);
+        $engineering = Department::where('name', 'Engineering')->firstOrFail();
+        $engineering->update(['company_id' => $company->id]);
+        Employee::where('department_id', $engineering->id)->update(['company_id' => $company->id]);
+        Tenancy::clear();
+
+        return $company;
     }
 
     /**
@@ -503,8 +513,8 @@ class ExportTest extends TestCase
         Tenancy::set($this->acme->id);
         $engineering = Department::where('name', 'Engineering')->firstOrFail();
         $operations = Department::where('name', 'Operations')->firstOrFail();
-        $sales = Department::create(['tenant_id' => $this->acme->id, 'name' => 'Sales']);
-        Employee::create(['tenant_id' => $this->acme->id, 'name' => 'Omar Sales', 'employee_code' => '3001', 'department_id' => $sales->id, 'is_active' => true]);
+        $sales = Company::create(['tenant_id' => $this->acme->id, 'name' => 'Sales']);
+        Employee::create(['tenant_id' => $this->acme->id, 'name' => 'Omar Sales', 'employee_code' => '3001', 'company_id' => $sales->id, 'is_active' => true]);
         Tenancy::clear();
 
         $res = $this->login('admin@acme.test')
@@ -518,8 +528,16 @@ class ExportTest extends TestCase
         $this->assertStringNotContainsString('Omar Sales', $text);
 
         $this->login('admin@acme.test')
-            ->get("/api/exports/monthly-statement?from=2026-09-01&to=2026-09-14&department_ids[]={$engineering->id}&department_ids[]={$sales->id}")
+            ->get("/api/exports/monthly-statement?from=2026-09-01&to=2026-09-14&department_ids[]={$engineering->id}&company_ids[]={$sales->id}")
             ->assertOk();
+
+        // A company and a department together: everyone in either.
+        $both = $this->workbookText($this->login('admin@acme.test')
+            ->get("/api/exports/monthly-statement/excel?from=2026-09-01&to=2026-09-14&department_ids[]={$operations->id}&company_ids[]={$sales->id}")
+            ->assertOk());
+        $this->assertStringContainsString('Mona Hassan', $both);
+        $this->assertStringContainsString('Omar Sales', $both);
+        $this->assertStringNotContainsString('Sara Ahmed', $both);
 
         $this->login('admin@acme.test')
             ->getJson("/api/exports/monthly-statement/excel?department_ids[]={$engineering->id}&employee_ids[]={$this->employee->id}")

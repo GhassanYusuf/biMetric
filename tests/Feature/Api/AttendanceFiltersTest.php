@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\AttendanceLog;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
@@ -25,7 +26,7 @@ class AttendanceFiltersTest extends TestCase
 
     private const PASSWORD = 'test-password';
 
-    private Department $company;
+    private Company $company;
 
     private Department $finance;
 
@@ -54,16 +55,16 @@ class AttendanceFiltersTest extends TestCase
             'protocol' => Device::PROTOCOL_BINARY, 'is_active' => true,
         ]);
 
-        $this->company = Department::create(['name' => 'Punch Co']);
-        $this->finance = Department::create(['name' => 'Finance', 'parent_id' => $this->company->id]);
+        $this->company = Company::create(['name' => 'Punch Co']);
+        $this->finance = Department::create(['name' => 'Finance', 'company_id' => $this->company->id]);
 
         $people = [
-            ['P-1', 'Zaynab', 'Qudsi Alwardi', $this->finance->id],
-            ['P-2', 'Omar', null, $this->company->id],
-            ['P-3', 'Hadi', 'Nowhere', null],
+            ['P-1', 'Zaynab', 'Qudsi Alwardi', null, $this->finance->id],
+            ['P-2', 'Omar', null, $this->company->id, null],
+            ['P-3', 'Hadi', 'Nowhere', null, null],
         ];
-        foreach ($people as $i => [$code, $first, $last, $dept]) {
-            $e = Employee::create(['name' => $first, 'last_name' => $last, 'employee_code' => $code, 'department_id' => $dept, 'is_active' => true]);
+        foreach ($people as $i => [$code, $first, $last, $company, $dept]) {
+            $e = Employee::create(['name' => $first, 'last_name' => $last, 'employee_code' => $code, 'company_id' => $company, 'department_id' => $dept, 'is_active' => true]);
             AttendanceLog::create([
                 'device_id' => $device->id, 'device_user_id' => $code, 'employee_id' => $e->id,
                 'punched_at' => now()->subMinutes($i + 1), 'verify_method' => 1, 'status' => 0,
@@ -93,13 +94,13 @@ class AttendanceFiltersTest extends TestCase
 
     public function test_a_company_includes_its_departments_punches(): void
     {
-        $this->assertSame(['P-1', 'P-2'], $this->codes('department_id='.$this->company->id));
+        $this->assertSame(['P-1', 'P-2'], $this->codes('company_id='.$this->company->id));
         $this->assertSame(['P-1'], $this->codes('department_id='.$this->finance->id));
     }
 
     public function test_unassigned_means_an_employee_with_no_department_not_an_unmatched_punch(): void
     {
-        $this->assertSame(['P-3'], $this->codes('department_id=none'));
+        $this->assertSame(['P-3'], $this->codes('company_id=none'));
     }
 
     public function test_search_matches_the_full_name_as_displayed(): void
@@ -154,6 +155,7 @@ class AttendanceFiltersTest extends TestCase
         $token = $this->postJson('/api/auth/login', ['email' => 'punches@acme.test', 'password' => self::PASSWORD])->json('data.token');
         $this->app['auth']->forgetGuards();
 
-        $this->withToken($token)->getJson('/api/attendance?department_id=drop')->assertStatus(422);
+        $this->withToken($token)->getJson('/api/attendance?company_id=drop')->assertStatus(422);
+        $this->withToken($token)->getJson('/api/attendance?department_id=none')->assertStatus(422);
     }
 }

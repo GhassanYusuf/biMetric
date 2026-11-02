@@ -7,19 +7,19 @@ import { formatPunch, groupByDay, verifyLabel } from './parts';
 
 // Same object as the desktop's, for the same reason: one place that knows what a
 // cleared filter bar is.
-const NO_FILTERS = { employee_id: '', device_id: '', department_id: '', search: '', from: '', to: '' };
+const NO_FILTERS = { employee_id: '', device_id: '', org: '', search: '', from: '', to: '' };
 
 // Mobile attendance: collapsed filters behind a toggle (they'd otherwise eat the
 // whole first screen), then punches grouped under sticky day headers.
 export default function AttendanceMobile({
-    rows, devices, departments, unassignedCount, departmentsLoaded,
+    rows, devices, companies, departments, unassignedCount, departmentsLoaded,
     filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems,
 }) {
     const [filtersOpen, setFiltersOpen] = useState(false);
-    const hasFilters = !!(filters.employee_id || filters.device_id || filters.department_id || filters.search || filters.from || filters.to);
+    const hasFilters = !!(filters.employee_id || filters.device_id || filters.org || filters.search || filters.from || filters.to);
     // The employee counts too: with the panel shut, the badge is the only thing
     // saying the list has been narrowed by something.
-    const activeCount = [filters.employee_id, filters.device_id, filters.department_id, filters.from, filters.to].filter(Boolean).length;
+    const activeCount = [filters.employee_id, filters.device_id, filters.org, filters.from, filters.to].filter(Boolean).length;
 
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
@@ -51,13 +51,14 @@ export default function AttendanceMobile({
             />
             <DepartmentTree
                 variant="collapsible"
+                companies={companies}
                 departments={departments}
                 unassignedCount={unassignedCount}
                 loaded={departmentsLoaded}
                 counts={false}
                 allLabel="Everyone"
-                value={filters.department_id ?? ''}
-                onChange={(id) => set('department_id', id)}
+                value={filters.org ?? ''}
+                onChange={(key) => set('org', key)}
             />
 
             {filtersOpen && (

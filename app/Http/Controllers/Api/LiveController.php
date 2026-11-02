@@ -7,19 +7,20 @@ use App\Models\AccessCard;
 use App\Models\AttendanceLog;
 use App\Models\AttendanceSyncRun;
 use App\Models\BiometricTemplate;
+use App\Models\Company;
+use App\Models\Department;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\DeviceGroup;
 use App\Models\DeviceRosterEntry;
-use App\Models\Department;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
 use App\Models\EnrollmentSession;
 use App\Models\Holiday;
-use App\Models\Setting;
 use App\Models\Notification;
 use App\Models\ReportExport;
 use App\Models\ScheduledJob;
+use App\Models\Setting;
 use App\Models\User;
 use App\Support\ApiResponse;
 use App\Support\Tenancy;
@@ -47,7 +48,7 @@ class LiveController extends Controller
         $user = $request->user();
 
         return ApiResponse::success([
-            'employees' => $this->stamp(Employee::query(), Department::query(), EmployeeDeviceMap::query(), AccessCard::query(), BiometricTemplate::query()),
+            'employees' => $this->stamp(Employee::query(), Company::query(), Department::query(), EmployeeDeviceMap::query(), AccessCard::query(), BiometricTemplate::query()),
             'devices' => $this->stamp(Device::query(), DeviceCommand::query(), DeviceGroup::query(), DeviceRosterEntry::query()),
             'attendance' => $this->stamp(AttendanceLog::query(), AttendanceSyncRun::query()),
             'enrollment' => $this->stamp(EnrollmentSession::query()),

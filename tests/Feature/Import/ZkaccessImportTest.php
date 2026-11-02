@@ -3,6 +3,7 @@
 namespace Tests\Feature\Import;
 
 use App\Models\AttendanceLog;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
@@ -45,7 +46,9 @@ class ZkaccessImportTest extends TestCase
         Tenancy::set($this->tenant->id);
 
         Device::query()->where('tenant_id', $this->tenant->id)->delete();
+        // ZKAccess departments land as companies (2026-11-03); start with none.
         Department::query()->where('tenant_id', $this->tenant->id)->delete();
+        Company::query()->where('tenant_id', $this->tenant->id)->delete();
 
         $this->otr = Device::create([
             'tenant_id' => $this->tenant->id,
@@ -139,13 +142,13 @@ class ZkaccessImportTest extends TestCase
 
     public function test_dry_run_writes_nothing_but_counts_everything(): void
     {
-        $beforeDepts = Department::count();
+        $beforeDepts = Company::count();
         $beforeEmployees = Employee::count();
         $beforePunches = AttendanceLog::count();
 
         $report = $this->service($this->export())->run();
 
-        $this->assertSame($beforeDepts, Department::count());
+        $this->assertSame($beforeDepts, Company::count());
         $this->assertSame($beforeEmployees, Employee::count());
         $this->assertSame($beforePunches, AttendanceLog::count());
 
@@ -169,7 +172,7 @@ class ZkaccessImportTest extends TestCase
         $this->service($this->export(), apply: true)->run();
         $this->service($this->export(), apply: true)->run();
 
-        $departments = Department::where('tenant_id', $this->tenant->id)->get();
+        $departments = Company::where('tenant_id', $this->tenant->id)->get();
         $this->assertSame(1, $departments->count());
         $this->assertSame('P7H', $departments->first()->name);
         $this->assertSame('47', $departments->first()->code);
@@ -178,7 +181,7 @@ class ZkaccessImportTest extends TestCase
     public function test_fills_empty_profile_fields_and_never_overwrites(): void
     {
         $alice = Employee::where('employee_code', '50')->first();
-        $alice->update(['birthday' => '1990-01-01', 'gender' => null, 'card_number' => null, 'department_id' => null]);
+        $alice->update(['birthday' => '1990-01-01', 'gender' => null, 'card_number' => null, 'company_id' => null]);
 
         $report = $this->service($this->export(), apply: true)->run();
 
@@ -187,7 +190,7 @@ class ZkaccessImportTest extends TestCase
         $this->assertSame(5050, $alice->card_number);
         $this->assertSame('1990-01-01', $alice->birthday->format('Y-m-d')); // untouched
         $this->assertSame('2023-01-15', $alice->hired_date->format('Y-m-d'));
-        $this->assertNotNull($alice->department_id);
+        $this->assertNotNull($alice->company_id);
         $this->assertSame('P7H', $alice->department);
 
         $bob = Employee::where('employee_code', '51')->first();

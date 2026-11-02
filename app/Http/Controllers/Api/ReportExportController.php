@@ -7,6 +7,7 @@ use App\Models\ReportExport;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Reports\EmployeeReportsExport;
 use App\Support\ApiResponse;
+use App\Support\OrgScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -53,7 +54,7 @@ class ReportExportController extends Controller
         $validated = $request->validate([
             'from' => ['required', 'date', 'before_or_equal:'.$today],
             'to' => ['required', 'date', 'after_or_equal:from', 'before_or_equal:'.$today],
-            'department_id' => ['nullable', 'integer'],
+            ...OrgScope::rules(),
         ]);
 
         [$from, $to] = AttendanceSummaryService::window($validated['from'], $validated['to']);
@@ -78,7 +79,7 @@ class ReportExportController extends Controller
             $request->user(),
             $validated['from'],
             $validated['to'],
-            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
+            OrgScope::from($validated),
         );
 
         if ($export->total === 0) {

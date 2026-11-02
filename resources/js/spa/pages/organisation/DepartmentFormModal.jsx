@@ -5,19 +5,20 @@ import Combobox from '../../shared/Combobox';
 import { useEscapeKey } from '../../shared/useEscapeKey';
 
 /*
-| Add or edit a company or a department. A company is a node with no parent; a
-| department names its company, and can be moved to another one by changing it. A
-| company is never turned into a department here: its own departments would be left
-| two levels deep, which no screen expects.
+| Add or edit a company or a department. Two tables since 2026-11-03: a company is a
+| `companies` row; a department names its company (required), and can be moved to
+| another one by changing it — which moves its people with it, on the server. A
+| company is never turned into a department here, nor the other way round: they are
+| different tables.
 |
-| node      the row being edited, or null to add
-| kind      'company' | 'department'
-| parentId  the company a new department goes under
+| node       the row being edited, or null to add
+| kind       'company' | 'department'
+| companyId  the company a new department goes under
 */
-export default function DepartmentFormModal({ node, kind, parentId = null, companies, onSubmit, onClose }) {
+export default function DepartmentFormModal({ node, kind, companyId: initialCompanyId = null, companies, onSubmit, onClose }) {
     const isEdit = !!node;
     const [name, setName] = useState(node?.name ?? '');
-    const [companyId, setCompanyId] = useState(node?.parent_id ?? parentId);
+    const [companyId, setCompanyId] = useState(node?.company_id != null ? Number(node.company_id) : initialCompanyId);
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
 
@@ -29,7 +30,7 @@ export default function DepartmentFormModal({ node, kind, parentId = null, compa
         e.preventDefault();
         const found = {};
         if (!name.trim()) found.name = [`Enter the ${noun}'s name.`];
-        if (kind === 'department' && companyId == null) found.parent_id = ['Choose the company it belongs to.'];
+        if (kind === 'department' && companyId == null) found.company_id = ['Choose the company it belongs to.'];
         if (Object.keys(found).length) {
             setErrors(found);
             return;
@@ -37,7 +38,7 @@ export default function DepartmentFormModal({ node, kind, parentId = null, compa
         setSubmitting(true);
         setErrors({});
         try {
-            await onSubmit({ name: name.trim(), parent_id: kind === 'company' ? null : companyId });
+            await onSubmit(kind === 'company' ? { name: name.trim() } : { name: name.trim(), company_id: companyId });
         } catch (err) {
             // 422 → on the fields; anything else was already toasted by the page.
             if (err instanceof ApiError && err.errors) setErrors(err.errors);
@@ -74,7 +75,7 @@ export default function DepartmentFormModal({ node, kind, parentId = null, compa
                                     onChange={(v) => v != null && setCompanyId(v)}
                                     placeholder="Search…"
                                     emptyText="No company matches."
-                                    error={errors.parent_id?.[0]}
+                                    error={errors.company_id?.[0]}
                                 />
                             </div>
                         )}

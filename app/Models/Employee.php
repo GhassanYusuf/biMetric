@@ -25,6 +25,7 @@ class Employee extends Model
         'external_id',
         'email',
         'department',
+        'company_id',
         'department_id',
         'photo_path',
         'is_active',
@@ -121,10 +122,27 @@ class Employee extends Model
              */
             // Only when the caller did not set the text itself: an import carrying its own
             // department name (ZKAccess's "LOGISTICS") keeps it.
-            if ($employee->isDirty('department_id') && ! $employee->isDirty('department')) {
-                $employee->department = $employee->department_id === null
+            /*
+             * A department decides the company (2026-11-03): whoever sets a department sets
+             * its company, and a company that does not hold the department clears it. So no
+             * screen, import or API call can leave someone in Camelot's books and
+             * PROMOSEVEN's Finance at once.
+             */
+            if ($employee->isDirty(['company_id', 'department_id'])) {
+                $department = $employee->department_id === null
                     ? null
-                    : Department::withoutGlobalScopes()->whereKey($employee->department_id)->value('name');
+                    : Department::withoutGlobalScopes()->find($employee->department_id);
+                if ($department !== null && $employee->isDirty('department_id')) {
+                    $employee->company_id = $department->company_id;
+                } elseif ($department !== null && (int) $department->company_id !== (int) $employee->company_id) {
+                    $employee->department_id = null;
+                    $department = null;
+                }
+
+                if (! $employee->isDirty('department')) {
+                    $employee->department = $department?->name
+                        ?? ($employee->company_id === null ? null : Company::withoutGlobalScopes()->whereKey($employee->company_id)->value('name'));
+                }
             }
         });
     }
@@ -237,6 +255,28 @@ class Employee extends Model
     public function multiCardGroup(): BelongsTo
     {
         return $this->belongsTo(MultiCardGroup::class);
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    /**
+     * Where they work, as reports print it: "PROMOSEVEN › Finance", "Camelot", or the old
+     * free-text `department` for someone in no company. Load `company` and `department`
+     * for a list.
+     */
+    public function orgLabel(): ?string
+    {
+        $company = $this->getRelationValue('company');
+        $department = $this->getRelationValue('department');
+
+        if ($department !== null) {
+            return $company === null ? $department->name : "{$company->name} › {$department->name}";
+        }
+
+        return $company?->name ?? ($this->getAttributes()['department'] ?? null ?: null);
     }
 
     public function department(): BelongsTo

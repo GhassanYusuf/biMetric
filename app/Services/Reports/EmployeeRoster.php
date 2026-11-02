@@ -2,11 +2,11 @@
 
 namespace App\Services\Reports;
 
-use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
 use App\Services\Employees\EmployeeRosterQuery;
+use App\Support\OrgScope;
 use Illuminate\Http\Request;
 
 /**
@@ -34,9 +34,8 @@ class EmployeeRoster
     {
         $employees = EmployeeRosterQuery::build($request)
             ->with([
-                'department:id,name,parent_id',
-                'department.parent:id,name,parent_id',
-                'department.parent.parent:id,name,parent_id',
+                'company:id,name',
+                'department:id,name,company_id',
                 // Live mappings only: a closed one is a PIN they USED to hold.
                 'deviceMaps' => fn ($q) => $q->whereNull('valid_to')->with('device:id,name'),
             ])
@@ -69,23 +68,21 @@ class EmployeeRoster
     }
 
     /**
-     * Company and department as the screen's two columns (employeeLabels.jsx orgOf): the
-     * company is the top of the branch; a person placed on the company itself has no
-     * department yet. Without a tree node the old free-text `department` is the company.
+     * Company and department as the screen's two columns (two columns since 2026-11-03).
+     * Someone in no company shows the old free-text `department` as the company.
      *
      * @return array{0:?string, 1:?string}
      */
     private function org(Employee $employee): array
     {
-        // `department` is also a free-text column; read the relation, not the attribute.
-        $node = $employee->getRelation('department');
-        if (! $node instanceof Department) {
+        // `department` is also a free-text column; read the relations, not the attribute.
+        $company = $employee->getRelation('company');
+        $department = $employee->getRelation('department');
+        if ($company === null) {
             return [$employee->getAttribute('department') ?: null, null];
         }
 
-        $company = $node->company();
-
-        return [$company->name, (int) $node->id === (int) $company->id ? null : $node->name];
+        return [$company->name, $department?->name];
     }
 
     private function status(Employee $employee): string
@@ -102,19 +99,7 @@ class EmployeeRoster
     {
         $lines = [];
 
-        $node = $request->query('department_id');
-        if ($node === 'none') {
-            $lines[] = 'Unassigned (no company)';
-        } elseif ($request->filled('department_id')) {
-            $department = Department::find((int) $node);
-            $lines[] = match (true) {
-                $department === null => "Department #{$node}",
-                $department->parent_id === null => 'Company: '.$department->name,
-                default => 'Department: '.$department->path().' (and below)',
-            };
-        } else {
-            $lines[] = 'All employees';
-        }
+        $lines[] = OrgScope::from($request->query())->label() ?? 'All employees';
 
         if ($request->filled('search')) {
             $lines[] = 'Search: “'.$request->string('search')->trim().'”';

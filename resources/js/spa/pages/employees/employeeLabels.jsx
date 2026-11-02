@@ -6,17 +6,14 @@ import { Badge } from '../../shared/ui';
 */
 
 /**
- * Company and department from the tree (2026-10-12). `department_id` is the
- * department when one is set, or the company itself — then there is no department
- * yet. Falls back to the old free-text column for a row loaded without the tree.
+ * Company and department (two columns since the companies table, 2026-11-03):
+ * `company` is the company or null, `department_name` the department or null when
+ * they sit on the company alone. Falls back to the old free-text column for someone
+ * in no company.
  */
 export function orgOf(e) {
     if (e.company) {
-        return {
-            company: e.company.name,
-            // Number(): SQL Server returns department_id as a string ("4").
-            department: e.department_id && Number(e.department_id) !== Number(e.company.id) ? (e.department_name ?? null) : null,
-        };
+        return { company: e.company.name, department: e.department_id != null ? (e.department_name ?? null) : null };
     }
     return { company: e.department || null, department: null };
 }

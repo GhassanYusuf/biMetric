@@ -20,7 +20,7 @@ import ReportRangeDialog from './ReportRangeDialog';
 | it lands, on whichever page the user is then on that uses this hook, by watching the
 | reports module (rule 18); `onPdfStarted` lets the Reports screen refresh its file list.
 */
-export function useAllEmployeesExport({ departments = null, initialRange = null, initialDepartment = '', onPdfStarted } = {}) {
+export function useAllEmployeesExport({ companies = null, departments = null, initialRange = null, initialOrg = '', onPdfStarted } = {}) {
     const { user } = useAuth();
     const toast = useToast();
     const [format, setFormat] = useState(null);
@@ -67,7 +67,8 @@ export function useAllEmployeesExport({ departments = null, initialRange = null,
         setExcelBusy(true);
         try {
             const params = new URLSearchParams({ from: range.from, to: range.to });
-            if (range.department_id) params.set('department_id', range.department_id);
+            // A company means everyone in it; departments, those departments (2026-11-03).
+            (range.company_ids ?? []).forEach((id) => params.append('company_ids[]', id));
             (range.department_ids ?? []).forEach((id) => params.append('department_ids[]', id));
             (range.employee_ids ?? []).forEach((id) => params.append('employee_ids[]', id));
             const name = await api.download(`/exports/monthly-statement/excel?${params}`, 'monthly-statement.xlsx');
@@ -89,8 +90,9 @@ export function useAllEmployeesExport({ departments = null, initialRange = null,
                 : 'Every person\'s report — charts and every punch — in one PDF with a contents page. It is built in the background; large companies take a minute or two.'}
             confirmLabel={format === 'excel' ? 'Download Excel' : 'Build PDF'}
             initial={initialRange}
+            companies={companies}
             departments={departments}
-            initialDepartment={initialDepartment}
+            initialOrg={initialOrg}
             allowPeople={format === 'excel'}
             onSubmit={format === 'excel' ? downloadExcel : startPdf}
             onClose={() => setFormat(null)}

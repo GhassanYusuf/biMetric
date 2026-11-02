@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Tenant;
@@ -10,7 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
-/** v_employee_company: company and department as two columns, at any depth (2026-11-02). */
+/** v_employee_company: company and department per employee (2026-11-02; over the companies table since 2026-11-03). */
 class EmployeeCompanyViewTest extends TestCase
 {
     use RefreshDatabase;
@@ -19,14 +20,14 @@ class EmployeeCompanyViewTest extends TestCase
     {
         $tenant = Tenant::create(['name' => 'Acme', 'slug' => 'acme']);
         Tenancy::set($tenant->id);
-        $promoseven = Department::create(['name' => 'PROMOSEVEN']);
-        $it = Department::create(['name' => 'IT', 'parent_id' => $promoseven->id]);
-        $helpdesk = Department::create(['name' => 'Helpdesk', 'parent_id' => $it->id]);
-        $camelot = Department::create(['name' => 'Camelot']);
-        Employee::create(['name' => 'Top', 'employee_code' => '1', 'department_id' => $promoseven->id]);
+        $promoseven = Company::create(['name' => 'PROMOSEVEN']);
+        $it = Department::create(['name' => 'IT', 'company_id' => $promoseven->id]);
+        $helpdesk = Department::create(['name' => 'Helpdesk', 'company_id' => $promoseven->id]);
+        $camelot = Company::create(['name' => 'Camelot']);
+        Employee::create(['name' => 'Top', 'employee_code' => '1', 'company_id' => $promoseven->id]);
         Employee::create(['name' => 'Dept', 'employee_code' => '2', 'department_id' => $it->id]);
         Employee::create(['name' => 'Deep', 'employee_code' => '3', 'department_id' => $helpdesk->id]);
-        Employee::create(['name' => 'Other', 'employee_code' => '4', 'department_id' => $camelot->id]);
+        Employee::create(['name' => 'Other', 'employee_code' => '4', 'company_id' => $camelot->id]);
         Employee::create(['name' => 'None', 'employee_code' => '5']);
         Tenancy::clear();
 

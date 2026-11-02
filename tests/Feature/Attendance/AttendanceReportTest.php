@@ -5,6 +5,7 @@ namespace Tests\Feature\Attendance;
 use App\Models\Employee;
 use App\Services\Attendance\EmployeeReportService;
 use App\Services\Reports\AttendanceReport;
+use App\Support\OrgScope;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -34,7 +35,7 @@ class AttendanceReportTest extends TestCase
 
     private function build(): array
     {
-        return app(AttendanceReport::class)->build(self::FROM, self::TO, $this->lab->id);
+        return app(AttendanceReport::class)->build(self::FROM, self::TO, new OrgScope($this->lab->id));
     }
 
     /** @return list<string> */
@@ -108,7 +109,7 @@ class AttendanceReportTest extends TestCase
         $this->assertEqualsCanonicalizing(['Punctual', 'New Starter'], self::names($a['perfect']));
     }
 
-    public function test_a_department_includes_the_departments_beneath_it(): void
+    public function test_a_company_includes_its_departments(): void
     {
         $r = $this->build();
 

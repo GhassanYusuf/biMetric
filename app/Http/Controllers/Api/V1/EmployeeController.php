@@ -6,8 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreEmployeeRequest;
 use App\Http\Requests\Api\V1\UpdateEmployeeRequest;
 use App\Http\Resources\DeviceCommandResource;
-use App\Http\Resources\V1\EmployeeResource;
-use App\Models\Department;
+use App\Http\Resources\EmployeeResource;
 use App\Models\Device;
 use App\Models\DeviceCommand;
 use App\Models\Employee;
@@ -30,7 +29,7 @@ use Illuminate\Support\Facades\DB;
  */
 class EmployeeController extends Controller
 {
-    private const WITH = ['department:id,name,parent_id', 'department.parent:id,name,parent_id', 'deviceMaps.device:id,name', 'accessLevels:id'];
+    private const WITH = ['company:id,name', 'department:id,name,company_id', 'deviceMaps.device:id,name', 'accessLevels:id'];
 
     public function __construct(
         private readonly EmployeeDevicePusher $pusher,
@@ -59,9 +58,9 @@ class EmployeeController extends Controller
             })
             ->when($request->filled('external_id'), fn ($q) => $q->where('external_id', $request->string('external_id')))
             ->when($request->filled('employee_code'), fn ($q) => $q->where('employee_code', $request->string('employee_code')))
-            // A company includes everyone in its departments (owner, 2026-11-02, option 1).
-            ->when($request->filled('company_id'), fn ($q) => $q->whereIn('department_id', Department::subtreeIds($request->integer('company_id'))))
-            ->when($request->filled('department_id'), fn ($q) => $q->whereIn('department_id', Department::subtreeIds($request->integer('department_id'))))
+            // Everyone in the company, its departments included: the row carries company_id.
+            ->when($request->filled('company_id'), fn ($q) => $q->where('company_id', $request->integer('company_id')))
+            ->when($request->filled('department_id'), fn ($q) => $q->where('department_id', $request->integer('department_id')))
             ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
             ->when($request->filled('resigned') && Employee::hasEmploymentColumns(), fn ($q) => $request->boolean('resigned')
                 ? $q->whereNotNull('resigned_at')

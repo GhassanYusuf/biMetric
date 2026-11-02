@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Tenant;
@@ -12,9 +13,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Company and department as two fields in the v1 API (owner, 2026-11-02, option 1 of 2).
- * Storage is unchanged: employees.department_id holds the department, or the company when
- * there is none, and the website still reads that one column.
+ * Company and department as two fields in the v1 API (owner, 2026-11-02). Since the
+ * companies table (2026-11-03) they are two columns too; the API's shape did not change.
  */
 class CompanyDepartmentApiTest extends TestCase
 {
@@ -22,11 +22,11 @@ class CompanyDepartmentApiTest extends TestCase
 
     private User $admin;
 
-    private Department $promoseven;
+    private Company $promoseven;
 
     private Department $it;
 
-    private Department $camelot;
+    private Company $camelot;
 
     protected function setUp(): void
     {
@@ -43,9 +43,9 @@ class CompanyDepartmentApiTest extends TestCase
             'tenant_id' => $tenant->id, 'is_active' => true, 'email_verified_at' => now(),
         ]);
         $this->admin->syncRoles(['tenant-admin']);
-        $this->promoseven = Department::create(['name' => 'PROMOSEVEN']);
-        $this->it = Department::create(['name' => 'Information Technology', 'parent_id' => $this->promoseven->id]);
-        $this->camelot = Department::create(['name' => 'Camelot']);
+        $this->promoseven = Company::create(['name' => 'PROMOSEVEN']);
+        $this->it = Department::create(['name' => 'Information Technology', 'company_id' => $this->promoseven->id]);
+        $this->camelot = Company::create(['name' => 'Camelot']);
         Tenancy::clear();
     }
 
@@ -57,14 +57,15 @@ class CompanyDepartmentApiTest extends TestCase
         return $this->withToken($token);
     }
 
-    private function stored(string $code): ?int
+    /** [company_id, department_id] as stored. */
+    private function stored(string $code): array
     {
-        $id = Employee::withoutGlobalScopes()->where('employee_code', $code)->value('department_id');
+        $row = Employee::withoutGlobalScopes()->where('employee_code', $code)->first(['company_id', 'department_id']);
 
-        return $id === null ? null : (int) $id;
+        return [$row->company_id === null ? null : (int) $row->company_id, $row->department_id === null ? null : (int) $row->department_id];
     }
 
-    public function test_a_company_alone_is_stored_as_the_company_and_shown_without_a_department(): void
+    public function test_a_company_alone_is_stored_without_a_department(): void
     {
         $this->api()->postJson('/api/v1/employees', ['name' => 'A', 'employee_code' => '11', 'company_id' => $this->camelot->id])
             ->assertCreated()
@@ -72,10 +73,10 @@ class CompanyDepartmentApiTest extends TestCase
             ->assertJsonPath('data.department_id', null)
             ->assertJsonPath('data.department_name', null);
 
-        $this->assertSame($this->camelot->id, $this->stored('11'));
+        $this->assertSame([$this->camelot->id, null], $this->stored('11'));
     }
 
-    public function test_company_and_department_are_stored_as_the_department(): void
+    public function test_company_and_department_are_stored_together(): void
     {
         $this->api()->postJson('/api/v1/employees', ['name' => 'B', 'employee_code' => '12', 'company_id' => $this->promoseven->id, 'department_id' => $this->it->id])
             ->assertCreated()
@@ -84,14 +85,14 @@ class CompanyDepartmentApiTest extends TestCase
             ->assertJsonPath('data.department_name', 'Information Technology')
             ->assertJsonPath('data.company.name', 'PROMOSEVEN');
 
-        $this->assertSame($this->it->id, $this->stored('12'));
+        $this->assertSame([$this->promoseven->id, $this->it->id], $this->stored('12'));
     }
 
-    public function test_a_company_sent_as_department_id_is_refused(): void
+    public function test_an_id_that_is_not_a_company_or_department_is_refused(): void
     {
-        $this->api()->postJson('/api/v1/employees', ['name' => 'C', 'department_id' => $this->camelot->id])
+        $this->api()->postJson('/api/v1/employees', ['name' => 'C', 'department_id' => 999])
             ->assertUnprocessable()->assertJsonValidationErrors('department_id');
-        $this->api()->postJson('/api/v1/employees', ['name' => 'C', 'company_id' => $this->it->id])
+        $this->api()->postJson('/api/v1/employees', ['name' => 'C', 'company_id' => 999])
             ->assertUnprocessable()->assertJsonValidationErrors('company_id');
     }
 
@@ -109,12 +110,12 @@ class CompanyDepartmentApiTest extends TestCase
 
         // The same company again keeps the department.
         $this->api()->patchJson('/api/v1/employees/15', ['company_id' => $this->promoseven->id])->assertOk();
-        $this->assertSame($this->it->id, $this->stored('15'));
+        $this->assertSame([$this->promoseven->id, $this->it->id], $this->stored('15'));
 
         // Removing the department keeps the company.
         $this->api()->patchJson('/api/v1/employees/15', ['department_id' => null])->assertOk()
             ->assertJsonPath('data.company_id', $this->promoseven->id)->assertJsonPath('data.department_id', null);
-        $this->assertSame($this->promoseven->id, $this->stored('15'));
+        $this->assertSame([$this->promoseven->id, null], $this->stored('15'));
 
         // Another company drops the department that is not in it.
         $this->api()->patchJson('/api/v1/employees/15', ['department_id' => $this->it->id])->assertOk();
@@ -123,7 +124,7 @@ class CompanyDepartmentApiTest extends TestCase
 
         // Something else entirely leaves both alone.
         $this->api()->patchJson('/api/v1/employees/15', ['job_title' => 'Clerk'])->assertOk();
-        $this->assertSame($this->camelot->id, $this->stored('15'));
+        $this->assertSame([$this->camelot->id, null], $this->stored('15'));
     }
 
     public function test_the_list_filters_by_company_including_its_departments(): void
@@ -138,14 +139,19 @@ class CompanyDepartmentApiTest extends TestCase
         $this->assertSame(['Dept'], $names('department_id='.$this->it->id));
     }
 
-    public function test_departments_say_whether_they_are_a_company_and_which(): void
+    /** Companies have their own endpoint since 2026-11-03; departments name their company. */
+    public function test_companies_and_departments_are_listed_apart(): void
     {
-        $rows = collect($this->api()->getJson('/api/v1/departments')->assertOk()->json('data'))->keyBy('name');
+        $companies = collect($this->api()->getJson('/api/v1/companies')->assertOk()->json('data'))->pluck('name')->all();
+        $this->assertSame(['Camelot', 'PROMOSEVEN'], $companies);
 
-        $this->assertTrue($rows['PROMOSEVEN']['is_company']);
-        $this->assertFalse($rows['Information Technology']['is_company']);
-        $this->assertSame($this->promoseven->id, $rows['Information Technology']['company_id']);
-        $this->assertSame($this->camelot->id, $rows['Camelot']['company_id']);
+        $departments = collect($this->api()->getJson('/api/v1/departments')->assertOk()->json('data'));
+        $this->assertSame(['Information Technology'], $departments->pluck('name')->all());
+        $this->assertSame($this->promoseven->id, $departments[0]['company_id']);
+        $this->assertSame('PROMOSEVEN', $departments[0]['company_name']);
+        $this->assertArrayNotHasKey('parent_id', $departments[0]);
+
+        $this->api()->getJson("/api/v1/companies/{$this->camelot->id}")->assertOk()->assertJsonPath('data.name', 'Camelot');
     }
     /** Owner, 2026-11-02: other systems send "Male"; it is stored as "male". */
     public function test_gender_is_accepted_in_any_capitalisation(): void

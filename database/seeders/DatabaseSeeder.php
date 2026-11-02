@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Tenant;
@@ -134,8 +135,9 @@ class DatabaseSeeder extends Seeder
 
         Tenancy::set($acme);
 
-        $engineering = Department::firstOrCreate(['tenant_id' => $acme->id, 'name' => 'Engineering'], ['code' => 'ENG']);
-        $operations = Department::firstOrCreate(['tenant_id' => $acme->id, 'name' => 'Operations'], ['code' => 'OPS']);
+        $company = Company::firstOrCreate(['tenant_id' => $acme->id, 'name' => 'Acme Industries']);
+        $engineering = Department::firstOrCreate(['tenant_id' => $acme->id, 'company_id' => $company->id, 'name' => 'Engineering'], ['code' => 'ENG']);
+        $operations = Department::firstOrCreate(['tenant_id' => $acme->id, 'company_id' => $company->id, 'name' => 'Operations'], ['code' => 'OPS']);
 
         $employees = [
             ['name' => 'Sara Ahmed', 'employee_code' => '1001', 'department_id' => $engineering->id],

@@ -1,58 +1,38 @@
 import { useMemo } from 'react';
 import { FOCUS } from './theme';
+import { buildOrg, companyKey, departmentKey } from './orgUnits';
 
 /*
 | Tick one or more companies / departments (owner, 2026-10-19: "give me the option to
-| select multiple department"). Shown as the Company › Department tree, indented.
+| select multiple department"). Shown as Company › Department, indented.
 |
-| Ticking a company or department includes everything below it — the server takes each
-| one's subtree (Department::subtreeIds) — so the rows below a ticked one show as ticked
-| and locked, labelled "included", rather than inviting a second tick that changes
-| nothing. Ticking a parent drops its now-redundant children from `value`.
+| Two tables since 2026-11-03, each department flat under one company. Ticking a
+| company includes everyone in it — the server reads `company_ids[]` as the whole
+| company, departments included — so its departments show as ticked and locked,
+| labelled "included", rather than inviting a second tick that changes nothing.
+| Ticking a company drops its now-redundant departments from `value`.
 |
-| departments  [{ id, parent_id, name }] — the tenant's list from GET /departments
-| value        [id, …] numbers
+| companies    GET /companies' list
+| departments  GET /departments' list ({ id, company_id, name })
+| value        ['c:4', 'd:13', …] — keys, because a company and a department can share
+|              an id (shared/orgUnits.jsx). The caller splits them into company_ids[]
+|              and department_ids[].
 */
-export default function DepartmentChecklist({ departments, value, onChange, error }) {
-    const { rows, below } = useMemo(() => {
-        // Ids can arrive as strings (SQL Server); compare as numbers throughout.
-        const list = departments.map((d) => ({ ...d, id: Number(d.id), parent_id: d.parent_id == null ? null : Number(d.parent_id) }));
-        const byParent = new Map();
-        const ids = new Set(list.map((d) => d.id));
-        list.forEach((d) => {
-            // A parent outside the list (or none) makes it a root.
-            const key = d.parent_id && ids.has(d.parent_id) ? d.parent_id : null;
-            if (!byParent.has(key)) byParent.set(key, []);
-            byParent.get(key).push(d);
-        });
-        byParent.forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name)));
-
-        const out = [];
-        const descendants = new Map();
-        const seen = new Set();
-        const walk = (parent, depth, ancestors) => {
-            (byParent.get(parent) ?? []).forEach((d) => {
-                if (seen.has(d.id)) return; // a cycle in the data
-                seen.add(d.id);
-                out.push({ ...d, depth, ancestors });
-                descendants.set(d.id, []);
-                ancestors.forEach((a) => descendants.get(a).push(d.id));
-                walk(d.id, depth + 1, [...ancestors, d.id]);
-            });
-        };
-        walk(null, 0, []);
-        return { rows: out, below: descendants };
-    }, [departments]);
+export default function DepartmentChecklist({ companies, departments, value, onChange, error }) {
+    const rows = useMemo(() => buildOrg(companies ?? [], departments ?? []).flatMap((c) => [
+        { key: companyKey(c.id), name: c.name, depth: 0, company: null },
+        ...c.departments.map((d) => ({ key: departmentKey(d.id), name: d.name, depth: 1, company: companyKey(c.id) })),
+    ]), [companies, departments]);
 
     const chosen = new Set(value);
 
     function toggle(row) {
-        if (chosen.has(row.id)) {
-            onChange(value.filter((id) => id !== row.id));
+        if (chosen.has(row.key)) {
+            onChange(value.filter((key) => key !== row.key));
             return;
         }
-        const redundant = new Set(below.get(row.id) ?? []);
-        onChange([...value.filter((id) => !redundant.has(id)), row.id]);
+        const redundant = new Set(row.depth === 0 ? rows.filter((r) => r.company === row.key).map((r) => r.key) : []);
+        onChange([...value.filter((key) => !redundant.has(key)), row.key]);
     }
 
     return (
@@ -72,10 +52,10 @@ export default function DepartmentChecklist({ departments, value, onChange, erro
                 className={`mt-2 max-h-60 overflow-y-auto rounded-xl ring-1 ${error ? 'ring-rose-300' : 'ring-slate-200'}`}
             >
                 {rows.map((row) => {
-                    const implied = row.ancestors.some((a) => chosen.has(a));
-                    const on = implied || chosen.has(row.id);
+                    const implied = row.company !== null && chosen.has(row.company);
+                    const on = implied || chosen.has(row.key);
                     return (
-                        <li key={row.id}>
+                        <li key={row.key}>
                             <button
                                 type="button"
                                 role="checkbox"
@@ -94,11 +74,11 @@ export default function DepartmentChecklist({ departments, value, onChange, erro
                         </li>
                     );
                 })}
-                {rows.length === 0 && <li className="px-3.5 py-3 text-sm text-slate-500">No departments yet.</li>}
+                {rows.length === 0 && <li className="px-3.5 py-3 text-sm text-slate-500">No companies yet.</li>}
             </ul>
             {error
                 ? <p id="department-checklist-error" className="mt-1 text-xs text-rose-700">{error}</p>
-                : <p className="mt-1 text-xs text-slate-500">Each one includes the departments below it.</p>}
+                : <p className="mt-1 text-xs text-slate-500">A company includes all its departments.</p>}
         </div>
     );
 }

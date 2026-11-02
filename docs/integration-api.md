@@ -94,7 +94,7 @@ terminals; the row id is internal). Answers still carry both `id` and `employee_
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/employees` | Filters: `search`, `external_id`, `employee_code`, `department_id`, `is_active`, `resigned` (`1` only resigned, `0` none), `employment_type`, `device_id`, `updated_since`. `per_page` ≤ 200. Ordered by `id` — stable while rows are added. |
+| GET | `/employees` | Filters: `search`, `external_id`, `employee_code`, `company_id` (its departments included), `department_id`, `is_active`, `resigned` (`1` only resigned, `0` none), `employment_type`, `device_id`, `updated_since`. `per_page` ≤ 200. Ordered by `id` — stable while rows are added. |
 | GET | `/employees/{code}` | By Personnel ID. |
 | GET | `/employees/by-external-id/{externalId}` | |
 | GET | `/employees/by-code/{code}` | The same as `/employees/{code}` since 2026-11-02 (kept for callers already using it). Exact match as text (`0099902` ≠ `99902`); `404` if no employee in your company has it. |
@@ -129,24 +129,26 @@ Fields are the web form's (`name`, `employee_code`, `email`, `department_id`, `j
   2026-11-02).
 - **`country`** — free text; the web form stores the English country name (`"Bahrain"`).
 
-**Company and department are two fields** (2026-11-02, option 1 of 2):
+**Company and department are two fields** (API since 2026-11-02; two tables since
+2026-11-03, `docs/plan-companies-table.md`):
 
-- **`company_id`** — the company (a `/departments` row with `is_company: true`, e.g. 4 =
-  PROMOSEVEN). In answers always the company, with `company` `{id, name}`.
-- **`department_id`** — a department, never a company (e.g. 12 = PROMOSEVEN › Information
-  Technology). In answers `null` when the employee only has a company; `department_name`
-  likewise.
+- **`company_id`** — the company, from `GET /companies` (e.g. 4 = PROMOSEVEN, 19 = Camelot).
+  In answers with `company` `{id, name}`.
+- **`department_id`** — a department of that company, from `GET /departments` (e.g. 12 =
+  Information Technology, in company 4). In answers `null` when the employee only has a
+  company; `department_name` likewise. Company ids and department ids are separate: company
+  21 and department 21 can both exist.
 - Sent together, the department must belong to the company, or `422` ("Information
   Technology belongs to PROMOSEVEN, not Camelot."). `department_id` alone sets the company
   too; `company_id` alone keeps the department if it is in that company, else drops it;
-  `department_id: null` keeps the company. A company sent as `department_id` is refused.
+  `department_id: null` keeps the company. The model enforces the same rule for every
+  writer (imports included): a department decides the company.
 - `GET /employees?company_id=` includes everyone in that company's departments.
 
-Stored as before: `employees.department_id` holds the department, or the company when there
-is none. The website still reads that single column; only the API splits it. For SQL, the
-view **`v_employee_company`** (`company`, `department`, `company_id`, `department_id` per
-employee) walks the tree. Option 2 (a real `companies` table) is planned. The free-text `department` follows `department_id`
-when that changes, unless the same request sets `department` itself.
+Stored as `employees.company_id` and `employees.department_id`. For SQL, the view
+**`v_employee_company`** gives `company`, `department`, `company_id`, `department_id` per
+employee. The free-text `department` follows: the department's name, or the company's when
+there is no department, unless the same request sets `department` itself.
 
 Device writes the call asked for are reported in `meta`:
 
@@ -362,12 +364,13 @@ network and the customer's HR system is usually on it.
   `queued` forever and no webhook is ever sent; without the scheduler backfilled punches
   never reach webhooks. `GET /device-commands` showing commands that never leave `queued` is the
   symptom.
-- **Departments** are `/departments` (read `employees:read`, write `employees:write`).
-  Create them before referencing `department_id`.
-  A company is a department with no `parent_id` (`is_company: true`); its departments name it
-  as their parent, and every row carries its `company_id`. `DELETE` answers 409 while the node still has employees or departments.
-  Renaming one updates the free-text `department` of its employees that still held
-  the old name.
+- **Companies** are `/companies`, **departments** `/departments` (read `employees:read`,
+  write `employees:write`; 2026-11-03). Create them before referencing them. A department
+  needs `company_id` and its name is unique within that company; there are no
+  sub-departments. `DELETE` answers 409 while a company still has employees or departments,
+  or a department still has employees. Renaming one updates the free-text `department` of
+  its employees that still held the old name; moving a department to another company moves
+  its people with it.
 
 ## 8. How it fits the codebase (for maintainers)
 

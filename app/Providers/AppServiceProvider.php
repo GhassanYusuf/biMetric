@@ -3,13 +3,14 @@
 namespace App\Providers;
 
 use App\Contracts\BiometricDeviceDriver;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
+use App\Models\DeviceCommand;
 use App\Models\Employee;
+use App\Models\EnrollmentSession;
 use App\Models\Holiday;
 use App\Models\User;
-use App\Models\DeviceCommand;
-use App\Models\EnrollmentSession;
 use App\Observers\AuditObserver;
 use App\Observers\IntegrationEventObserver;
 use App\Services\Devices\DeviceDriverManager;
@@ -57,6 +58,7 @@ class AppServiceProvider extends ServiceProvider
         // Immutable audit trail for the primary domain records.
         Employee::observe(AuditObserver::class);
         Device::observe(AuditObserver::class);
+        Company::observe(AuditObserver::class);
         Department::observe(AuditObserver::class);
         Holiday::observe(AuditObserver::class);
         // The Users screen (2026-10-19); the password is redacted by the observer.

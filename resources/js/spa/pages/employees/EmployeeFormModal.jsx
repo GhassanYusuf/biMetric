@@ -34,35 +34,12 @@ const EMPLOYMENT_TYPES = [
 ];
 
 /*
-| COMPANY › DEPARTMENT (2026-10-12). The tree is one table (`departments.parent_id`):
-| a company is a node with no parent, its departments sit beneath it. The employee
-| holds ONE `department_id` — the department when one is chosen, else the company.
+| COMPANY › DEPARTMENT (2026-10-12; two tables since 2026-11-03). Companies are their
+| own table and each department sits flat under exactly one company. The employee
+| holds both: `company_id`, and `department_id` — a department of that company, or
+| null when they sit on the company alone. The server refuses (422 on department_id)
+| a department that is not the company's.
 */
-function rootOf(id, byId) {
-    let node = byId.get(id);
-    const seen = new Set();
-    while (node && node.parent_id != null && byId.has(node.parent_id) && !seen.has(node.id)) {
-        seen.add(node.id);
-        node = byId.get(node.parent_id);
-    }
-    return node ?? null;
-}
-
-/** Every department beneath a company, deeper levels labelled by their path. */
-function departmentsUnder(companyId, list) {
-    const out = [];
-    const walk = (parentId, prefix) => {
-        list.filter((d) => d.parent_id === parentId)
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .forEach((d) => {
-                const label = prefix ? `${prefix} › ${d.name}` : d.name;
-                out.push({ value: d.id, label });
-                if (out.length < 1000) walk(d.id, label);
-            });
-    };
-    if (companyId != null) walk(companyId, '');
-    return out;
-}
 
 function tabOf(field) {
     const base = field.split('.')[0];
@@ -130,33 +107,40 @@ export default function EmployeeFormModal({
     onReadFingerprints = null,
     // Company setting: saves push without the "Push now" question.
     autoPush = false,
-    // The Company › Department tree, as GET /departments returns it.
+    // As GET /companies and GET /departments return them.
+    companies = [],
     departments = [],
-    // (name, parentId|null) → the created department, or null. Null hides "Add".
+    // (name) → the created company, or null. Null hides "Add".
+    onCreateCompany = null,
+    // (name, companyId) → the created department, or null. Null hides "Add".
     onCreateDepartment = null,
 }) {
     const isEdit = !!employee;
 
-    // Departments created from this form are used at once, before the page reloads the tree.
+    // Companies and departments created from this form are used at once, before the
+    // page reloads the tree. Numbers throughout: SQL Server hands some ids back as
+    // strings ("4"), and a strict comparison of "4" with 4 left the Department box
+    // empty (2026-10-12).
+    const [createdCompanies, setCreatedCompanies] = useState([]);
     const [createdDepartments, setCreatedDepartments] = useState([]);
+    const unique = (d, i, list) => list.findIndex((x) => x.id === d.id) === i;
+    const allCompanies = [...companies, ...createdCompanies]
+        .map((c) => ({ ...c, id: Number(c.id) }))
+        .filter(unique);
     const allDepartments = [...departments, ...createdDepartments]
-        .map((d) => ({ ...d, id: Number(d.id), parent_id: d.parent_id == null ? null : Number(d.parent_id) }))
-        .filter((d, i, list) => list.findIndex((x) => x.id === d.id) === i);
-    const departmentById = new Map(allDepartments.map((d) => [d.id, d]));
-    // Numbers throughout: SQL Server hands some ids back as strings ("4"), and a strict
-    // comparison of "4" with 4 left the Department box empty (2026-10-12).
+        .map((d) => ({ ...d, id: Number(d.id), company_id: d.company_id == null ? null : Number(d.company_id) }))
+        .filter(unique);
     const employeeDeptId = employee?.department_id != null ? Number(employee.department_id) : null;
-    const initialCompany = (employee?.company?.id != null ? Number(employee.company.id) : null)
-        ?? (employeeDeptId ? rootOf(employeeDeptId, departmentById)?.id : null)
-        ?? null;
+    const initialCompany = employee?.company_id != null ? Number(employee.company_id)
+        : employee?.company?.id != null ? Number(employee.company.id) : null;
 
     const [form, setForm] = useState({
         name: employee?.name ?? '',
         employee_code: employee?.employee_code ?? '',
         email: employee?.email ?? '',
         company_id: initialCompany ?? '',
-        // The node itself when it is a department; empty when they sit on the company.
-        unit_id: employeeDeptId && employeeDeptId !== initialCompany ? employeeDeptId : '',
+        // Their department; empty when they sit on the company alone.
+        unit_id: employeeDeptId ?? '',
         employment_type: employee?.employment_type ?? 'full_time',
         resigned_at: employee?.resigned_at ?? '',
         card_number: employee?.card_number && employee.card_number !== CARD_EMPTY_MARKER ? String(employee.card_number) : '',
@@ -386,8 +370,15 @@ export default function EmployeeFormModal({
         setForm((f) => ({ ...f, [key]: value, ...(key === 'resigned_at' && value !== '' ? { is_active: false } : {}) }));
     }
 
-    async function createDepartment(name, parentId) {
-        const made = await onCreateDepartment(name, parentId);
+    async function createCompany(name) {
+        const made = await onCreateCompany(name);
+        if (!made) return null;
+        setCreatedCompanies((list) => [...list, made]);
+        return { value: Number(made.id), label: made.name };
+    }
+
+    async function createDepartment(name, companyId) {
+        const made = await onCreateDepartment(name, companyId);
         if (!made) return null;
         setCreatedDepartments((list) => [...list, made]);
         return { value: Number(made.id), label: made.name };
@@ -484,9 +475,11 @@ export default function EmployeeFormModal({
                     name: form.name,
                     employee_code: form.employee_code,
                     email: form.email || null,
-                    // The department when chosen, else the company. The server keeps the
-                    // old free-text `department` in step with it.
-                    department_id: Number(form.unit_id || form.company_id) || null,
+                    // Two fields since 2026-11-03: a company id is never sent as a
+                    // department. null department with a company = the company alone.
+                    // The server keeps the old free-text `department` in step with them.
+                    company_id: Number(form.company_id) || null,
+                    department_id: Number(form.unit_id) || null,
                     employment_type: form.employment_type,
                     // Only the update endpoint accepts it; sending it on create
                     // would be a silently ignored field.
@@ -586,12 +579,13 @@ export default function EmployeeFormModal({
 
     const codeHint = isEdit ? 'Digits only, up to 9.' : null;
 
-    const companyOptions = allDepartments
-        .filter((d) => d.parent_id == null || !departmentById.has(d.parent_id))
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((d) => ({ value: d.id, label: d.name }));
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const companyOptions = allCompanies.slice().sort(byName).map((c) => ({ value: c.id, label: c.name }));
     const companyId = form.company_id === '' ? null : Number(form.company_id);
-    const unitOptions = departmentsUnder(companyId, allDepartments);
+    const unitOptions = companyId === null ? [] : allDepartments
+        .filter((d) => d.company_id === companyId)
+        .sort(byName)
+        .map((d) => ({ value: d.id, label: d.name }));
     // Terminals the resignation takes them off — what the save will do, said beside the date.
     const resignRemoves = resigned ? removeFrom.map(terminalName) : [];
 
@@ -776,10 +770,10 @@ export default function EmployeeFormModal({
                                             onChange={(v) => set('company_id', v ?? '')}
                                             placeholder="Search…"
                                             emptyText="No company matches."
-                                            onCreate={onCreateDepartment ? (name) => createDepartment(name, null) : null}
+                                            onCreate={onCreateCompany ? (name) => createCompany(name) : null}
                                             createLabel={(q) => `Add company “${q}”`}
                                             allowClear
-                                            error={!form.unit_id ? err('department_id') : undefined}
+                                            error={err('company_id')}
                                         />
                                     </Row>
                                     <Row label="Department" htmlFor="employee-unit">
@@ -794,7 +788,7 @@ export default function EmployeeFormModal({
                                             onCreate={onCreateDepartment && companyId !== null ? (name) => createDepartment(name, companyId) : null}
                                             createLabel={(q) => `Add department “${q}”`}
                                             allowClear
-                                            error={form.unit_id ? err('department_id') : undefined}
+                                            error={err('department_id')}
                                         />
                                     </Row>
                                     {/*

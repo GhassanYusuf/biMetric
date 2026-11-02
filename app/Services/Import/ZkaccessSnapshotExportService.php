@@ -3,6 +3,7 @@
 namespace App\Services\Import;
 
 use App\Models\AttendanceLog;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
@@ -29,6 +30,9 @@ use Carbon\Carbon;
  */
 class ZkaccessSnapshotExportService
 {
+    /** Departments' ids in the file, above any company id (see snapshot()). */
+    public const DEPARTMENT_ID_OFFSET = 100000;
+
     /**
      * @return array{
      *     source: string,
@@ -41,17 +45,35 @@ class ZkaccessSnapshotExportService
      */
     public function snapshot(int $tenantId): array
     {
-        $departments = Department::query()
-            ->where('tenant_id', $tenantId)
-            ->orderBy('id')
-            ->get(['id', 'name', 'code'])
-            ->map(fn (Department $d): array => [
-                'id' => (string) $d->id,
-                'name' => (string) $d->name,
-                'parent_id' => '',
-                'code' => (string) ($d->code ?? ''),
-            ])
-            ->all();
+        /*
+         * ZKAccess has one department list. Companies and departments are two tables since
+         * 2026-11-03 and their ids can coincide, so companies keep their ids and departments
+         * are written as DEPARTMENT_ID_OFFSET + id, under their company (SUPDEPTID).
+         */
+        $departments = [
+            ...Company::query()
+                ->where('tenant_id', $tenantId)
+                ->orderBy('id')
+                ->get(['id', 'name', 'code'])
+                ->map(fn (Company $c): array => [
+                    'id' => (string) $c->id,
+                    'name' => (string) $c->name,
+                    'parent_id' => '',
+                    'code' => (string) ($c->code ?? ''),
+                ])
+                ->all(),
+            ...Department::query()
+                ->where('tenant_id', $tenantId)
+                ->orderBy('id')
+                ->get(['id', 'company_id', 'name', 'code'])
+                ->map(fn (Department $d): array => [
+                    'id' => (string) (self::DEPARTMENT_ID_OFFSET + $d->id),
+                    'name' => (string) $d->name,
+                    'parent_id' => (string) $d->company_id,
+                    'code' => (string) ($d->code ?? ''),
+                ])
+                ->all(),
+        ];
 
         $machines = Device::query()
             ->where('tenant_id', $tenantId)
@@ -81,7 +103,7 @@ class ZkaccessSnapshotExportService
             ->where('tenant_id', $tenantId)
             ->orderBy('id')
             ->get(['id', 'employee_code', 'name', 'last_name', 'gender', 'card_number',
-                'hired_date', 'birthday', 'department_id', 'device_password', 'email',
+                'hired_date', 'birthday', 'company_id', 'department_id', 'device_password', 'email',
                 'mobile_phone', 'home_phone', 'home_address', 'city', 'country', 'education',
                 'political_status', 'job_title']);
 
@@ -97,7 +119,11 @@ class ZkaccessSnapshotExportService
                 'card' => $e->card_number === null ? '' : (string) $e->card_number,
                 'hire_date' => $e->hired_date instanceof Carbon ? $e->hired_date->format('Y-m-d') : '',
                 'birth_date' => $e->birthday instanceof Carbon ? $e->birthday->format('Y-m-d') : '',
-                'department_id' => $e->department_id === null ? '' : (string) $e->department_id,
+                'department_id' => match (true) {
+                    $e->department_id !== null => (string) (self::DEPARTMENT_ID_OFFSET + $e->department_id),
+                    $e->company_id !== null => (string) $e->company_id,
+                    default => '',
+                },
                 'privilege' => '',
                 'password' => (string) ($e->device_password ?? ''),
                 'email' => (string) ($e->email ?? ''),

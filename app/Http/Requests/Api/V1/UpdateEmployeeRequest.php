@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Api\V1;
 
 use App\Http\Requests\Api\Employee\UpdateEmployeeRequest as BaseRequest;
-use App\Models\Employee;
 
 /**
  * PATCH semantics for the integration API: send only what changed.
@@ -15,8 +14,6 @@ use App\Models\Employee;
  */
 class UpdateEmployeeRequest extends BaseRequest
 {
-    use CompanyDepartmentFields;
-
     protected function prepareForValidation(): void
     {
         $this->normaliseGender();
@@ -28,7 +25,7 @@ class UpdateEmployeeRequest extends BaseRequest
             ->map(fn (array $rule) => array_map(fn ($r) => $r === 'required' ? 'sometimes' : $r, $rule))
             ->all();
 
-        return $this->companyDepartmentRules() + $rules + StoreEmployeeRequest::deviceRules() + [
+        return $rules + StoreEmployeeRequest::deviceRules() + [
             // After saving, re-push the change to every terminal they are currently on.
             'push_to_mapped_devices' => ['sometimes', 'boolean'],
         ];
@@ -36,15 +33,6 @@ class UpdateEmployeeRequest extends BaseRequest
 
     public function employeeData(): array
     {
-        // PATCH names them by Personnel ID; the upsert by the caller's external_id.
-        $current = $this->route('employee');
-        if (! $current instanceof Employee && $this->route('externalId') !== null) {
-            $current = Employee::query()->where('external_id', $this->route('externalId'))->first();
-        }
-
-        return $this->foldCompanyDepartment(
-            collect($this->safe()->except(['photo', 'access_level_ids', 'push_to_device_ids', 'push_to_mapped_devices']))->all(),
-            $current instanceof Employee ? $current : null,
-        );
+        return collect($this->safe()->except(['photo', 'access_level_ids', 'push_to_device_ids', 'push_to_mapped_devices']))->all();
     }
 }

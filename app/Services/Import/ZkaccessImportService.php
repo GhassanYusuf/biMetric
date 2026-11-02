@@ -3,7 +3,7 @@
 namespace App\Services\Import;
 
 use App\Models\AttendanceLog;
-use App\Models\Department;
+use App\Models\Company;
 use App\Models\Device;
 use App\Models\Employee;
 use Carbon\Carbon;
@@ -217,7 +217,7 @@ class ZkaccessImportService
             ->where('tenant_id', $this->tenantId)
             ->get([
                 'id', 'name', 'last_name', 'employee_code', 'card_number', 'department',
-                'department_id', 'gender', 'hired_date', 'birthday', 'device_password',
+                'company_id', 'department_id', 'gender', 'hired_date', 'birthday', 'device_password',
                 'job_title', 'office', 'home_address', 'city', 'country', 'education',
                 'political_status', 'mobile_phone', 'home_phone', 'is_active',
             ]);
@@ -251,8 +251,13 @@ class ZkaccessImportService
             $zkId = (string) $dept['id'];
             $this->deptName[$zkId] = $name;
 
+            /*
+             * A ZKAccess department lands as a COMPANY here: the import always created them
+             * as top-level nodes of the old tree, which is what a company was. Since the
+             * companies table (2026-11-03) that is said outright.
+             */
             if ($this->apply) {
-                $model = Department::firstOrCreate(
+                $model = Company::firstOrCreate(
                     ['tenant_id' => $this->tenantId, 'name' => $name],
                     ['code' => trim((string) ($dept['code'] ?? ''))],
                 );
@@ -260,7 +265,7 @@ class ZkaccessImportService
                 $this->existingDepts += $model->wasRecentlyCreated ? 0 : 1;
                 $this->deptMap[$zkId] = $model->id;
             } else {
-                $exists = Department::query()
+                $exists = Company::query()
                     ->where('tenant_id', $this->tenantId)
                     ->where('name', $name)
                     ->exists();
@@ -451,8 +456,8 @@ class ZkaccessImportService
         }
 
         $zkDept = trim((string) ($user['department_id'] ?? ''));
-        if ($zkDept !== '' && isset($this->deptMap[$zkDept]) && ($isDry || ! $employee->department_id)) {
-            $patch['department_id'] = $this->deptMap[$zkDept];
+        if ($zkDept !== '' && isset($this->deptMap[$zkDept]) && ($isDry || ! $employee->company_id)) {
+            $patch['company_id'] = $this->deptMap[$zkDept];
         }
         if ($zkDept !== '' && isset($this->deptName[$zkDept]) && ($isDry || (string) ($employee->department ?? '') === '')) {
             $patch['department'] = $this->deptName[$zkDept];

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Devices;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Person;
@@ -52,46 +53,49 @@ class StaffImportTest extends TestCase
         $this->assertSame(2, Employee::withoutGlobalScopes()->where('employee_code', '001')->count());
     }
 
-    public function test_company_and_department_build_the_department_tree(): void
+    public function test_company_and_department_build_companies_and_their_departments(): void
     {
         // "Finance" at two companies is two departments; "finance" in another row of
-        // the same company is the same one.
+        // the same company is the same one. Two tables since 2026-11-03.
         $this->csv(<<<'CSV'
         Name,Employee Code,Company,Department,Tenant
         Ali Jaafar,E-001,PROMOSEVEN,Finance,acme
         Nadia Hassan,E-002,PROMOSEVEN,finance,acme
         Tariq Omar,E-003,AVANA,Finance,acme
         Sara Ali,E-004,AVANA,,acme
+        Huda Ahmed,E-005,,Logistics,acme
         CSV);
 
         $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
 
-        $departments = Department::withoutGlobalScopes()->get();
-        $promoseven = $departments->firstWhere('name', 'PROMOSEVEN');
-        $avana = $departments->firstWhere('name', 'AVANA');
-
-        $this->assertNull($promoseven->parent_id);
-        $this->assertNull($avana->parent_id);
-        $this->assertCount(4, $departments);
+        $companies = Company::withoutGlobalScopes()->whereIn('name', ['PROMOSEVEN', 'AVANA', 'Logistics'])->get()->keyBy('name');
+        $this->assertCount(3, $companies);
+        $departments = Department::withoutGlobalScopes()->whereIn('company_id', $companies->pluck('id'))->get();
+        $this->assertCount(2, $departments);
 
         $employees = Employee::withoutGlobalScopes()->get()->keyBy('employee_code');
         $this->assertSame($employees['E-001']->department_id, $employees['E-002']->department_id);
-        $this->assertSame($promoseven->id, Department::withoutGlobalScopes()->find($employees['E-001']->department_id)->parent_id);
-        $this->assertSame($avana->id, Department::withoutGlobalScopes()->find($employees['E-003']->department_id)->parent_id);
-        // A company with no department places the employee on the company itself.
-        $this->assertSame($avana->id, $employees['E-004']->department_id);
+        $this->assertSame($companies['PROMOSEVEN']->id, $employees['E-001']->company_id);
+        $this->assertSame($companies['AVANA']->id, $employees['E-003']->company_id);
+        $this->assertNotSame($employees['E-001']->department_id, $employees['E-003']->department_id);
+        // A company with no department: the company, and no department.
+        $this->assertSame($companies['AVANA']->id, $employees['E-004']->company_id);
+        $this->assertNull($employees['E-004']->department_id);
+        // A department with no company was a top-level node, i.e. a company, and still is.
+        $this->assertSame($companies['Logistics']->id, $employees['E-005']->company_id);
+        $this->assertNull($employees['E-005']->department_id);
         $this->assertSame('Finance', $employees['E-001']->department);
         $this->assertSame('AVANA', $employees['E-004']->department);
     }
 
-    public function test_a_row_without_company_or_department_keeps_its_department(): void
+    public function test_a_row_without_company_or_department_keeps_its_place(): void
     {
         $this->csv(<<<'CSV'
         Name,Employee Code,Company,Tenant
         Ali Jaafar,E-001,PROMOSEVEN,acme
         CSV);
         $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
-        $assigned = Employee::withoutGlobalScopes()->firstOrFail()->department_id;
+        $assigned = Employee::withoutGlobalScopes()->firstOrFail()->company_id;
 
         $this->csv(<<<'CSV'
         Name,Employee Code,Tenant
@@ -100,7 +104,7 @@ class StaffImportTest extends TestCase
         $this->artisan('staff:import', ['file' => $this->path])->assertSuccessful();
 
         $this->assertNotNull($assigned);
-        $this->assertSame($assigned, Employee::withoutGlobalScopes()->firstOrFail()->department_id);
+        $this->assertSame($assigned, Employee::withoutGlobalScopes()->firstOrFail()->company_id);
     }
 
     public function test_last_name_is_imported_and_an_empty_cell_keeps_it(): void

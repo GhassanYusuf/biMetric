@@ -17,7 +17,7 @@ import { useRef, useState } from 'react';
 | card number joined the department badge and both buttons.
 */
 export default function EmployeesMobile({
-    rows, search, onSearch, filters, onFilters, departments, unassignedCount, departmentsLoaded, devices,
+    rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, departmentsLoaded, devices,
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
@@ -77,11 +77,12 @@ export default function EmployeesMobile({
             {/* Rule 5: the same tree as desktop's left panel, folded into a card. */}
             <DepartmentTree
                 variant="collapsible"
+                companies={companies}
                 departments={departments}
                 unassignedCount={unassignedCount}
                 loaded={departmentsLoaded}
-                value={filters?.department_id ?? ''}
-                onChange={(id) => onFilters({ ...(filters ?? {}), department_id: id })}
+                value={filters?.org ?? ''}
+                onChange={(key) => onFilters({ ...(filters ?? {}), org: key })}
             />
 
             {/* Rule 5: the same filters as desktop, stacked rather than in a row. */}

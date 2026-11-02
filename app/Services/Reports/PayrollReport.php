@@ -5,6 +5,7 @@ namespace App\Services\Reports;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\SummaryBatch;
+use App\Support\OrgScope;
 use Illuminate\Support\Collection;
 
 /**
@@ -26,7 +27,7 @@ class PayrollReport
     /**
      * @return array{from:string,to:string,rows:Collection<int,array>,totals:array{employees:int,payroll_hours:float}}
      */
-    public function build(?string $from = null, ?string $to = null, ?int $departmentId = null): array
+    public function build(?string $from = null, ?string $to = null, ?OrgScope $scope = null): array
     {
         // Resolve the window FIRST and pass it down explicitly. Two things need
         // it: every employee must be summarised over the same dates, and the
@@ -36,9 +37,8 @@ class PayrollReport
         $from = $fromDate->format('Y-m-d');
         $to = $toDate->format('Y-m-d');
 
-        $employees = Employee::query()
+        $employees = ($scope ?? new OrgScope)->apply(Employee::query())
             ->where('is_active', true)
-            ->when($departmentId !== null, fn ($q) => $q->where('department_id', $departmentId))
             ->orderBy('name')
             ->get();
 

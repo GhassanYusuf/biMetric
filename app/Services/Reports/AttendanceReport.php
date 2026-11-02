@@ -3,11 +3,11 @@
 namespace App\Services\Reports;
 
 use App\Models\AttendanceLog;
-use App\Models\Department;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\EmployeeReportService;
 use App\Services\Attendance\SummaryBatch;
+use App\Support\OrgScope;
 use Carbon\Carbon;
 
 /**
@@ -41,7 +41,7 @@ class AttendanceReport
     public function __construct(private readonly AttendanceSummaryService $summaries) {}
 
     /** @return array<string,mixed> */
-    public function build(?string $from = null, ?string $to = null, ?int $departmentId = null): array
+    public function build(?string $from = null, ?string $to = null, ?OrgScope $scope = null): array
     {
         $tz = config('attendance.timezone');
         [$fromDate, $toDate] = AttendanceSummaryService::window($from, $to);
@@ -50,12 +50,11 @@ class AttendanceReport
         $prevTo = $fromDate->copy()->subDay()->endOfDay();
         $periodFrom = $fromDate->format('Y-m-d');
 
-        $departments = Department::query()->with('parent')->get()->keyBy('id');
-        $scopeIds = $departmentId !== null ? Department::subtreeIds($departmentId) : null;
+        $scope ??= new OrgScope;
 
-        $employees = Employee::query()
+        $employees = $scope->apply(Employee::query())
+            ->with(['company:id,name', 'department:id,name,company_id'])
             ->where('is_active', true)
-            ->when($scopeIds !== null, fn ($q) => $q->whereIn('department_id', $scopeIds))
             ->orderBy('name')
             ->get();
 
@@ -90,12 +89,11 @@ class AttendanceReport
             $mine = array_values(array_filter($days, fn ($d) => $d['date'] >= $periodFrom));
             $before = array_values(array_filter($days, fn ($d) => $d['date'] < $periodFrom));
 
-            $department = $departments[$employee->department_id] ?? null;
             $person = [
                 'id' => $employee->id,
                 'name' => $employee->fullName(),
                 'employee_code' => $employee->employee_code,
-                'department' => $department?->path() ?? ($employee->department ?: null),
+                'department' => $employee->orgLabel(),
                 'stats' => EmployeeReportService::stats($mine, $shiftStart, $grace),
             ];
 
@@ -130,7 +128,7 @@ class AttendanceReport
             'to' => $toDate->format('Y-m-d'),
             'days' => $spanDays,
             'previous' => ['from' => $prevFrom->format('Y-m-d'), 'to' => $prevTo->format('Y-m-d')],
-            'scope' => $departmentId !== null ? (($departments[$departmentId] ?? null)?->path() ?? "#{$departmentId}") : null,
+            'scope' => $scope->name(),
             'shift' => [...EmployeeReportService::shiftPayload($rules), 'timezone' => $tz],
             'headcount' => count($people),
             'punching' => count($punching),

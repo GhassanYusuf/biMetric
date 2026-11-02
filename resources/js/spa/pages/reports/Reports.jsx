@@ -9,6 +9,7 @@ import { SkeletonTable } from '../../shared/ui';
 import ReportsDesktop from './ReportsDesktop';
 import ReportsMobile from './ReportsMobile';
 import { useAllEmployeesExport } from '../../shared/useAllEmployeesExport';
+import { buildOrg, fetchOrg, setOrgParams } from '../../shared/orgUnits';
 
 /*
 | Payroll hours and attendance counts per employee over a range.
@@ -38,11 +39,12 @@ export default function Reports() {
     const confirm = useConfirm();
 
     const [report, setReport] = useState(null);
+    const [companies, setCompanies] = useState([]);
     const [departments, setDepartments] = useState([]);
     const [loading, setLoading] = useState(true);
     // Which PDF is being produced ('report' | 'payroll' | 'statement'), so only its button spins.
     const [exporting, setExporting] = useState(null);
-    const [filters, setFilters] = useState({ from: '', to: '', department_id: '' });
+    const [filters, setFilters] = useState({ from: '', to: '', org: '' });
     // Every employee's report for a period, built in the background (ReportExportController).
     const [runs, setRuns] = useState([]);
     const [downloading, setDownloading] = useState(null);
@@ -51,9 +53,11 @@ export default function Reports() {
     const query = useMemo(() => {
         const params = new URLSearchParams();
         Object.entries(filters).forEach(([k, v]) => {
-            if (v) params.set(k, v);
+            if (v && k !== 'org') params.set(k, v);
         });
-        return params.toString();
+        // `org` is a company or department key, sent as company_id / department_id
+        // (shared/orgUnits.jsx, 2026-11-03).
+        return setOrgParams(params, filters.org).toString();
     }, [filters]);
 
     const { user } = useAuth();
@@ -95,11 +99,15 @@ export default function Reports() {
         load();
     }, [load]);
 
-    // Departments drive the filter. A user who may read reports but not
+    // Companies and departments drive the filter. A user who may read reports but not
     // departments simply gets no filter options, which is not an error.
     useEffect(() => {
-        api.get('/departments').then((res) => setDepartments(res.data ?? [])).catch(() => setDepartments([]));
+        fetchOrg().then((org) => {
+            setCompanies(org.companies);
+            setDepartments(org.departments);
+        });
     }, []);
+    const org = useMemo(() => buildOrg(companies, departments), [companies, departments]);
 
     async function exportPdf(kind) {
         setExporting(kind);
@@ -116,9 +124,10 @@ export default function Reports() {
     // "Employees ▾" — everyone as PDF, or the Monthly Statement as Excel for everyone, a
     // department or chosen people — shared with the Attendance screen.
     const allEmployees = useAllEmployeesExport({
+        companies,
         departments,
         initialRange: filters.from && filters.to ? { from: filters.from, to: filters.to } : null,
-        initialDepartment: filters.department_id,
+        initialOrg: filters.org,
         onPdfStarted: () => loadRuns(),
     });
 
@@ -163,7 +172,7 @@ export default function Reports() {
         onDeleteRun: deleteRun,
         allEmployeesItems: allEmployees.items,
         report,
-        departments,
+        org,
         filters,
         onFilter: setFilters,
         loading,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\Reports\PayrollReport;
 use App\Support\ApiResponse;
+use App\Support\OrgScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -28,14 +29,14 @@ class ReportController extends Controller
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
-            'department_id' => ['nullable', 'integer'],
+            ...OrgScope::rules(),
         ]);
 
         return ApiResponse::success(
             $this->report->build(
                 $validated['from'] ?? null,
                 $validated['to'] ?? null,
-                isset($validated['department_id']) ? (int) $validated['department_id'] : null,
+                OrgScope::from($validated),
             ),
             'Attendance report generated.',
         );

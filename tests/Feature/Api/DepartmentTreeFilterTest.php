@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Tenant;
@@ -27,7 +28,7 @@ class DepartmentTreeFilterTest extends TestCase
 
     private string $email = 'tree@acme.test';
 
-    private Department $company;
+    private Company $company;
 
     private Department $finance;
 
@@ -50,10 +51,10 @@ class DepartmentTreeFilterTest extends TestCase
             'email_verified_at' => now(),
         ])->syncRoles(['tenant-admin']);
 
-        $this->company = Department::create(['name' => 'Tree Co']);
-        $this->finance = Department::create(['name' => 'Finance', 'parent_id' => $this->company->id]);
+        $this->company = Company::create(['name' => 'Tree Co']);
+        $this->finance = Department::create(['name' => 'Finance', 'company_id' => $this->company->id]);
 
-        Employee::create(['name' => 'Tree Head', 'employee_code' => 'T-1', 'department_id' => $this->company->id, 'is_active' => true]);
+        Employee::create(['name' => 'Tree Head', 'employee_code' => 'T-1', 'company_id' => $this->company->id, 'is_active' => true]);
         Employee::create(['name' => 'Tree Clerk', 'employee_code' => 'T-2', 'department_id' => $this->finance->id, 'is_active' => true]);
         Employee::create(['name' => 'Tree Nobody', 'employee_code' => 'T-3', 'is_active' => true]);
         Tenancy::clear();
@@ -80,7 +81,7 @@ class DepartmentTreeFilterTest extends TestCase
 
     public function test_a_company_lists_its_departments_people_too(): void
     {
-        $this->assertSame(['T-1', 'T-2'], $this->codes($this->api('/api/employees?per_page=100&department_id='.$this->company->id)));
+        $this->assertSame(['T-1', 'T-2'], $this->codes($this->api('/api/employees?per_page=100&company_id='.$this->company->id)));
     }
 
     public function test_a_department_lists_only_itself(): void
@@ -88,23 +89,28 @@ class DepartmentTreeFilterTest extends TestCase
         $this->assertSame(['T-2'], $this->codes($this->api('/api/employees?per_page=100&department_id='.$this->finance->id)));
     }
 
-    public function test_unassigned_lists_people_with_no_department(): void
+    public function test_unassigned_lists_people_in_no_company(): void
     {
-        $response = $this->api('/api/employees?per_page=100&department_id=none');
+        $response = $this->api('/api/employees?per_page=100&company_id=none');
 
         $this->assertSame(['T-3'], $this->codes($response));
-        $this->assertSame([], collect($response->json('data'))->whereNotNull('department_id')->all());
+        $this->assertSame([], collect($response->json('data'))->whereNotNull('company_id')->all());
     }
 
-    public function test_the_department_list_carries_parents_and_the_unassigned_count(): void
+    /** Since the companies table (2026-11-03): departments name their company, companies count the unassigned. */
+    public function test_departments_carry_their_company_and_companies_the_unassigned_count(): void
     {
-        $response = $this->api('/api/departments')->assertOk();
+        $finance = collect($this->api('/api/departments')->assertOk()->json('data'))->firstWhere('id', $this->finance->id);
+        $this->assertSame($this->company->id, $finance['company_id']);
+        $this->assertSame('Tree Co', $finance['company_name']);
 
-        $finance = collect($response->json('data'))->firstWhere('id', $this->finance->id);
-        $this->assertSame($this->company->id, (int) $finance['parent_id']);
+        $companies = $this->api('/api/companies')->assertOk();
+        $tree = collect($companies->json('data'))->firstWhere('id', $this->company->id);
+        $this->assertSame(2, $tree['employees_count'], 'everyone in the company, its departments included');
+        $this->assertSame(1, $tree['departments_count']);
         $this->assertSame(
-            Employee::withoutGlobalScopes()->where('tenant_id', Tenant::where('slug', 'acme')->value('id'))->whereNull('department_id')->count(),
-            $response->json('meta.unassigned_count'),
+            Employee::withoutGlobalScopes()->where('tenant_id', Tenant::where('slug', 'acme')->value('id'))->whereNull('company_id')->count(),
+            $companies->json('meta.unassigned_count'),
         );
     }
 }

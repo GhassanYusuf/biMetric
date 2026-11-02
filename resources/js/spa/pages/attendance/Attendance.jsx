@@ -6,11 +6,21 @@ import { useDeviceClass } from '../../shared/useDeviceClass';
 import { useMqtt } from '../../shared/useMqtt';
 import { useAllEmployeesExport } from '../../shared/useAllEmployeesExport';
 import { Spinner } from '../../shared/ui';
+import { fetchOrg, setOrgParams } from '../../shared/orgUnits';
 import AttendanceDesktop from './AttendanceDesktop';
 import AttendanceMobile from './AttendanceMobile';
 import PunchEmployeeModal from './PunchEmployeeModal';
 
 const PER_PAGE = 50;
+
+// The filters as a query string. `org` is the tree's node key ('c:4', 'd:13', 'none'),
+// sent as company_id / department_id (shared/orgUnits.jsx, 2026-11-03).
+function filterParams(active, params = new URLSearchParams()) {
+    Object.entries(active).forEach(([k, v]) => {
+        if (v && k !== 'org') params.set(k, v);
+    });
+    return setOrgParams(params, active.org);
+}
 
 // Owns the punch log: server-side filtering (employee / device / date range),
 // pagination via meta.pagination, and a live prepend when a new punch arrives
@@ -24,11 +34,12 @@ export default function Attendance() {
     const [pagination, setPagination] = useState(null);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
-    const [filters, setFilters] = useState({ employee_id: '', device_id: '', department_id: '', search: '', from: '', to: '' });
+    const [filters, setFilters] = useState({ employee_id: '', device_id: '', org: '', search: '', from: '', to: '' });
     // What is typed in the search box. Debounced into `filters.search`, so the list
     // does not refetch on every keystroke.
     const [searchText, setSearchText] = useState('');
     // The Company › Department tree (2026-10-11), the same one the Employees page has.
+    const [companies, setCompanies] = useState([]);
     const [departments, setDepartments] = useState([]);
     const [unassignedCount, setUnassignedCount] = useState(0);
     const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
@@ -41,10 +52,7 @@ export default function Attendance() {
     const load = useCallback(async (pageNum, active) => {
         setLoading(true);
         try {
-            const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pageNum) });
-            Object.entries(active).forEach(([k, v]) => {
-                if (v) params.set(k, v);
-            });
+            const params = filterParams(active, new URLSearchParams({ per_page: String(PER_PAGE), page: String(pageNum) }));
             const res = await api.get(`/attendance?${params}`);
             setRows(res.data);
             setPagination(res.meta?.pagination ?? null);
@@ -67,12 +75,12 @@ export default function Attendance() {
 
     // Without permission there is simply no tree, as on the Employees page.
     const loadDepartments = useCallback(() => {
-        api.get('/departments')
-            .then((res) => {
-                setDepartments(res.data ?? []);
-                setUnassignedCount(res.meta?.unassigned_count ?? 0);
+        fetchOrg()
+            .then((org) => {
+                setCompanies(org.companies);
+                setDepartments(org.departments);
+                setUnassignedCount(org.unassignedCount);
             })
-            .catch(() => setDepartments([]))
             .finally(() => setDepartmentsLoaded(true));
     }, []);
 
@@ -80,7 +88,7 @@ export default function Attendance() {
 
     // Live: a punch on this tenant lands at the top without a reload, but only
     // while viewing page 1 unfiltered — otherwise it would violate the filter.
-    // Departments live under the employees module, so the tree follows that one.
+    // Companies and departments live under the employees module, so the tree follows that one.
     const topics = user?.tenant
         ? [`tenant/${user.tenant.id}/module/attendance/+`, `tenant/${user.tenant.id}/module/employees/+`]
         : [];
@@ -89,7 +97,7 @@ export default function Attendance() {
             loadDepartments();
             return;
         }
-        const unfiltered = !filters.employee_id && !filters.device_id && !filters.department_id && !filters.search && !filters.from && !filters.to;
+        const unfiltered = !filters.employee_id && !filters.device_id && !filters.org && !filters.search && !filters.from && !filters.to;
         if (page === 1 && unfiltered) load(1, filters);
     });
 
@@ -101,10 +109,7 @@ export default function Attendance() {
     async function exportPdf() {
         setExporting(true);
         try {
-            const params = new URLSearchParams();
-            Object.entries(filters).forEach(([k, v]) => {
-                if (v) params.set(k, v);
-            });
+            const params = filterParams(filters);
 
             const name = await api.download(`/exports/attendance?${params}`, 'attendance.pdf');
             toast.success(`Saved ${name}.`);
@@ -117,11 +122,12 @@ export default function Attendance() {
 
     // "All employees" PDF / Excel (owner, 2026-10-19: "the export option must be in
     // /app/attendance"). The same hook as the Reports screen, with this page's range and
-    // department as the dialog's starting point. Needs reports.view, as on the server.
+    // company or department as the dialog's starting point. Needs reports.view, as on the server.
     const allEmployees = useAllEmployeesExport({
+        companies,
         departments,
         initialRange: filters.from && filters.to ? { from: filters.from, to: filters.to } : null,
-        initialDepartment: filters.department_id,
+        initialOrg: filters.org,
     });
 
     const exportItems = [
@@ -148,6 +154,7 @@ export default function Attendance() {
     const presentationProps = {
         rows,
         devices,
+        companies,
         departments,
         unassignedCount,
         departmentsLoaded,

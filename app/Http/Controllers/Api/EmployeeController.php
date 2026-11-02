@@ -31,7 +31,7 @@ use Promoseven\Biometric\Exception\UnsupportedCommandException;
 class EmployeeController extends Controller
 {
     /** The department and its ancestors, so the resource can name the company. */
-    private const DEPARTMENT = ['department:id,name,parent_id', 'department.parent:id,name,parent_id'];
+    private const DEPARTMENT = ['company:id,name', 'department:id,name,company_id'];
 
     /**
      * The device actions below run INLINE rather than through DeviceCommandBus,

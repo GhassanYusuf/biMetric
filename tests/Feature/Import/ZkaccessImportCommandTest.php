@@ -3,6 +3,7 @@
 namespace Tests\Feature\Import;
 
 use App\Models\AttendanceLog;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
@@ -33,7 +34,9 @@ class ZkaccessImportCommandTest extends TestCase
         Tenancy::set($this->tenant->id);
 
         Device::query()->where('tenant_id', $this->tenant->id)->delete();
+        // ZKAccess departments land as companies (2026-11-03); start with none.
         Department::query()->where('tenant_id', $this->tenant->id)->delete();
+        Company::query()->where('tenant_id', $this->tenant->id)->delete();
         $this->otr = Device::create([
             'tenant_id' => $this->tenant->id,
             'name' => 'OTR #11',
@@ -94,7 +97,7 @@ class ZkaccessImportCommandTest extends TestCase
             ->expectsOutputToContain('Departments: 0 existing, 1 to create')
             ->assertSuccessful();
 
-        $this->assertSame(0, Department::count());
+        $this->assertSame(0, Company::count());
         $this->assertSame(0, AttendanceLog::count());
         $this->assertSame(1, Employee::where('employee_code', '50')->count());
     }
@@ -109,7 +112,7 @@ class ZkaccessImportCommandTest extends TestCase
             ->expectsOutputToContain('Attendance: 1 candidates, 0 already in the system, 1 inserted')
             ->assertSuccessful();
 
-        $this->assertSame(1, Department::where('tenant_id', $this->tenant->id)->where('name', 'P7H')->count());
+        $this->assertSame(1, Company::where('tenant_id', $this->tenant->id)->where('name', 'P7H')->count());
         $this->assertSame(1, AttendanceLog::where('tenant_id', $this->tenant->id)->count());
         $this->assertSame('2026-10-05 07:00:00', AttendanceLog::first()->punched_at->format('Y-m-d H:i:s'));
     }
@@ -122,7 +125,7 @@ class ZkaccessImportCommandTest extends TestCase
             ->expectsOutputToContain('Attendance: skipped (--skip-attendance).')
             ->assertSuccessful();
 
-        $this->assertSame(1, Department::count());
+        $this->assertSame(1, Company::count());
         $this->assertSame(0, AttendanceLog::count());
     }
 

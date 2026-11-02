@@ -8,7 +8,7 @@ use Illuminate\Validation\Rule;
 
 class StoreEmployeeRequest extends FormRequest
 {
-    use EmployeeProfileRules;
+    use CompanyDepartmentRules, EmployeeProfileRules;
 
     public function authorize(): bool
     {
@@ -17,7 +17,7 @@ class StoreEmployeeRequest extends FormRequest
 
     public function rules(): array
     {
-        return $this->profileRules() + [
+        return $this->profileRules() + $this->companyDepartmentRules() + [
             'name' => ['required', 'string', 'max:255'],
             // Uniqueness is per-tenant: the raw unique rule ignores the global
             // scope, so we pin tenant_id explicitly to avoid false collisions
@@ -33,10 +33,6 @@ class StoreEmployeeRequest extends FormRequest
             ],
             'email' => ['nullable', 'email', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
-            'department_id' => [
-                'nullable',
-                Rule::exists('departments', 'id')->where('tenant_id', Tenancy::id()),
-            ],
             'photo' => ['nullable', 'image', 'max:4096'],
         ];
     }

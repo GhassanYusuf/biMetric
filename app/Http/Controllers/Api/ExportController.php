@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
@@ -15,10 +16,11 @@ use App\Services\Reports\EmployeeRoster;
 use App\Services\Reports\EmployeeRosterWorkbook;
 use App\Services\Reports\MonthlyStatement;
 use App\Services\Reports\MonthlyStatementWorkbook;
+use App\Services\Reports\PayrollReport;
 use App\Services\Reports\PdfRenderer;
 use App\Services\Reports\PersonalReport;
-use App\Services\Reports\PayrollReport;
 use App\Support\ApiResponse;
+use App\Support\OrgScope;
 use App\Support\VerifyMethod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -95,7 +97,7 @@ class ExportController extends Controller
         $filters = $request->validate([
             'employee_id' => ['nullable', 'integer'],
             'device_id' => ['nullable', 'integer'],
-            'department_id' => ['nullable', 'regex:/^(none|\d+)$/'],
+            ...OrgScope::rules(),
             'search' => ['nullable', 'string', 'max:100'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
@@ -139,11 +141,9 @@ class ExportController extends Controller
         if (! empty($filters['search'])) {
             $filterLines[] = 'Search: “'.$filters['search'].'”';
         }
-        if (($filters['department_id'] ?? null) === 'none') {
-            $filterLines[] = 'Department: unassigned';
-        } elseif (! empty($filters['department_id'])) {
-            // The full path, so a PDF says which company's "Finance" it is.
-            $filterLines[] = 'Department: '.(Department::find($filters['department_id'])?->path() ?? "#{$filters['department_id']}").' (and below)';
+        // The full path, so a PDF says which company's "Finance" it is.
+        if ($scope = OrgScope::from($filters)->label()) {
+            $filterLines[] = $scope;
         }
 
         return $this->render('pdf.attendance-log', [
@@ -194,22 +194,22 @@ class ExportController extends Controller
         $validated = $request->validate([
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
-            'department_id' => ['nullable', 'integer'],
+            ...OrgScope::rules(),
         ]);
 
+        $scope = OrgScope::from($validated);
         $report = $this->payroll->build(
             $validated['from'] ?? null,
             $validated['to'] ?? null,
-            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
+            $scope,
         );
 
         // PayrollReport defaults an absent range to the summary service's own
         // window (the last 30 days). Naming the dates the rows were actually
         // computed for beats printing "all time", which would be false.
         $filterLines = [];
-        if (! empty($validated['department_id'])) {
-            $department = Department::find($validated['department_id']);
-            $filterLines[] = 'Department: '.($department?->name ?? "#{$validated['department_id']}");
+        if ($label = $scope->label()) {
+            $filterLines[] = $label;
         }
 
         return $this->render('pdf.payroll-summary', [
@@ -234,7 +234,7 @@ class ExportController extends Controller
 
         $validated = $request->validate([
             ...$this->periodRules(),
-            'department_id' => ['nullable', 'integer'],
+            ...OrgScope::rules(),
         ]);
 
         if ($error = $this->rangeTooLong($validated)) {
@@ -244,7 +244,7 @@ class ExportController extends Controller
         $report = $this->attendanceReport->build(
             $validated['from'] ?? null,
             $validated['to'] ?? null,
-            isset($validated['department_id']) ? (int) $validated['department_id'] : null,
+            OrgScope::from($validated),
         );
 
         return $this->render('pdf.report.attendance', [
@@ -312,7 +312,7 @@ class ExportController extends Controller
             $picked = ! empty($validated['employee_ids']);
             $message = "That is {$count} people, a page each — ".($picked ? 'choose fewer' : 'choose a department').' (up to '.self::MAX_STATEMENT_EMPLOYEES.' people per statement).';
 
-            $field = $picked ? 'employee_ids' : (isset($validated['department_ids']) ? 'department_ids' : 'department_id');
+            $field = $picked ? 'employee_ids' : collect(['company_ids', 'department_ids', 'company_id', 'department_id'])->first(fn ($k) => isset($validated[$k]), 'department_id');
 
             return ApiResponse::error($message, [$field => [$message]], 422);
         }
@@ -320,8 +320,13 @@ class ExportController extends Controller
         $fmt = fn (string $d) => Carbon::parse($d)->format('d/m/Y'); // owner, 2026-10-26
         $days = collect($statement['shift']['work_days'])->map(fn (int $d) => Carbon::create()->startOfWeek(Carbon::SUNDAY)->addDays($d)->format('D'))->implode(' ');
         $filterLines = ["Shift {$statement['shift']['start']}–{$statement['shift']['end']} · {$days}"];
-        if ($departmentIds = $this->statementDepartmentIds($validated)) {
-            $names = Department::whereIn('id', $departmentIds)->orderBy('name')->pluck('name');
+        [$companyIds, $departmentIds] = $this->statementScope($validated);
+        if ($companyIds !== null) {
+            $names = Company::whereIn('id', $companyIds)->orderBy('name')->pluck('name');
+            $filterLines[] = (count($companyIds) === 1 ? 'Company: ' : 'Companies: ').$names->implode(', ');
+        }
+        if ($departmentIds !== null) {
+            $names = Department::with('company:id,name')->whereIn('id', $departmentIds)->get()->map->path()->sort()->values();
             $filterLines[] = (count($departmentIds) === 1 ? 'Department: ' : 'Departments: ').$names->implode(', ');
         }
         if (! empty($validated['employee_ids'])) {
@@ -424,15 +429,19 @@ class ExportController extends Controller
     }
 
     /**
-     * Who a Monthly Statement covers: everyone, one or more companies / departments (with
-     * the ones below each), or people picked by id (owner, 2026-10-19) — departments or
-     * people, never both. `department_id` is the single form the Reports screen's PDF
-     * button sends; `department_ids[]` the dialog's multiple choice. Ids go through the
-     * tenant-scoped Employee query, so another company's id simply drops out.
+     * Who a Monthly Statement covers: everyone, one or more companies (everyone in each)
+     * and/or departments, or people picked by id (owner, 2026-10-19) — companies and
+     * departments, or people, never both. `company_id` / `department_id` are the single
+     * form the Reports screen's PDF button sends; `company_ids[]` / `department_ids[]` the
+     * dialog's multiple choice (two lists since the companies table, 2026-11-03). Ids go
+     * through the tenant-scoped Employee query, so another tenant's id simply drops out.
      */
     private function statementScopeRules(): array
     {
         return [
+            'company_id' => ['nullable', 'integer', 'prohibits:employee_ids'],
+            'company_ids' => ['nullable', 'array', 'min:1', 'max:200', 'prohibits:employee_ids'],
+            'company_ids.*' => ['integer', 'distinct'],
             'department_id' => ['nullable', 'integer', 'prohibits:employee_ids'],
             'department_ids' => ['nullable', 'array', 'min:1', 'max:200', 'prohibits:employee_ids'],
             'department_ids.*' => ['integer', 'distinct'],
@@ -441,20 +450,25 @@ class ExportController extends Controller
         ];
     }
 
-    /** @return list<int>|null  null = no department filter */
-    private function statementDepartmentIds(array $validated): ?array
+    /** @return array{0: list<int>|null, 1: list<int>|null}  companies, departments; null = no filter */
+    private function statementScope(array $validated): array
     {
-        $ids = array_map('intval', [...($validated['department_ids'] ?? []), ...(isset($validated['department_id']) ? [$validated['department_id']] : [])]);
+        $ids = fn (string $many, string $one) => ($list = array_values(array_unique(array_map('intval', [
+            ...($validated[$many] ?? []), ...(isset($validated[$one]) ? [$validated[$one]] : []),
+        ])))) === [] ? null : $list;
 
-        return $ids === [] ? null : array_values(array_unique($ids));
+        return [$ids('company_ids', 'company_id'), $ids('department_ids', 'department_id')];
     }
 
     private function buildStatement(array $validated): array
     {
+        [$companyIds, $departmentIds] = $this->statementScope($validated);
+
         return $this->statement->build(
             $validated['from'] ?? null,
             $validated['to'] ?? null,
-            $this->statementDepartmentIds($validated),
+            $companyIds,
+            $departmentIds,
             isset($validated['employee_ids']) ? array_map('intval', $validated['employee_ids']) : null,
         );
     }

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ApiError } from './api';
 import { Button, Card, DateField, SelectField } from './ui';
 import { FOCUS } from './theme';
 import { useEscapeKey } from './useEscapeKey';
 import EmployeePicker from './EmployeePicker';
 import DepartmentChecklist from './DepartmentChecklist';
+import { buildOrg, orgParams, OrgOptions } from './orgUnits';
 
 /*
 | Choose the period for a report PDF (2026-10-18): "this month", "last month", the
@@ -12,11 +13,16 @@ import DepartmentChecklist from './DepartmentChecklist';
 | everybody", "this person from the 3rd to the 21st".
 |
 | Used by the Employee Report screen (one person, downloads at once) and the Reports
-| screen (everybody, built in the background — that caller passes `departments`).
+| screen (everybody, built in the background — that caller passes `companies` and
+| `departments`, and "Who" submits `company_id` or `department_id`).
 |
 | `allowPeople` (the Monthly Statement Excel, 2026-10-19) turns "Who" into a choice of
 | everyone / companies or departments (one or several) / chosen people, and submits
-| `department_ids` or `employee_ids`.
+| `company_ids` + `department_ids`, or `employee_ids`.
+|
+| `initialOrg` is the calling screen's company or department key ('c:4', 'd:13', 'none';
+| shared/orgUnits.jsx, 2026-11-03). The Monthly Statement cannot take "in no company",
+| so from 'none' it starts on Everyone, which the dialog shows before anything is sent.
 |
 | Dates are office-local calendar days, sent as typed. No date after today: an
 | unhappened work day would be counted as an absence, and the server refuses it too.
@@ -37,15 +43,18 @@ function presets() {
     ];
 }
 
-export default function ReportRangeDialog({ title, intro, confirmLabel, initial, departments = null, initialDepartment = '', allowPeople = false, onSubmit, onClose }) {
+export default function ReportRangeDialog({ title, intro, confirmLabel, initial, companies = null, departments = null, initialOrg = '', allowPeople = false, onSubmit, onClose }) {
     const options = presets();
     const start = initial ?? options[0];
     const [from, setFrom] = useState(start.from);
     const [to, setTo] = useState(start.to);
-    const [departmentId, setDepartmentId] = useState(initialDepartment);
-    const [who, setWho] = useState(initialDepartment ? 'department' : 'all');
+    const startsOnUnit = /^[cd]:\d+$/.test(initialOrg ?? '');
+    const [orgKey, setOrgKey] = useState(initialOrg ?? '');
+    const [who, setWho] = useState(startsOnUnit ? 'department' : 'all');
     const [people, setPeople] = useState([]);
-    const [departmentIds, setDepartmentIds] = useState(initialDepartment ? [Number(initialDepartment)] : []);
+    // Keys ('c:4', 'd:13'), split into company_ids / department_ids on submit.
+    const [units, setUnits] = useState(startsOnUnit ? [initialOrg] : []);
+    const org = useMemo(() => buildOrg(companies ?? [], departments ?? []), [companies, departments]);
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const today = ymd(new Date());
@@ -60,7 +69,7 @@ export default function ReportRangeDialog({ title, intro, confirmLabel, initial,
         if (!from) found.from = ['Choose the first day.'];
         if (!to) found.to = ['Choose the last day.'];
         if (from && to && from > to) found.to = ['The last day is before the first.'];
-        if (allowPeople && who === 'department' && departmentIds.length === 0) found.department_ids = ['Choose at least one company or department.'];
+        if (allowPeople && who === 'department' && units.length === 0) found.department_ids = ['Choose at least one company or department.'];
         if (allowPeople && who === 'people' && people.length === 0) found.employee_ids = ['Choose at least one person.'];
         if (Object.keys(found).length) {
             setErrors(found);
@@ -69,9 +78,13 @@ export default function ReportRangeDialog({ title, intro, confirmLabel, initial,
         setSubmitting(true);
         setErrors({});
         try {
+            const idsOf = (prefix) => {
+                const ids = who === 'department' ? units.filter((k) => k.startsWith(prefix)).map((k) => Number(k.slice(2))) : [];
+                return ids.length ? ids : null;
+            };
             await onSubmit(allowPeople
-                ? { from, to, department_ids: who === 'department' ? departmentIds : null, employee_ids: who === 'people' ? people.map((p) => p.id) : null }
-                : { from, to, department_id: departmentId || null });
+                ? { from, to, company_ids: idsOf('c:'), department_ids: idsOf('d:'), employee_ids: who === 'people' ? people.map((p) => p.id) : null }
+                : { from, to, ...orgParams(orgKey) });
         } catch (err) {
             // 422 → on the fields; anything else the caller has already toasted.
             if (err instanceof ApiError && err.errors) setErrors(err.errors);
@@ -126,10 +139,11 @@ export default function ReportRangeDialog({ title, intro, confirmLabel, initial,
                             {who === 'department' && (
                                 <div className="mt-3">
                                     <DepartmentChecklist
+                                        companies={companies ?? []}
                                         departments={departments ?? []}
-                                        value={departmentIds}
-                                        onChange={(next) => { setDepartmentIds(next); setErrors({}); }}
-                                        error={errors.department_ids?.[0] ?? errors['department_ids.0']?.[0]}
+                                        value={units}
+                                        onChange={(next) => { setUnits(next); setErrors({}); }}
+                                        error={['department_ids', 'company_ids', 'department_ids.0', 'company_ids.0'].map((k) => errors[k]?.[0]).find(Boolean)}
                                     />
                                 </div>
                             )}
@@ -141,12 +155,10 @@ export default function ReportRangeDialog({ title, intro, confirmLabel, initial,
                         </div>
                     )}
 
-                    {departments && !allowPeople && (
-                        <SelectField className="mt-3" label="Who" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} error={errors.department_id?.[0]}>
+                    {companies && !allowPeople && (
+                        <SelectField className="mt-3" label="Who" value={orgKey} onChange={(e) => setOrgKey(e.target.value)} error={errors.company_id?.[0] ?? errors.department_id?.[0]}>
                             <option value="">Every active employee</option>
-                            {departments.map((d) => (
-                                <option key={d.id} value={d.id}>{d.name} and below</option>
-                            ))}
+                            <OrgOptions org={org} unassigned />
                         </SelectField>
                     )}
 

@@ -112,7 +112,7 @@ $employeeFields = fields('Body fields', [
     ['email', 'email', false, ''],
     ['mobile_phone', 'string ≤32', false, 'Digits, spaces, `()` and `-`, optional leading `+`. The website stores `"+973 33445566"`.'],
     ['home_phone', 'string ≤32', false, 'As mobile_phone.'],
-    ['company_id', 'integer', false, 'The company, from `GET /departments` where `is_company` is true (e.g. 4 = PROMOSEVEN, 19 = Camelot).'],
+    ['company_id', 'integer', false, 'The company, from `GET /companies` (e.g. 4 = PROMOSEVEN, 19 = Camelot).'],
     ['department_id', 'integer', false, 'A department (not a company), e.g. 12 = PROMOSEVEN › Information Technology. Must belong to `company_id` when both are sent; sent alone, the company follows from it. `null` removes the department and keeps the company.'],
     ['job_title', 'string ≤255', false, ''],
     ['hired_date', 'date', false, ''],
@@ -337,21 +337,38 @@ $items = [
             ]), null, ['from' => ['2026-10-01', true, ''], 'to' => ['2026-10-31', true, ''], 'department_id' => ['{{department_id}}', false, '']]),
     ]),
 
-    folder('6. Departments and access levels', "Companies and departments share this list: `is_company: true` is a company, and every row says its `company_id` (e.g. 4 = PROMOSEVEN, 12 = PROMOSEVEN › Information Technology, `company_id` 4).", [
-        req('GET api/v1/departments', 'List departments and companies', '/api/v1/departments', 'Every company and department with `parent_id` and employee counts.'),
-        req('GET api/v1/departments/{department}', 'Get department', '/api/v1/departments/{{department_id}}', 'One department or company.'),
-        req('POST api/v1/departments', 'Create department', '/api/v1/departments',
-            "Creates a company (no `parent_id`) or a department under one. Its id is saved to `{{new_department_id}}`.".fields('Body fields', [
-                ['name', 'string', true, 'Unique among its siblings.'],
-                ['parent_id', 'integer', false, 'The company it belongs to. Leave out to create a company.'],
+    folder('6. Companies, departments and access levels', "Companies and departments are two lists since 2026-11-03. A department belongs to exactly one company (e.g. 12 = Information Technology, `company_id` 4 = PROMOSEVEN); there are no sub-departments. Company ids and department ids are separate: company 21 and department 21 can both exist.", [
+        req('GET api/v1/companies', 'List companies', '/api/v1/companies',
+            "Every company with `departments_count` and `employees_count` (everyone in it, its departments included). `meta.unassigned_count` = employees in no company."),
+        req('GET api/v1/companies/{company}', 'Get company', '/api/v1/companies/{{company_id}}', 'One company.'),
+        req('POST api/v1/companies', 'Create company', '/api/v1/companies',
+            "Creates a company. Its id is saved to `{{new_company_id}}`.".fields('Body fields', [
+                ['name', 'string', true, 'Unique.'],
                 ['code', 'string ≤50', false, ''],
                 ['manager_id', 'integer', false, 'An employee id.'],
             ]),
-            ['name' => 'API Test Department', 'parent_id' => 4], [], saves(['new_department_id' => 'j.data.id'])),
+            ['name' => 'API Test Company'], [], saves(['new_company_id' => 'j.data.id'])),
+        req('PATCH api/v1/companies/{company}', 'Update company', '/api/v1/companies/{{new_company_id}}',
+            "Partial update. Renaming updates the old text `department` of people placed directly in the company.", ['name' => 'API Test Company (renamed)']),
+        req('DELETE api/v1/companies/{company}', 'Delete company', '/api/v1/companies/{{new_company_id}}',
+            "Deletes a company. `409` while it still has employees or departments. Uses `{{new_company_id}}` (the one you created), never a real one by default."),
+        req('GET api/v1/departments', 'List departments', '/api/v1/departments',
+            "Every department with its `company_id`, `company_name` and `employees_count`.".fields('Query parameters', [
+                ['company_id', 'integer', false, 'Only this company\'s departments.'],
+            ]), null, ['company_id' => ['{{company_id}}', false, '']]),
+        req('GET api/v1/departments/{department}', 'Get department', '/api/v1/departments/{{department_id}}', 'One department.'),
+        req('POST api/v1/departments', 'Create department', '/api/v1/departments',
+            "Creates a department in a company. Its id is saved to `{{new_department_id}}`.".fields('Body fields', [
+                ['company_id', 'integer', true, 'The company it belongs to.'],
+                ['name', 'string', true, 'Unique within its company: "Finance" may exist in two companies.'],
+                ['code', 'string ≤50', false, ''],
+                ['manager_id', 'integer', false, 'An employee id.'],
+            ]),
+            ['company_id' => 4, 'name' => 'API Test Department'], [], saves(['new_department_id' => 'j.data.id'])),
         req('PATCH api/v1/departments/{department}', 'Update department', '/api/v1/departments/{{new_department_id}}',
-            "Partial update. Renaming updates the old text `department` of its employees too.", ['name' => 'API Test Department (renamed)']),
+            "Partial update. Renaming updates the old text `department` of its employees too. A new `company_id` moves the department to that company, and its people with it.", ['name' => 'API Test Department (renamed)']),
         req('DELETE api/v1/departments/{department}', 'Delete department', '/api/v1/departments/{{new_department_id}}',
-            "Deletes a department. `409` while it still has employees or departments under it. Uses `{{new_department_id}}` (the one you created), never a real one by default."),
+            "Deletes a department. `409` while it still has employees. Uses `{{new_department_id}}` (the one you created), never a real one by default."),
         req('GET api/v1/access-levels', 'List access levels', '/api/v1/access-levels', 'The ids to use in an employee\'s `access_level_ids`.'),
     ]),
 
@@ -466,7 +483,7 @@ $collection = [
      * which the server redirects and then refuses (owner's test, 2026-11-02).
      */
     'event' => [['listen' => 'prerequest', 'script' => ['type' => 'text/javascript', 'exec' => [
-        "const how = { token: 'run 0. Start here → Sign in', command_id: 'send a request that queues a command first (Push, Start enrollment, …)', session_id: 'run 3. → Find enrollment session (for this command) first', new_department_id: 'run Create department first', webhook_id: 'run Create webhook first', delivery_id: 'run List deliveries first', token_id: 'run Create token first', run_id: 'copy an id from List attendance sync runs' };",
+        "const how = { token: 'run 0. Start here → Sign in', command_id: 'send a request that queues a command first (Push, Start enrollment, …)', session_id: 'run 3. → Find enrollment session (for this command) first', new_department_id: 'run Create department first', new_company_id: 'run Create company first', webhook_id: 'run Create webhook first', delivery_id: 'run List deliveries first', token_id: 'run Create token first', run_id: 'copy an id from List attendance sync runs' };",
         "const names = (pm.request.url.toString().match(/{{(\\w+)}}/g) || []).map(v => v.slice(2, -2));",
         "if (pm.request.auth === undefined || pm.request.auth === null || pm.request.auth.type !== 'noauth') { names.push('token'); }",
         "for (const n of names) { if (n === 'token' && pm.info.requestName.startsWith('Sign in')) { continue; } const v = pm.variables.get(n); if (v === undefined || v === null || String(v).trim() === '') { throw new Error('{{' + n + '}} is empty: ' + (how[n] || 'set it under Collection → Variables') + '. (If it is filled under Variables, check no Environment is selected, top right.)'); } }",
@@ -484,6 +501,7 @@ $collection = [
         'finger_slot' => ['6', '0–9; 6 = right index.'],
         'company_id' => ['4', '4 = PROMOSEVEN, 19 = Camelot.'],
         'department_id' => ['12', '12 = PROMOSEVEN › Information Technology.'],
+        'new_company_id' => ['', 'Set by Create company.'],
         'new_department_id' => ['', 'Set by Create department.'],
         'command_id' => ['', 'Set by any request that queues a command.'],
         'session_id' => ['', 'Set by Start fingerprint/card enrollment.'],

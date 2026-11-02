@@ -11,7 +11,7 @@ import { useRef, useState } from 'react';
 
 // Desktop employees: toolbar + wide data table.
 export default function EmployeesDesktop({
-    rows, search, onSearch, filters, onFilters, departments, unassignedCount, departmentsLoaded, devices,
+    rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, departmentsLoaded, devices,
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
@@ -103,11 +103,12 @@ export default function EmployeesDesktop({
             <div className="grid grid-cols-[15rem_minmax(0,1fr)] items-start gap-5 xl:grid-cols-[17rem_minmax(0,1fr)]">
             <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
                 <DepartmentTree
+                    companies={companies}
                     departments={departments}
                     unassignedCount={unassignedCount}
                     loaded={departmentsLoaded}
-                    value={filters?.department_id ?? ''}
-                    onChange={(id) => onFilters({ ...(filters ?? {}), department_id: id })}
+                    value={filters?.org ?? ''}
+                    onChange={(key) => onFilters({ ...(filters ?? {}), org: key })}
                 />
             </div>
 

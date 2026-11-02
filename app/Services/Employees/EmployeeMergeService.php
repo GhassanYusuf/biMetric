@@ -79,6 +79,9 @@ class EmployeeMergeService
         'person_id',
         'email',
         'department',
+        // Company before department (two columns since 2026-11-03): a department is only
+        // taken from a record in the same company, see plan().
+        'company_id',
         'department_id',
         'photo_path',
         'card_number',
@@ -108,6 +111,7 @@ class EmployeeMergeService
         'person_id' => 'Person ID',
         'email' => 'Email',
         'department' => 'Department',
+        'company_id' => 'Company',
         'department_id' => 'Department',
         'photo_path' => 'Photo',
         'card_number' => 'Card number',
@@ -334,7 +338,10 @@ class EmployeeMergeService
                 continue;
             }
 
-            $donor = $folded->first(fn (Employee $e) => ! $this->missing($e->{$field}));
+            // A department decides the company, so one from another company would move them.
+            $company = $fill['company_id'] ?? $keeper->company_id;
+            $donor = $folded->first(fn (Employee $e) => ! $this->missing($e->{$field})
+                && ($field !== 'department_id' || (int) $e->company_id === (int) $company));
 
             if ($donor === null) {
                 continue;

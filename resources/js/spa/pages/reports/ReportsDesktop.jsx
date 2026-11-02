@@ -1,9 +1,10 @@
 import { ActionMenu, Button, Card, DateField, EmptyState, PageHeader, SelectField, Spinner, TableShell, Thead } from '../../shared/ui';
 import { ExportRuns, hours, rangeLabel } from './parts';
+import { OrgOptions } from '../../shared/orgUnits';
 
 // Desktop payroll summary: range + department filters, one row per employee,
 // and a totals row that comes from the server's own sum.
-export default function ReportsDesktop({ report, departments, filters, onFilter, loading, exporting, onExport, runs, downloading, deleting, onDownloadRun, onDeleteRun, allEmployeesItems }) {
+export default function ReportsDesktop({ report, org, filters, onFilter, loading, exporting, onExport, runs, downloading, deleting, onDownloadRun, onDeleteRun, allEmployeesItems }) {
     const rows = report?.rows ?? [];
 
     function set(key, value) {
@@ -37,14 +38,12 @@ export default function ReportsDesktop({ report, departments, filters, onFilter,
                 <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-4">
                     <DateField label="From" value={filters.from} onChange={(e) => set('from', e.target.value)} />
                     <DateField label="To" value={filters.to} onChange={(e) => set('to', e.target.value)} />
-                    <SelectField label="Department" value={filters.department_id} onChange={(e) => set('department_id', e.target.value)}>
+                    <SelectField label="Department" value={filters.org} onChange={(e) => set('org', e.target.value)}>
                         <option value="">All departments</option>
-                        {departments.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
+                        <OrgOptions org={org} />
                     </SelectField>
-                    {(filters.from || filters.to || filters.department_id) && (
-                        <Button variant="ghost" onClick={() => onFilter({ from: '', to: '', department_id: '' })}>
+                    {(filters.from || filters.to || filters.org) && (
+                        <Button variant="ghost" onClick={() => onFilter({ from: '', to: '', org: '' })}>
                             Clear filters
                         </Button>
                     )}

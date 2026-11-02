@@ -3,7 +3,6 @@
 namespace App\Services\Reports;
 
 use App\Models\AttendanceLog;
-use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Models\EmployeeDeviceMap;
@@ -61,7 +60,6 @@ class PersonalReport
         $grace = $rules->lateGrace;
         $shift = [...EmployeeReportService::shiftPayload($rules), 'timezone' => $tz];
 
-        $departments = Department::query()->with('parent')->get()->keyBy('id');
         $deviceNames = Device::query()->pluck('name', 'id');
 
         $firstPunch = AttendanceLog::query()
@@ -117,14 +115,13 @@ class PersonalReport
             $previous = array_values(array_filter($days, fn ($d) => $d['date'] < $periodFrom));
             $tracked = array_values(array_filter($current, fn ($d) => $d['outcome'] !== 'untracked'));
             $stats = EmployeeReportService::stats($current, $shiftStart, $grace);
-            $department = $departments[$employee->department_id] ?? null;
 
             $reports[] = [
                 'employee' => [
                     'id' => $employee->id,
                     'name' => $employee->fullName(),
                     'employee_code' => $employee->employee_code,
-                    'department' => $department?->path() ?? ($employee->department ?: null),
+                    'department' => $employee->orgLabel(),
                     'job_title' => $employee->job_title,
                     'hired_date' => $employee->hired_date?->format('Y-m-d'),
                     'is_active' => (bool) $employee->is_active,

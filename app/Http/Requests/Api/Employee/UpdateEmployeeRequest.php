@@ -8,7 +8,7 @@ use Illuminate\Validation\Rule;
 
 class UpdateEmployeeRequest extends FormRequest
 {
-    use EmployeeProfileRules;
+    use CompanyDepartmentRules, EmployeeProfileRules;
 
     public function authorize(): bool
     {
@@ -21,7 +21,7 @@ class UpdateEmployeeRequest extends FormRequest
         // Only a CHANGED code must meet the digits rule — see codeFormatRule().
         $codeChanged = (string) $this->input('employee_code') !== (string) $this->route('employee')->employee_code;
 
-        return $this->profileRules() + [
+        return $this->profileRules() + $this->companyDepartmentRules() + [
             'name' => ['required', 'string', 'max:255'],
             'employee_code' => [
                 'required', 'string', 'max:255',
@@ -37,10 +37,6 @@ class UpdateEmployeeRequest extends FormRequest
             ],
             'email' => ['nullable', 'email', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
-            'department_id' => [
-                'nullable',
-                Rule::exists('departments', 'id')->where('tenant_id', Tenancy::id()),
-            ],
             'is_active' => ['boolean'],
             'photo' => ['nullable', 'image', 'max:4096'],
         ];

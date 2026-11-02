@@ -7,6 +7,7 @@ import { useDeviceClass } from '../../shared/useDeviceClass';
 import { useConfirm } from '../../shared/confirm';
 import { useToast } from '../../shared/toast';
 import { SkeletonTable } from '../../shared/ui';
+import { fetchOrg, setOrgParams } from '../../shared/orgUnits';
 import { can as canDevice, idMoveMethod } from '../devices/parts';
 import EmployeesDesktop from './EmployeesDesktop';
 import EmployeesMobile from './EmployeesMobile';
@@ -25,7 +26,8 @@ import EmployeeDetailModal from './EmployeeDetailModal';
 function rosterParams(term, active) {
     const params = new URLSearchParams();
     if (term) params.set('search', term);
-    if (active.department_id) params.set('department_id', active.department_id);
+    // The tree's node: a company, a department or 'none' (shared/orgUnits.js).
+    setOrgParams(params, active.org);
     // Status: resigned people are left out unless asked for (2026-10-12).
     const status = active.status ?? '';
     if (status === 'active' || status === 'inactive') params.set('is_active', status === 'active' ? '1' : '0');
@@ -65,7 +67,7 @@ export default function Employees() {
             } else {
                 load(search, filters);
                 // The tree's counts move with the roster, and its nodes with the
-                // departments table, both of which stamp the employees module.
+                // companies and departments tables, all of which stamp the employees module.
                 loadDepartments();
             }
         },
@@ -84,6 +86,7 @@ export default function Employees() {
     // Server-side filters. Kept as plain strings so they map straight onto the query
     // string and an empty value means "no filter" without a second flag per field.
     const [filters, setFilters] = useState({});
+    const [companies, setCompanies] = useState([]);
     const [departments, setDepartments] = useState([]);
     const [unassignedCount, setUnassignedCount] = useState(0);
     const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
@@ -174,30 +177,31 @@ export default function Employees() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load, filters]);
 
-    // Departments for the filter. Absent permission simply means no department filter
+    // Companies and departments for the tree. Absent permission simply means no tree
     // is offered, rather than an error the operator can do nothing about.
-    // The response's meta also carries the tree's "Unassigned" count.
+    // GET /companies' meta also carries the tree's "Unassigned" count.
     const loadDepartments = useCallback(() => {
-        api.get('/departments')
-            .then((res) => {
-                setDepartments(res.data ?? []);
-                setUnassignedCount(res.meta?.unassigned_count ?? 0);
+        fetchOrg()
+            .then((org) => {
+                setCompanies(org.companies);
+                setDepartments(org.departments);
+                setUnassignedCount(org.unassignedCount);
             })
-            .catch(() => setDepartments([]))
             .finally(() => setDepartmentsLoaded(true));
     }, []);
 
     useEffect(() => { loadDepartments(); }, [loadDepartments]);
 
     /*
-     * A company (no parent) or a department beneath one, created from the employee
-     * form's dropdowns by whoever manages departments (2026-10-12). The tree reloads
-     * so the new node is listed straight away; the form also keeps its own copy.
+     * A company, or a department in one, created from the employee form's dropdowns by
+     * whoever manages departments (2026-10-12; two endpoints since the companies table,
+     * 2026-11-03). The tree reloads so the new node is listed straight away; the form
+     * also keeps its own copy.
      */
-    const createDepartment = useCallback(async (name, parentId) => {
+    const createOrgUnit = useCallback(async (path, body, noun, name) => {
         try {
-            const res = await api.post('/departments', { name, parent_id: parentId });
-            toast.success(`${parentId ? 'Department' : 'Company'} “${res.data.name}” added.`);
+            const res = await api.post(path, body);
+            toast.success(`${noun} “${res.data.name}” added.`);
             loadDepartments();
             return res.data;
         } catch (err) {
@@ -205,6 +209,11 @@ export default function Employees() {
             return null;
         }
     }, [loadDepartments, toast]);
+    const createCompany = useCallback((name) => createOrgUnit('/companies', { name }, 'Company', name), [createOrgUnit]);
+    const createDepartment = useCallback(
+        (name, companyId) => createOrgUnit('/departments', { name, company_id: companyId }, 'Department', name),
+        [createOrgUnit],
+    );
 
     // Terminals for the enroll dialog. A user who may push employees but not
     // view devices simply gets no terminals offered, which the dialog explains.
@@ -855,6 +864,7 @@ export default function Employees() {
         onSearch,
         filters,
         onFilters: setFilters,
+        companies,
         departments,
         unassignedCount,
         departmentsLoaded,
@@ -922,7 +932,9 @@ export default function Employees() {
                     onRetry={retryPropagate}
                     onClose={() => setFormOpen(false)}
                     onDone={() => { setFormOpen(false); load(search, filters); }}
+                    companies={companies}
                     departments={departments}
+                    onCreateCompany={can('departments.manage') ? createCompany : null}
                     onCreateDepartment={can('departments.manage') ? createDepartment : null}
                 />
             )}
@@ -1008,7 +1020,9 @@ export default function Employees() {
                     onRetry={retryPropagate}
                     onClose={() => setEditing(null)}
                     onDone={() => setEditing(null)}
+                    companies={companies}
                     departments={departments}
+                    onCreateCompany={can('departments.manage') ? createCompany : null}
                     onCreateDepartment={can('departments.manage') ? createDepartment : null}
                     onEnrollFingerprint={can('employees.push') ? enrollFromForm : null}
                     onReadFingerprints={can('employees.push') ? readFingerprintsToSystem : null}

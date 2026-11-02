@@ -7,6 +7,7 @@ use App\Http\Resources\AttendanceLogResource;
 use App\Models\DeviceRosterEntry;
 use App\Services\Attendance\PunchLogQuery;
 use App\Support\ApiResponse;
+use App\Support\OrgScope;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -28,7 +29,7 @@ class AttendanceController extends Controller
         $filters = $request->validate([
             'employee_id' => ['nullable', 'integer'],
             'device_id' => ['nullable', 'integer'],
-            'department_id' => ['nullable', 'regex:/^(none|\d+)$/'],
+            ...OrgScope::rules(),
             'search' => ['nullable', 'string', 'max:100'],
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],

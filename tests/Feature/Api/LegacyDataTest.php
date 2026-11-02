@@ -3,7 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Models\AttendanceLog;
-use App\Models\Department;
+use App\Models\Company;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Models\Tenant;
@@ -151,7 +151,7 @@ class LegacyDataTest extends TestCase
 
         // The dry run must not touch the database.
         $this->assertSame(0, Employee::withoutGlobalScopes()->where('tenant_id', $this->acme->id)->where('employee_code', self::NEW_PIN)->count());
-        $this->assertSame(0, Department::where('tenant_id', $this->acme->id)->where('name', 'Legacy Dept')->count());
+        $this->assertSame(0, Company::where('tenant_id', $this->acme->id)->where('name', 'Legacy Dept')->count());
         $this->assertSame(0, AttendanceLog::where('tenant_id', $this->acme->id)->count());
     }
 
@@ -168,7 +168,7 @@ class LegacyDataTest extends TestCase
 
         $employee = Employee::withoutGlobalScopes()->where('employee_code', self::NEW_PIN)->firstOrFail();
         $this->assertSame($this->acme->id, $employee->tenant_id);
-        $this->assertSame(Department::where('tenant_id', $this->acme->id)->where('name', 'Legacy Dept')->firstOrFail()->id, $employee->department_id);
+        $this->assertSame(Company::where('tenant_id', $this->acme->id)->where('name', 'Legacy Dept')->firstOrFail()->id, $employee->company_id);
 
         $punch = AttendanceLog::where('tenant_id', $this->acme->id)->firstOrFail();
         $this->assertSame(self::NEW_PIN, $punch->device_user_id);

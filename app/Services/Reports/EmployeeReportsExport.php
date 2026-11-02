@@ -4,12 +4,12 @@ namespace App\Services\Reports;
 
 use App\Jobs\BuildEmployeeReports;
 use App\Models\AttendanceLog;
-use App\Models\Department;
 use App\Models\Employee;
 use App\Models\ReportExport;
 use App\Models\User;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\EmployeeReportService;
+use App\Support\OrgScope;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\ExecutableFinder;
 
@@ -36,18 +36,17 @@ class EmployeeReportsExport
         return (new ExecutableFinder)->find('pdfunite') !== null;
     }
 
-    public function start(User $user, ?string $from, ?string $to, ?int $departmentId): ReportExport
+    public function start(User $user, ?string $from, ?string $to, ?OrgScope $scope = null): ReportExport
     {
         self::prune();
 
         [$fromDate, $toDate] = AttendanceSummaryService::window($from, $to);
         $to = $toDate->format('Y-m-d');
-        $departments = Department::query()->with('parent')->get()->keyBy('id');
-        $scope = $departmentId !== null ? Department::subtreeIds($departmentId) : null;
+        $scope ??= new OrgScope;
 
-        $employees = Employee::query()
+        $employees = $scope->apply(Employee::query())
+            ->with(['company:id,name', 'department:id,name,company_id'])
             ->where('is_active', true)
-            ->when($scope !== null, fn ($q) => $q->whereIn('department_id', $scope))
             ->get();
 
         $firstPunch = $employees->isEmpty() ? collect() : AttendanceLog::query()
@@ -56,7 +55,7 @@ class EmployeeReportsExport
             ->selectRaw('employee_id, min(punched_at) as first_punch')
             ->pluck('first_punch', 'employee_id');
 
-        $label = fn (Employee $e) => ($departments[$e->department_id] ?? null)?->path() ?? ($e->department ?: 'Unassigned');
+        $label = fn (Employee $e) => $e->orgLabel() ?? 'Unassigned';
         [$tracked, $untracked] = $employees
             ->sortBy([fn ($a, $b) => $label($a) <=> $label($b), fn ($a, $b) => strcasecmp($a->fullName(), $b->fullName())])
             ->partition(function (Employee $e) use ($firstPunch, $to) {
@@ -72,8 +71,8 @@ class EmployeeReportsExport
             'params' => [
                 'from' => $fromDate->format('Y-m-d'),
                 'to' => $to,
-                'department_id' => $departmentId,
-                'scope' => $departmentId !== null ? (($departments[$departmentId] ?? null)?->path() ?? "#{$departmentId}") : null,
+                ...$scope->toArray(),
+                'scope' => $scope->name(),
                 'employee_ids' => $tracked->pluck('id')->values()->all(),
                 'not_tracked' => $untracked->map(fn ($e) => ['name' => $e->fullName(), 'employee_code' => $e->employee_code, 'department' => $label($e)])->values()->all(),
             ],

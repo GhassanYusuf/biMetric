@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\ClientErrorController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DeviceAdoptionController;
 use App\Http\Controllers\Api\DeviceController;
@@ -83,6 +84,8 @@ Route::middleware(['auth:sanctum', 'throttle:20,1'])
 Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
     // Departments
+    // Companies have their own table since 2026-11-03; departments belong to one.
+    Route::apiResource('companies', CompanyController::class)->names('api.companies');
     Route::apiResource('departments', DepartmentController::class)->names('api.departments');
 
     // Users and permission levels (2026-10-19). Self-lockout and privilege-climb guards

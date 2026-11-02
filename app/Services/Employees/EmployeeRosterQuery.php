@@ -2,7 +2,6 @@
 
 namespace App\Services\Employees;
 
-use App\Models\Department;
 use App\Models\Employee;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -24,7 +23,10 @@ class EmployeeRosterQuery
     /** The query-string keys this reads, for a controller's validate(). */
     public const RULES = [
         'search' => ['nullable', 'string', 'max:100'],
-        'department_id' => ['nullable', 'regex:/^(none|\d+)$/'],
+        // Company and department (two columns since 2026-11-03). company_id=none is the
+        // tree's "Unassigned" node: people in no company.
+        'company_id' => ['nullable', 'regex:/^(none|\d+)$/'],
+        'department_id' => ['nullable', 'integer'],
         'is_active' => ['nullable', 'boolean'],
         'resigned' => ['nullable', 'boolean'],
         'device_id' => ['nullable', 'integer'],
@@ -54,14 +56,14 @@ class EmployeeRosterQuery
                     });
                 }
             })
-            // The department tree (2026-10-11): a node selects itself and everything
-            // beneath it, so picking a company lists its departments' people too.
-            // `none` is the tree's "Unassigned" node — a real state, not an id.
-            ->when($request->query('department_id') === 'none', fn ($q) => $q->whereNull('department_id'))
+            // A company lists everyone in it, its departments included (the row carries
+            // company_id). `none` is the tree's "Unassigned" node — a real state, not an id.
+            ->when($request->query('company_id') === 'none', fn ($q) => $q->whereNull('company_id'))
             ->when(
-                $request->filled('department_id') && $request->query('department_id') !== 'none',
-                fn ($q) => $q->whereIn('department_id', Department::subtreeIds($request->integer('department_id'))),
+                $request->filled('company_id') && $request->query('company_id') !== 'none',
+                fn ($q) => $q->where('company_id', $request->integer('company_id')),
             )
+            ->when($request->filled('department_id'), fn ($q) => $q->where('department_id', $request->integer('department_id')))
             ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
             // Resigned (2026-10-12): `1` only them, `0` everyone still employed. Absent =
             // both, so other callers (search, merge) still find a resigned person.

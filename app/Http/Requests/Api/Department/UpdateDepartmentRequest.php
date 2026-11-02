@@ -15,22 +15,23 @@ class UpdateDepartmentRequest extends FormRequest
 
     public function rules(): array
     {
-        $departmentId = $this->route('department')->id;
+        $department = $this->route('department');
+        // Moving it to another company is allowed; leaving company_id out keeps it where it is.
+        $companyId = $this->filled('company_id') ? $this->integer('company_id') : (int) $department->company_id;
 
         return [
+            'company_id' => [
+                'sometimes', 'required', 'integer',
+                Rule::exists('companies', 'id')->where('tenant_id', Tenancy::id())->whereNull('deleted_at'),
+            ],
+            // Unique per company: "Finance" may exist in two companies.
             'name' => [
-                'required', 'string', 'max:255',
+                'sometimes', 'required', 'string', 'max:255',
                 Rule::unique('departments', 'name')
                     ->where('tenant_id', Tenancy::id())
-                    ->where(fn ($q) => $this->filled('parent_id') ? $q->where('parent_id', $this->integer('parent_id')) : $q->whereNull('parent_id'))
+                    ->where('company_id', $companyId)
                     ->whereNull('deleted_at')
-                    ->ignore($departmentId),
-            ],
-            // Unique per parent: "Finance" may exist under two companies.
-            'parent_id' => [
-                'nullable',
-                Rule::notIn([$departmentId]),
-                Rule::exists('departments', 'id')->where('tenant_id', Tenancy::id())->whereNull('deleted_at'),
+                    ->ignore($department->id),
             ],
             'code' => ['nullable', 'string', 'max:50'],
             'manager_id' => [

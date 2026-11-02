@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { ActionMenu, Badge, Button, Card, DateField, EmptyState, PageHeader, SelectField } from '../../shared/ui';
 import { ExportRuns, hours, rangeLabel } from './parts';
+import { OrgOptions } from '../../shared/orgUnits';
 
 // Mobile payroll summary: the same report and the same export, with the filters
 // collapsed behind a toggle and each employee as a card.
-export default function ReportsMobile({ report, departments, filters, onFilter, loading, exporting, onExport, runs, downloading, deleting, onDownloadRun, onDeleteRun, allEmployeesItems }) {
+export default function ReportsMobile({ report, org, filters, onFilter, loading, exporting, onExport, runs, downloading, deleting, onDownloadRun, onDeleteRun, allEmployeesItems }) {
     const [filtersOpen, setFiltersOpen] = useState(false);
     const rows = report?.rows ?? [];
-    const activeCount = [filters.from, filters.to, filters.department_id].filter(Boolean).length;
+    const activeCount = [filters.from, filters.to, filters.org].filter(Boolean).length;
 
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
@@ -69,14 +70,12 @@ export default function ReportsMobile({ report, departments, filters, onFilter, 
                         <DateField label="From" value={filters.from} onChange={(e) => set('from', e.target.value)} />
                         <DateField label="To" value={filters.to} onChange={(e) => set('to', e.target.value)} />
                     </div>
-                    <SelectField label="Department" value={filters.department_id} onChange={(e) => set('department_id', e.target.value)}>
+                    <SelectField label="Department" value={filters.org} onChange={(e) => set('org', e.target.value)}>
                         <option value="">All departments</option>
-                        {departments.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
+                        <OrgOptions org={org} />
                     </SelectField>
                     {activeCount > 0 && (
-                        <Button variant="secondary" className="w-full" onClick={() => onFilter({ from: '', to: '', department_id: '' })}>
+                        <Button variant="secondary" className="w-full" onClick={() => onFilter({ from: '', to: '', org: '' })}>
                             Clear filters
                         </Button>
                     )}

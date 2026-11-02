@@ -2,48 +2,11 @@ import { Badge, SectionCard } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 
 /*
-| The Company › Department tree as the Companies & departments page shows it, shared by
-| the desktop and mobile layouts so they cannot drift (rule 5). The tree is the one
-| `departments` table: a company is a node with no parent (or whose parent is gone),
-| its departments sit beneath it — see the add_parent_id_to_departments migration.
+| The Company › Department list as the Companies & departments page shows it, shared by
+| the desktop and mobile layouts so they cannot drift (rule 5). Companies and
+| departments are two tables since 2026-11-03, each department flat under one company;
+| the page builds the list with shared/orgUnits.js `buildOrg`.
 */
-
-/** Companies, each with its departments (deeper levels labelled by path) and head count. */
-export function buildTree(rows) {
-    const list = rows.map((d) => ({
-        ...d,
-        id: Number(d.id),
-        parent_id: d.parent_id == null ? null : Number(d.parent_id),
-        employees_count: Number(d.employees_count ?? 0),
-    }));
-    const ids = new Set(list.map((d) => d.id));
-    const byParent = new Map();
-    list.forEach((d) => {
-        const key = d.parent_id != null && ids.has(d.parent_id) ? d.parent_id : null;
-        byParent.set(key, [...(byParent.get(key) ?? []), d]);
-    });
-    const byName = (a, b) => a.name.localeCompare(b.name);
-
-    return (byParent.get(null) ?? []).sort(byName).map((company) => {
-        const departments = [];
-        const seen = new Set([company.id]);
-        const walk = (parentId, prefix) => {
-            (byParent.get(parentId) ?? []).slice().sort(byName).forEach((d) => {
-                if (seen.has(d.id)) return; // a cycle in the data must not hang the page
-                seen.add(d.id);
-                const path = prefix ? `${prefix} › ${d.name}` : d.name;
-                departments.push({ ...d, path });
-                walk(d.id, path);
-            });
-        };
-        walk(company.id, '');
-        return {
-            ...company,
-            departments,
-            total: company.employees_count + departments.reduce((n, d) => n + d.employees_count, 0),
-        };
-    });
-}
 
 export function people(n) {
     return `${n.toLocaleString()} ${n === 1 ? 'person' : 'people'}`;
@@ -67,12 +30,12 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
     return (
         <SectionCard
             title={company.name}
-            subtitle={`${company.departments.length} department${company.departments.length === 1 ? '' : 's'} · ${people(company.total)}`}
+            subtitle={`${company.departments.length} department${company.departments.length === 1 ? '' : 's'} · ${people(company.employees_count)}`}
             bodyClass="px-3 pb-3 pt-2"
             action={canManage && (
                 <div className="flex shrink-0 items-center gap-1">
-                    <LinkButton onClick={() => onEdit(company)} aria-label={`Rename ${company.name}`}>Rename</LinkButton>
-                    <LinkButton tone="rose" onClick={() => onDelete(company)} aria-label={`Delete ${company.name}`}>Delete</LinkButton>
+                    <LinkButton onClick={() => onEdit(company, 'company')} aria-label={`Rename ${company.name}`}>Rename</LinkButton>
+                    <LinkButton tone="rose" onClick={() => onDelete(company, 'company')} aria-label={`Delete ${company.name}`}>Delete</LinkButton>
                 </div>
             )}
         >
@@ -82,21 +45,21 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
                 <ul className="divide-y divide-slate-100">
                     {company.departments.map((d) => (
                         <li key={d.id} className="flex items-center gap-3 px-2 py-2.5">
-                            <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{d.path}</span>
+                            <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{d.name}</span>
                             <Badge tone="slate">{people(d.employees_count)}</Badge>
                             {canManage && (
                                 <div className="flex shrink-0 items-center">
-                                    <LinkButton onClick={() => onEdit(d)} aria-label={`Edit ${d.name}`}>Edit</LinkButton>
-                                    <LinkButton tone="rose" onClick={() => onDelete(d)} aria-label={`Delete ${d.name}`}>Delete</LinkButton>
+                                    <LinkButton onClick={() => onEdit(d, 'department')} aria-label={`Edit ${d.name}`}>Edit</LinkButton>
+                                    <LinkButton tone="rose" onClick={() => onDelete(d, 'department')} aria-label={`Delete ${d.name}`}>Delete</LinkButton>
                                 </div>
                             )}
                         </li>
                     ))}
                 </ul>
             )}
-            {company.employees_count > 0 && (
+            {company.direct > 0 && (
                 <p className="px-2 pt-2 text-xs text-slate-500">
-                    {people(company.employees_count)} directly under {company.name}, in no department yet.
+                    {people(company.direct)} directly under {company.name}, in no department yet.
                 </p>
             )}
             {canManage && (

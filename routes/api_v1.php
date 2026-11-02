@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AccessLevelController;
+use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\DeviceEnrollmentController;
@@ -52,11 +53,16 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'tenant', 'throttle:integration
 
     // --- Reference data an employee refers to.
     Route::middleware('abilities:employees:read')->group(function () {
+        Route::get('companies', [CompanyController::class, 'index'])->name('api.v1.companies.index');
+        Route::get('companies/{company}', [CompanyController::class, 'show'])->name('api.v1.companies.show');
         Route::get('departments', [DepartmentController::class, 'index'])->name('api.v1.departments.index');
         Route::get('departments/{department}', [DepartmentController::class, 'show'])->name('api.v1.departments.show');
         Route::get('access-levels', [AccessLevelController::class, 'index'])->name('api.v1.access-levels.index');
     });
     Route::middleware('abilities:employees:write')->group(function () {
+        Route::post('companies', [CompanyController::class, 'store'])->name('api.v1.companies.store');
+        Route::match(['put', 'patch'], 'companies/{company}', [CompanyController::class, 'update'])->name('api.v1.companies.update');
+        Route::delete('companies/{company}', [CompanyController::class, 'destroy'])->name('api.v1.companies.destroy');
         Route::post('departments', [DepartmentController::class, 'store'])->name('api.v1.departments.store');
         Route::match(['put', 'patch'], 'departments/{department}', [DepartmentController::class, 'update'])->name('api.v1.departments.update');
         Route::delete('departments/{department}', [DepartmentController::class, 'destroy'])->name('api.v1.departments.destroy');

@@ -7,18 +7,18 @@ import { formatPunch, verifyLabel } from './parts';
 // Every filter this page owns, cleared. Named so "Clear filters" cannot forget one
 // — an employee_id left behind would leave the table showing one person under a
 // header claiming no filters are set.
-const NO_FILTERS = { employee_id: '', device_id: '', department_id: '', search: '', from: '', to: '' };
+const NO_FILTERS = { employee_id: '', device_id: '', org: '', search: '', from: '', to: '' };
 
 // Desktop attendance: filter bar + wide punch table + pager.
 export default function AttendanceDesktop({
-    rows, devices, departments, unassignedCount, departmentsLoaded,
+    rows, devices, companies, departments, unassignedCount, departmentsLoaded,
     filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems,
 }) {
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
     }
 
-    const hasFilters = !!(filters.employee_id || filters.device_id || filters.department_id || filters.search || filters.from || filters.to);
+    const hasFilters = !!(filters.employee_id || filters.device_id || filters.org || filters.search || filters.from || filters.to);
     const total = pagination?.total;
 
     return (
@@ -43,13 +43,14 @@ export default function AttendanceDesktop({
             <div className="grid grid-cols-[15rem_minmax(0,1fr)] items-start gap-5 xl:grid-cols-[17rem_minmax(0,1fr)]">
             <div className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
                 <DepartmentTree
+                    companies={companies}
                     departments={departments}
                     unassignedCount={unassignedCount}
                     loaded={departmentsLoaded}
                     counts={false}
                     allLabel="Everyone"
-                    value={filters.department_id ?? ''}
-                    onChange={(id) => set('department_id', id)}
+                    value={filters.org ?? ''}
+                    onChange={(key) => set('org', key)}
                 />
             </div>
 

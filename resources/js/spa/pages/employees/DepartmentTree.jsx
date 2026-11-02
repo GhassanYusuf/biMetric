@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react';
 import { FOCUS } from '../../shared/theme';
 import { Skeleton } from '../../shared/ui';
+import { buildOrg, companyKey, departmentKey } from '../../shared/orgUnits';
 
 /*
 | The Company › Department tree on the Employees page (2026-10-11, owner's request).
 |
-| Departments carry a parent_id: a company is a department with no parent, and the
-| staff import's `company` column builds that top level. Selecting a node filters the
-| roster to it AND everything beneath it — the server walks the subtree
-| (Department::subtreeIds) — so the count shown beside a node is its own employees
-| plus its descendants', which is exactly what clicking it will list.
+| Two levels since the companies table (2026-11-03): companies, and the departments
+| flat beneath each — no sub-departments. Selecting a company filters by `company_id`,
+| which the server reads as everyone in it, its departments included; selecting a
+| department filters by `department_id`. The count beside a company is therefore its
+| whole head count, which is exactly what clicking it will list.
+|
+| Nodes are keys, not ids — 'c:4', 'd:13', 'none' (shared/orgUnits.js) — because a
+| company and a department can share a number.
 |
 | Shared by desktop (a panel on the left) and mobile (a collapsible card) so the two
 | behave identically (rule 5); only `variant` changes the frame around it.
@@ -21,42 +25,13 @@ import { Skeleton } from '../../shared/ui';
 | and a group that no grouping shows is a group that gets forgotten.
 */
 
-function buildTree(departments) {
-    const byId = new Map(departments.map((d) => [String(d.id), { ...d, children: [] }]));
-    const roots = [];
-    for (const node of byId.values()) {
-        // A parent that is gone (soft-deleted, or another tenant's) makes this a root
-        // rather than hiding it and the people in it.
-        const parent = node.parent_id != null ? byId.get(String(node.parent_id)) : null;
-        if (parent && parent !== node) parent.children.push(node);
-        else roots.push(node);
-    }
-    const byName = (a, b) => a.name.localeCompare(b.name);
-
-    // Roll counts up so a company shows everyone it will list. `seen` guards against
-    // a parent cycle, which the data does not prevent.
-    const seen = new Set();
-    function rollUp(node) {
-        if (seen.has(node)) return 0;
-        seen.add(node);
-        node.children.sort(byName);
-        node.total = (node.employees_count ?? 0) + node.children.reduce((sum, c) => sum + rollUp(c), 0);
-        return node.total;
-    }
-    roots.sort(byName).forEach(rollUp);
-
-    return { roots, byId };
-}
-
-// The ids from the root down to `id`, so a selected node's branch starts open.
-function pathTo(byId, id) {
-    const path = [];
-    let node = id ? byId.get(String(id)) : null;
-    while (node && !path.includes(String(node.id))) {
-        path.unshift(String(node.id));
-        node = node.parent_id != null ? byId.get(String(node.parent_id)) : null;
-    }
-    return path;
+// The company a key sits in: itself, or the department's company.
+function companyOf(org, key) {
+    const match = /^([cd]):(\d+)$/.exec(key ?? '');
+    if (!match) return null;
+    const id = Number(match[2]);
+    if (match[1] === 'c') return org.find((c) => c.id === id) ?? null;
+    return org.find((c) => c.departments.some((d) => d.id === id)) ?? null;
 }
 
 function Chevron({ open }) {
@@ -92,10 +67,9 @@ function NodeButton({ label, count, selected, depth = 0, onSelect, emphasis = fa
     );
 }
 
-function TreeNode({ node, depth, value, expanded, onToggle, onChange, counts }) {
-    const id = String(node.id);
-    const open = expanded.has(id);
-    const hasChildren = node.children.length > 0;
+function CompanyNode({ company, value, open, onToggle, onChange, counts }) {
+    const key = companyKey(company.id);
+    const hasChildren = company.departments.length > 0;
 
     return (
         <li>
@@ -103,9 +77,9 @@ function TreeNode({ node, depth, value, expanded, onToggle, onChange, counts }) 
                 {hasChildren ? (
                     <button
                         type="button"
-                        onClick={() => onToggle(id)}
+                        onClick={() => onToggle(key)}
                         aria-expanded={open}
-                        aria-label={`${open ? 'Collapse' : 'Expand'} ${node.name}`}
+                        aria-label={`${open ? 'Collapse' : 'Expand'} ${company.name}`}
                         className={`grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-slate-100 ${FOCUS}`}
                     >
                         <Chevron open={open} />
@@ -114,18 +88,27 @@ function TreeNode({ node, depth, value, expanded, onToggle, onChange, counts }) 
                     <span className="h-7 w-7 shrink-0" aria-hidden="true" />
                 )}
                 <NodeButton
-                    label={node.name}
-                    count={counts ? node.total : null}
-                    selected={value === id}
-                    emphasis={depth === 0}
-                    onSelect={() => onChange(id)}
+                    label={company.name}
+                    count={counts ? company.employees_count : null}
+                    selected={value === key}
+                    emphasis
+                    onSelect={() => onChange(key)}
                 />
             </div>
             {hasChildren && open && (
                 <ul className="ml-3.5 border-l border-slate-100 pl-1">
-                    {node.children.map((child) => (
-                        <TreeNode key={child.id} node={child} depth={depth + 1} value={value}
-                            expanded={expanded} onToggle={onToggle} onChange={onChange} counts={counts} />
+                    {company.departments.map((d) => (
+                        <li key={d.id}>
+                            <div className="flex items-center gap-0.5">
+                                <span className="h-7 w-7 shrink-0" aria-hidden="true" />
+                                <NodeButton
+                                    label={d.name}
+                                    count={counts ? d.employees_count : null}
+                                    selected={value === departmentKey(d.id)}
+                                    onSelect={() => onChange(departmentKey(d.id))}
+                                />
+                            </div>
+                        </li>
                     ))}
                 </ul>
             )}
@@ -134,39 +117,43 @@ function TreeNode({ node, depth, value, expanded, onToggle, onChange, counts }) 
 }
 
 export default function DepartmentTree({
-    departments, unassignedCount = 0, loaded = true,
+    companies, departments, unassignedCount = 0, loaded = true,
     value = '', onChange, variant = 'panel', counts = true, allLabel = 'All employees',
 }) {
-    const { roots, byId } = useMemo(() => buildTree(departments ?? []), [departments]);
-    // What the operator opened or closed by hand: id -> true/false.
+    const org = useMemo(() => buildOrg(companies ?? [], departments ?? []), [companies, departments]);
+    // What the operator opened or closed by hand: company key -> true/false.
     const [toggled, setToggled] = useState(() => ({}));
     const [mobileOpen, setMobileOpen] = useState(false);
 
-    // Open = the selected node's branch unless closed by hand, plus anything opened
-    // by hand. Derived rather than stored so a live refresh of the department list
+    // Open = the selected department's company unless closed by hand, plus anything
+    // opened by hand. Derived rather than stored so a live refresh of the lists
     // (rule 18) cannot collapse the tree under the operator.
+    const selectedCompany = companyOf(org, value);
     const expanded = useMemo(() => {
-        const set = new Set(pathTo(byId, value).slice(0, -1));
-        for (const [id, open] of Object.entries(toggled)) {
-            if (open) set.add(id); else set.delete(id);
+        const set = new Set(selectedCompany && value.startsWith('d:') ? [companyKey(selectedCompany.id)] : []);
+        for (const [key, open] of Object.entries(toggled)) {
+            if (open) set.add(key); else set.delete(key);
         }
         return set;
-    }, [toggled, byId, value]);
+    }, [toggled, selectedCompany, value]);
 
-    function toggle(id) {
-        setToggled((prev) => ({ ...prev, [id]: !expanded.has(id) }));
+    function toggle(key) {
+        setToggled((prev) => ({ ...prev, [key]: !expanded.has(key) }));
     }
 
-    function select(id) {
-        onChange(id);
+    function select(key) {
+        onChange(key);
         setMobileOpen(false);
     }
 
-    const total = roots.reduce((sum, r) => sum + r.total, 0) + unassignedCount;
+    const total = org.reduce((sum, c) => sum + c.employees_count, 0) + unassignedCount;
+    const selectedDepartment = value.startsWith('d:')
+        ? selectedCompany?.departments.find((d) => departmentKey(d.id) === value)
+        : null;
     const selectedLabel = value === 'none'
         ? 'Unassigned'
         : value
-            ? pathTo(byId, value).map((id) => byId.get(id)?.name).filter(Boolean).join(' › ')
+            ? [selectedCompany?.name, selectedDepartment?.name].filter(Boolean).join(' › ')
             : allLabel;
 
     const body = !loaded ? (
@@ -179,9 +166,9 @@ export default function DepartmentTree({
                 <li className="flex">
                     <NodeButton label={allLabel} count={counts ? total : null} selected={!value} emphasis onSelect={() => select('')} />
                 </li>
-                {roots.map((node) => (
-                    <TreeNode key={node.id} node={node} depth={0} value={value}
-                        expanded={expanded} onToggle={toggle} onChange={select} counts={counts} />
+                {org.map((company) => (
+                    <CompanyNode key={company.id} company={company} value={value}
+                        open={expanded.has(companyKey(company.id))} onToggle={toggle} onChange={select} counts={counts} />
                 ))}
                 {unassignedCount > 0 && (
                     <li className="mt-1 flex border-t border-slate-100 pt-1">
@@ -189,9 +176,9 @@ export default function DepartmentTree({
                     </li>
                 )}
             </ul>
-            {roots.length === 0 && (
+            {org.length === 0 && (
                 <p className="px-2 pt-2 text-xs text-slate-500">
-                    No departments yet. Add <code>company</code> and <code>department</code> columns to the staff import.
+                    No companies yet. Add <code>company</code> and <code>department</code> columns to the staff import.
                 </p>
             )}
         </nav>

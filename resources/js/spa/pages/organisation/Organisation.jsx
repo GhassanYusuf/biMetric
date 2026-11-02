@@ -9,30 +9,34 @@ import { SkeletonCards } from '../../shared/ui';
 import OrganisationDesktop from './OrganisationDesktop';
 import OrganisationMobile from './OrganisationMobile';
 import DepartmentFormModal from './DepartmentFormModal';
-import { buildTree } from './parts';
+import { buildOrg } from '../../shared/orgUnits';
 
 /*
 | Companies & departments (2026-10-12, owner's request). Owns the data and the
-| writes; the layouts only render (rule 5). Everything goes through the existing
-| /departments API (rule 13). Deleting is refused by the server while anything is
-| still inside, and that refusal is shown as it is.
+| writes; the layouts only render (rule 5). Since the companies table (2026-11-03) the
+| two kinds are managed through their own endpoints — /companies, and /departments with
+| a required company. Deleting is refused by the server (409) while anything is still
+| inside, and that refusal is shown as it is.
 */
 export default function Organisation() {
     const deviceClass = useDeviceClass();
     const { can, user } = useAuth();
     const confirm = useConfirm();
     const toast = useToast();
-    const [rows, setRows] = useState([]);
+    const [companyRows, setCompanyRows] = useState([]);
+    const [departmentRows, setDepartmentRows] = useState([]);
     const [unassigned, setUnassigned] = useState(0);
     const [loaded, setLoaded] = useState(false);
-    // { kind: 'company'|'department', node?: row, parentId?: id }
+    // { kind: 'company'|'department', node?: row, companyId?: id }
     const [editing, setEditing] = useState(null);
 
     const load = useCallback(async () => {
         try {
-            const res = await api.get('/departments');
-            setRows(res.data ?? []);
-            setUnassigned(Number(res.meta?.unassigned_count ?? 0));
+            const [companies, departments] = await Promise.all([api.get('/companies'), api.get('/departments')]);
+            setCompanyRows(companies.data ?? []);
+            setDepartmentRows(departments.data ?? []);
+            // People in no company: on /companies since 2026-11-03.
+            setUnassigned(Number(companies.meta?.unassigned_count ?? 0));
         } catch (err) {
             toast.error(err instanceof ApiError ? err.message : 'Could not load the companies.');
         } finally {
@@ -42,17 +46,18 @@ export default function Organisation() {
 
     useEffect(() => { load(); }, [load]);
 
-    // LIVE (rule 18): departments stamp the employees module, as do employee moves,
-    // which change the head counts here.
+    // LIVE (rule 18): companies and departments stamp the employees module, as do
+    // employee moves, which change the head counts here.
     useMqtt(user?.tenant ? [`tenant/${user.tenant.id}/module/employees/+`] : [], () => load());
 
-    const companies = useMemo(() => buildTree(rows), [rows]);
+    const companies = useMemo(() => buildOrg(companyRows, departmentRows), [companyRows, departmentRows]);
 
     async function save(payload) {
         const { node, kind } = editing;
+        const path = kind === 'company' ? '/companies' : '/departments';
         try {
-            if (node) await api.put(`/departments/${node.id}`, payload);
-            else await api.post('/departments', payload);
+            if (node) await api.put(`${path}/${node.id}`, payload);
+            else await api.post(path, payload);
         } catch (err) {
             if (!(err instanceof ApiError && err.status === 422)) {
                 toast.error(err instanceof ApiError ? err.message : 'Could not save it.');
@@ -66,8 +71,10 @@ export default function Organisation() {
         load();
     }
 
-    async function remove(node) {
-        const isCompany = companies.some((c) => c.id === Number(node.id));
+    // `kind` comes from the card that was clicked: a company and a department can
+    // share an id, so the id alone cannot say which table to delete from.
+    async function remove(node, kind) {
+        const isCompany = kind === 'company';
         const ok = await confirm({
             title: `Delete ${node.name}?`,
             body: isCompany
@@ -78,7 +85,7 @@ export default function Organisation() {
         });
         if (!ok) return;
         try {
-            await api.delete(`/departments/${node.id}`);
+            await api.delete(`${isCompany ? '/companies' : '/departments'}/${node.id}`);
             toast.success(`${node.name} deleted.`);
             load();
         } catch (err) {
@@ -91,8 +98,8 @@ export default function Organisation() {
         unassigned,
         canManage: can('departments.manage'),
         onAddCompany: () => setEditing({ kind: 'company' }),
-        onAddDepartment: (company) => setEditing({ kind: 'department', parentId: company.id }),
-        onEdit: (node) => setEditing({ kind: node.parent_id == null || !rows.some((r) => Number(r.id) === Number(node.parent_id)) ? 'company' : 'department', node }),
+        onAddDepartment: (company) => setEditing({ kind: 'department', companyId: company.id }),
+        onEdit: (node, kind) => setEditing({ kind, node }),
         onDelete: remove,
     };
 
@@ -105,7 +112,7 @@ export default function Organisation() {
                 <DepartmentFormModal
                     node={editing.node ?? null}
                     kind={editing.kind}
-                    parentId={editing.parentId ?? null}
+                    companyId={editing.companyId ?? null}
                     companies={companies}
                     onSubmit={save}
                     onClose={() => setEditing(null)}

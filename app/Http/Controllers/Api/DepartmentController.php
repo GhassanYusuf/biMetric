@@ -17,24 +17,23 @@ class DepartmentController extends Controller
     {
         $this->authorize('viewAny', Department::class);
 
+        // Departments only, each with its company (2026-11-03). Companies, and the count of
+        // people in no company, come from CompanyController.
         $departments = Department::query()
             ->withCount('employees')
-            ->with('manager:id,name')
+            ->with(['manager:id,name', 'company:id,name'])
+            ->when(request()->filled('company_id'), fn ($q) => $q->where('company_id', request()->integer('company_id')))
             ->orderBy('name')
             ->get();
 
-        // The tree's "Unassigned" node. Nobody else can count it: the employee list is
-        // paginated and filtered, and a department count by definition excludes them.
-        return ApiResponse::success(DepartmentResource::collection($departments), 'Departments retrieved.', [
-            'unassigned_count' => Employee::query()->whereNull('department_id')->count(),
-        ]);
+        return ApiResponse::success(DepartmentResource::collection($departments), 'Departments retrieved.');
     }
 
     public function store(StoreDepartmentRequest $request): JsonResponse
     {
         $this->authorize('create', Department::class);
 
-        $department = Department::create($request->validated())->loadCount('employees');
+        $department = Department::create($request->validated())->loadCount('employees')->load('company:id,name');
 
         return ApiResponse::created(new DepartmentResource($department), 'Department created.');
     }
@@ -43,7 +42,7 @@ class DepartmentController extends Controller
     {
         $this->authorize('view', $department);
 
-        $department->loadCount('employees')->load('manager:id,name');
+        $department->loadCount('employees')->load(['manager:id,name', 'company:id,name']);
 
         return ApiResponse::success(new DepartmentResource($department), 'Department retrieved.');
     }
@@ -53,7 +52,13 @@ class DepartmentController extends Controller
         $this->authorize('update', $department);
 
         $oldName = $department->name;
+        $oldCompany = (int) $department->company_id;
         $department->update($request->validated());
+
+        // Moved to another company: its people move with it (a department decides the company).
+        if ((int) $department->company_id !== $oldCompany) {
+            Employee::query()->where('department_id', $department->id)->update(['company_id' => $department->company_id]);
+        }
 
         /*
          * A rename reaches the employees' free-text `department` column too — reports,
@@ -67,7 +72,7 @@ class DepartmentController extends Controller
                 ->update(['department' => $department->name]);
         }
 
-        $department->loadCount('employees');
+        $department->loadCount('employees')->load('company:id,name');
 
         return ApiResponse::success(new DepartmentResource($department), 'Department updated.');
     }
@@ -78,19 +83,13 @@ class DepartmentController extends Controller
 
         /*
          * Refused while anything is still in it (2026-10-12). Departments are
-         * soft-deleted, so the people would keep pointing at a node no screen lists,
-         * and a company's departments would lose their company. Move them first.
+         * soft-deleted, so the people would keep pointing at a department no screen
+         * lists. Move them first.
          */
         $people = Employee::query()->where('department_id', $department->id)->count();
-        $children = Department::query()->where('parent_id', $department->id)->count();
-        if ($people > 0 || $children > 0) {
-            $what = array_filter([
-                $people > 0 ? sprintf('%d employee%s', $people, $people === 1 ? '' : 's') : null,
-                $children > 0 ? sprintf('%d department%s', $children, $children === 1 ? '' : 's') : null,
-            ]);
-
+        if ($people > 0) {
             return ApiResponse::error(
-                sprintf('%s still has %s. Move them elsewhere first.', $department->name, implode(' and ', $what)),
+                sprintf('%s still has %d employee%s. Move them elsewhere first.', $department->name, $people, $people === 1 ? '' : 's'),
                 [],
                 409,
             );

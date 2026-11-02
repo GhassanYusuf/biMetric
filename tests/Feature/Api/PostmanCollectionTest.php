@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\DeviceCommand;
@@ -56,9 +57,9 @@ class PostmanCollectionTest extends TestCase
         $this->admin->syncRoles(['tenant-admin']);
 
         // The ids the collection's defaults name, so its bodies meet the same rows as production.
-        $company = Department::create(['name' => 'PROMOSEVEN']);
+        $company = Company::create(['name' => 'PROMOSEVEN']);
         $company->forceFill(['id' => 4])->save();
-        $it = Department::create(['name' => 'Information Technology', 'parent_id' => 4]);
+        $it = Department::create(['name' => 'Information Technology', 'company_id' => 4]);
         $it->forceFill(['id' => 12])->save();
         $test = Employee::create(['name' => 'Test', 'employee_code' => '90110121', 'external_id' => '1', 'is_active' => true]);
         $device = Device::create(['name' => 'IT ROOM', 'ip_address' => '192.0.2.62', 'port' => 4370, 'protocol' => 'zkteco']);
@@ -133,6 +134,7 @@ class PostmanCollectionTest extends TestCase
 
     public function test_the_department_and_token_examples_pass_validation_as_they_are(): void
     {
+        $this->send('Create company')->assertCreated();
         $this->send('Create department')->assertCreated();
         $this->send('Create token')->assertCreated();
     }

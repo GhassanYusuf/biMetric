@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api;
 
 use App\Jobs\ProcessDeviceCommand;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\DeviceCommand;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
- * HR's five changes (2026-10-12): Company and Department as two levels, job title as a
+ * HR's five changes (2026-10-12): Company and Department as two levels (two tables since 2026-11-03), job title as a
  * short field, employment type, resignation, and the phone format from the code picker.
  *
  * A resignation makes the employee inactive and takes them off the terminals; a
@@ -124,13 +125,14 @@ class EmployeeEmploymentTest extends TestCase
             ->assertStatus(409);
     }
 
-    public function test_company_and_department_come_from_the_tree_and_the_text_column_follows(): void
+    public function test_company_and_department_are_two_fields_and_the_text_column_follows(): void
     {
         Tenancy::set($this->tenant->id);
-        $company = Department::create(['name' => 'PROMOSEVEN']);
-        $it = Department::create(['name' => 'IT', 'parent_id' => $company->id]);
+        $company = Company::create(['name' => 'PROMOSEVEN']);
+        $it = Department::create(['name' => 'IT', 'company_id' => $company->id]);
         Tenancy::clear();
-        $e = $this->employee('Ali', '301', ['department_id' => $company->id]);
+        $e = $this->employee('Ali', '301', ['company_id' => $company->id]);
+        $this->assertSame('PROMOSEVEN', $e->fresh()->department, 'on the company alone, the text is the company');
 
         $this->as()->putJson("/api/employees/{$e->id}", $this->body($e, ['department_id' => $it->id, 'job_title' => 'Accountant']))
             ->assertOk()
@@ -143,6 +145,30 @@ class EmployeeEmploymentTest extends TestCase
 
         $row = collect($this->as()->getJson('/api/employees')->assertOk()->json('data'))->firstWhere('id', $e->id);
         $this->assertSame(['id' => $company->id, 'name' => 'PROMOSEVEN'], $row['company']);
+        $this->assertSame($company->id, $row['company_id']);
+        $this->assertSame($it->id, $row['department_id']);
+    }
+
+    /** A department decides the company; a company that does not hold it clears it (2026-11-03). */
+    public function test_a_department_and_its_company_cannot_disagree(): void
+    {
+        Tenancy::set($this->tenant->id);
+        $p7 = Company::create(['name' => 'PROMOSEVEN']);
+        $camelot = Company::create(['name' => 'Camelot']);
+        $it = Department::create(['name' => 'IT', 'company_id' => $p7->id]);
+        Tenancy::clear();
+        $e = $this->employee('Ali', '302');
+
+        // Department alone: the company follows it.
+        $this->as()->putJson("/api/employees/{$e->id}", $this->body($e, ['department_id' => $it->id]))
+            ->assertOk()->assertJsonPath('data.company_id', $p7->id);
+        // Both, but disagreeing: refused, by name.
+        $this->as()->putJson("/api/employees/{$e->id}", $this->body($e, ['company_id' => $camelot->id, 'department_id' => $it->id]))
+            ->assertUnprocessable()->assertJsonPath('errors.department_id.0', 'IT belongs to PROMOSEVEN, not Camelot.');
+        // Another company alone: the department, which is not in it, is cleared.
+        $this->as()->putJson("/api/employees/{$e->id}", $this->body($e, ['company_id' => $camelot->id]))
+            ->assertOk()->assertJsonPath('data.company_id', $camelot->id)->assertJsonPath('data.department_id', null);
+        $this->assertSame('Camelot', $e->fresh()->department);
     }
 
     public function test_phone_numbers_take_the_code_picker_format_and_refuse_letters(): void
@@ -195,27 +221,30 @@ class EmployeeEmploymentTest extends TestCase
     public function test_a_company_or_department_with_anything_in_it_cannot_be_deleted(): void
     {
         Tenancy::set($this->tenant->id);
-        $company = Department::create(['name' => 'P7H']);
-        $it = Department::create(['name' => 'IT', 'parent_id' => $company->id]);
-        $empty = Department::create(['name' => 'Spare', 'parent_id' => $company->id]);
+        $company = Company::create(['name' => 'P7H']);
+        $it = Department::create(['name' => 'IT', 'company_id' => $company->id]);
+        $empty = Department::create(['name' => 'Spare', 'company_id' => $company->id]);
+        $bare = Company::create(['name' => 'Bare']);
         Tenancy::clear();
         $this->employee('Ali', '501', ['department_id' => $it->id]);
 
-        $this->as()->deleteJson("/api/departments/{$company->id}")->assertStatus(409);
+        $this->as()->deleteJson("/api/companies/{$company->id}")->assertStatus(409)
+            ->assertJsonPath('message', 'P7H still has 1 employee and 2 departments. Move them elsewhere first.');
         $this->as()->deleteJson("/api/departments/{$it->id}")->assertStatus(409);
         $this->as()->deleteJson("/api/departments/{$empty->id}")->assertOk();
+        $this->as()->deleteJson("/api/companies/{$bare->id}")->assertOk();
     }
 
     public function test_renaming_a_department_renames_it_on_its_employees(): void
     {
         Tenancy::set($this->tenant->id);
-        $company = Department::create(['name' => 'P7H']);
-        $it = Department::create(['name' => 'IT', 'parent_id' => $company->id]);
+        $company = Company::create(['name' => 'P7H']);
+        $it = Department::create(['name' => 'IT', 'company_id' => $company->id]);
         Tenancy::clear();
         $follows = $this->employee('Ali', '601', ['department_id' => $it->id]);
         $own = $this->employee('Imported', '602', ['department_id' => $it->id, 'department' => 'INFO TECH']);
 
-        $this->as()->putJson("/api/departments/{$it->id}", ['name' => 'Technology', 'parent_id' => $company->id])
+        $this->as()->putJson("/api/departments/{$it->id}", ['name' => 'Technology', 'company_id' => $company->id])
             ->assertOk()->assertJsonPath('data.name', 'Technology');
 
         $this->assertSame('Technology', $follows->fresh()->department);

@@ -16,16 +16,17 @@ class StoreDepartmentRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Every department belongs to a company (2026-11-03); departments are flat under it.
+            'company_id' => [
+                'required', 'integer',
+                Rule::exists('companies', 'id')->where('tenant_id', Tenancy::id())->whereNull('deleted_at'),
+            ],
+            // Unique per company: "Finance" may exist in two companies.
             'name' => [
                 'required', 'string', 'max:255',
                 Rule::unique('departments', 'name')->where('tenant_id', Tenancy::id())
-                    ->where(fn ($q) => $this->filled('parent_id') ? $q->where('parent_id', $this->integer('parent_id')) : $q->whereNull('parent_id'))
+                    ->where('company_id', $this->integer('company_id'))
                     ->whereNull('deleted_at'),
-            ],
-            // Unique per parent: "Finance" may exist under two companies.
-            'parent_id' => [
-                'nullable',
-                Rule::exists('departments', 'id')->where('tenant_id', Tenancy::id())->whereNull('deleted_at'),
             ],
             'code' => ['nullable', 'string', 'max:50'],
             'manager_id' => [

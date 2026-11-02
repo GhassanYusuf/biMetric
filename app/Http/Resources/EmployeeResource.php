@@ -20,22 +20,20 @@ class EmployeeResource extends JsonResource
             'external_id' => $this->external_id,
             'email' => $this->email,
             'department' => $this->department,
+            /*
+             * Company and department are two columns since 2026-11-03 (until then a company was
+             * a department with no parent, and department_id held either). `department_id` is
+             * a department or null; `company` / `company_id` the company or null.
+             */
+            'company_id' => $this->company_id === null ? null : (int) $this->company_id,
+            'company' => $this->whenLoaded('company', fn () => $this->getRelation('company') === null ? null
+                : ['id' => (int) $this->getRelation('company')->id, 'name' => $this->getRelation('company')->name]),
             // Cast: SQL Server returns it as a string, and screens compare it to ids.
             'department_id' => $this->department_id === null ? null : (int) $this->department_id,
             // `department` is ALSO a free-text column, and Eloquent exposes the
             // attribute before the relation, so the magic accessor would hand the
             // resource a string. Read the loaded relation object directly instead.
             'department_name' => $this->whenLoaded('department', fn () => $this->getRelation('department')?->name),
-            /*
-             * The company is the top of the department's branch (2026-10-12): the list
-             * shows Company and Department as two columns. When `department_id` IS a
-             * company, the person has a company and no department yet.
-             */
-            'company' => $this->whenLoaded('department', function () {
-                $company = $this->getRelation('department')?->company();
-
-                return $company ? ['id' => (int) $company->id, 'name' => $company->name] : null;
-            }),
             'photo_url' => $this->photo_url,
             'is_active' => (bool) $this->is_active,
             'card_number' => $this->card_number,

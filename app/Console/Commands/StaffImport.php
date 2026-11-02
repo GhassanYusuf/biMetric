@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Models\Tenant;
@@ -27,8 +28,8 @@ use Illuminate\Support\Facades\DB;
  *   last_name      optional — an empty cell keeps the last name already stored
  *   employee_code  REQUIRED — the payroll number, unique within one company
  *   email          optional
- *   company        optional — top-level node of the department tree (2026-10-11)
- *   department     optional — placed under `company` when both are given
+ *   company        optional — the company (its own table since 2026-11-03)
+ *   department     optional — a department of `company`; without a company it IS the company
  *   tenant         optional — tenant slug. Defaults to --tenant, else the only tenant.
  *
  * A `national_id` column, if present, is ignored: national ids were removed from the
@@ -135,9 +136,10 @@ class StaffImport extends Command
              * an empty cell is not evidence that somebody left their department, and
              * clearing it would empty the tree for any file that lacks the columns.
              */
-            $node = $this->departmentFor($tenant, $company, $departmentName, $departmentsCreated);
-            if ($node !== null) {
-                $attributes['department_id'] = $node->id;
+            [$companyRow, $departmentRow] = $this->placeFor($tenant, $company, $departmentName, $departmentsCreated);
+            if ($companyRow !== null) {
+                $attributes['company_id'] = $companyRow->id;
+                $attributes['department_id'] = $departmentRow?->id;
             }
 
             if ($existing !== null) {
@@ -162,7 +164,7 @@ class StaffImport extends Command
         $this->line(sprintf('  %-28s %d', 'rows read', count($rows)));
         $this->line(sprintf('  %-28s %d', 'employments created', $created));
         $this->line(sprintf('  %-28s %d', 'employments updated', $updated));
-        $this->line(sprintf('  %-28s %d', 'departments created', $departmentsCreated));
+        $this->line(sprintf('  %-28s %d', 'companies/departments created', $departmentsCreated));
 
         if ($errors !== []) {
             $this->newLine();
@@ -193,61 +195,82 @@ class StaffImport extends Command
     }
 
     /**
-     * @return array<int,array<string,string>> keyed by 1-based line number
+     * The company and department a row names (two tables since 2026-11-03). A department
+     * without a company was, in the old tree, a top-level node, i.e. a company, and still
+     * is: it becomes the company, with no department. Matched by name, case-insensitively,
+     * so "Finance" and "FINANCE" in one file are one department.
+     *
+     * @return array{0: ?Company, 1: ?Department}
      */
-    /**
-     * Find or create the tree node a row belongs to: the company at the top, the
-     * department beneath it. A department with no company is a top-level node, which
-     * is what every department was before the tree existed. Matched by name,
-     * case-insensitively, so "Finance" and "FINANCE" in one file are one department.
-     */
-    private function departmentFor(Tenant $tenant, ?string $company, ?string $department, int &$createdCount): ?Department
+    private function placeFor(Tenant $tenant, ?string $company, ?string $department, int &$createdCount): array
     {
-        $parent = $company !== null ? $this->findOrCreateDepartment($tenant, null, $company, $createdCount) : null;
-
-        if ($department === null) {
-            return $parent;
+        if ($company === null && $department === null) {
+            return [null, null];
+        }
+        if ($company === null) {
+            return [$this->findOrCreateCompany($tenant, $department, $createdCount), null];
         }
 
-        return $this->findOrCreateDepartment($tenant, $parent?->id, $department, $createdCount);
+        $companyRow = $this->findOrCreateCompany($tenant, $company, $createdCount);
+
+        return [$companyRow, $department === null ? null : $this->findOrCreateDepartment($tenant, $companyRow, $department, $createdCount)];
     }
 
-    /** @var array<string, Department> */
-    private array $departmentCache = [];
+    /** @var array<string, Company|Department> */
+    private array $orgCache = [];
 
-    private function findOrCreateDepartment(Tenant $tenant, ?int $parentId, string $name, int &$createdCount): Department
+    private function findOrCreateCompany(Tenant $tenant, string $name, int &$createdCount): Company
     {
-        $key = $tenant->id.'|'.($parentId ?? '').'|'.mb_strtolower($name);
+        $key = 'c|'.$tenant->id.'|'.mb_strtolower($name);
 
-        if (isset($this->departmentCache[$key])) {
-            return $this->departmentCache[$key];
-        }
+        return $this->orgCache[$key] ??= $this->findOrCreate(
+            Company::withoutGlobalScopes()->where('tenant_id', $tenant->id),
+            ['tenant_id' => $tenant->id, 'name' => $name],
+            Company::class,
+            $createdCount,
+        );
+    }
 
-        $existing = Department::withoutGlobalScopes()
-            ->where('tenant_id', $tenant->id)
-            ->when($parentId === null, fn ($q) => $q->whereNull('parent_id'), fn ($q) => $q->where('parent_id', $parentId))
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-            ->first();
+    private function findOrCreateDepartment(Tenant $tenant, Company $company, string $name, int &$createdCount): Department
+    {
+        $key = 'd|'.$company->id.'|'.mb_strtolower($name);
 
-        // withoutGlobalScopes() also lifts SoftDeletes, so a removed department is
-        // found here. Restoring it is the only option: the unique index on
-        // (tenant, parent, name) counts deleted rows and would refuse a second one.
+        return $this->orgCache[$key] ??= $this->findOrCreate(
+            Department::withoutGlobalScopes()->where('tenant_id', $tenant->id)->where('company_id', $company->id),
+            ['tenant_id' => $tenant->id, 'company_id' => $company->id, 'name' => $name],
+            Department::class,
+            $createdCount,
+        );
+    }
+
+    /**
+     * withoutGlobalScopes() also lifts SoftDeletes, so a removed company or department is
+     * found here. Restoring it is the only option: the unique index on the name counts
+     * deleted rows and would refuse a second one.
+     *
+     * @template T of Company|Department
+     *
+     * @param  class-string<T>  $class
+     * @return T
+     */
+    private function findOrCreate($query, array $attributes, string $class, int &$createdCount)
+    {
+        $existing = $query->whereRaw('LOWER(name) = ?', [mb_strtolower($attributes['name'])])->first();
+
         if ($existing?->trashed()) {
             $existing->restore();
         }
-
         if ($existing === null) {
-            $existing = Department::withoutGlobalScopes()->create([
-                'tenant_id' => $tenant->id,
-                'parent_id' => $parentId,
-                'name' => $name,
-            ]);
+            $existing = $class::withoutGlobalScopes()->create($attributes);
             $createdCount++;
         }
 
-        return $this->departmentCache[$key] = $existing;
+        return $existing;
     }
 
+    /**
+     * @return array<int,array<string,string>> keyed by 1-based line number
+     */
     private function readCsv(string $path): array
     {
         $handle = fopen($path, 'r');

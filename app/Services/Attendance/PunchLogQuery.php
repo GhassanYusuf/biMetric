@@ -3,7 +3,6 @@
 namespace App\Services\Attendance;
 
 use App\Models\AttendanceLog;
-use App\Models\Department;
 use App\Models\Employee;
 use App\Models\User;
 use Carbon\Carbon;
@@ -38,12 +37,11 @@ final class PunchLogQuery
     }
 
     /**
-     * `department_id` is a node of the Company › Department tree (2026-10-11): the
-     * punches of everyone in that department or beneath it, or `none` for people in
-     * no department. A punch matched to no employee belongs to no department, so any
-     * department filter leaves it out.
+     * `company_id` (or `none` for people in no company) and `department_id` (2026-11-03;
+     * until then one tree node). A punch matched to no employee belongs to no company, so
+     * any company or department filter leaves it out.
      *
-     * @param  array{employee_id?:int|string|null,device_id?:int|string|null,department_id?:int|string|null,search?:string|null,from?:string|null,to?:string|null}  $filters
+     * @param  array{employee_id?:int|string|null,device_id?:int|string|null,company_id?:int|string|null,department_id?:int|string|null,search?:string|null,from?:string|null,to?:string|null}  $filters
      */
     public static function build(User $user, bool $selfOnly, array $filters): Builder
     {
@@ -53,11 +51,12 @@ final class PunchLogQuery
             ->when($selfOnly, fn ($q) => $q->where('employee_id', $user->employee_id))
             ->when(! $selfOnly && $value('employee_id') !== null, fn ($q) => $q->where('employee_id', (int) $filters['employee_id']))
             ->when($value('device_id') !== null, fn ($q) => $q->where('device_id', (int) $filters['device_id']))
-            ->when($value('department_id') === 'none', fn ($q) => $q->whereHas('employee', fn ($e) => $e->whereNull('department_id')))
+            ->when($value('company_id') === 'none', fn ($q) => $q->whereHas('employee', fn ($e) => $e->whereNull('company_id')))
             ->when(
-                $value('department_id') !== null && $value('department_id') !== 'none',
-                fn ($q) => $q->whereHas('employee', fn ($e) => $e->whereIn('department_id', Department::subtreeIds((int) $filters['department_id']))),
+                $value('company_id') !== null && $value('company_id') !== 'none',
+                fn ($q) => $q->whereHas('employee', fn ($e) => $e->where('company_id', (int) $filters['company_id'])),
             )
+            ->when($value('department_id') !== null, fn ($q) => $q->whereHas('employee', fn ($e) => $e->where('department_id', (int) $filters['department_id'])))
             // Every word must match the employee's first name, last name or code, or
             // the PIN the terminal stamped — the same rule as the Employees search, so
             // the full name as displayed finds the person. A punch nobody is linked to

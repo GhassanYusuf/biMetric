@@ -15,88 +15,31 @@ class Department extends Model
 
     protected $fillable = [
         'tenant_id',
-        'parent_id',
+        'company_id',
         'name',
         'code',
         'manager_id',
     ];
+
+    /*
+     * A department belongs to exactly one company (2026-11-03). Until then a company was a
+     * department with no parent; see Company and the create_companies_table migration.
+     * Departments are flat under their company: no department under a department.
+     */
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
 
     public function employees(): HasMany
     {
         return $this->hasMany(Employee::class);
     }
 
-    /*
-     * The tree (2026-10-11): a company is a department with no parent, its
-     * departments point at it. See the add_parent_id_to_departments migration.
-     */
-    public function parent(): BelongsTo
-    {
-        return $this->belongsTo(Department::class, 'parent_id');
-    }
-
-    public function children(): HasMany
-    {
-        return $this->hasMany(Department::class, 'parent_id');
-    }
-
-    /**
-     * This department and every department beneath it, so that filtering by a
-     * company also returns the people in its departments. Walked in PHP over the
-     * tenant's whole department list: it is a handful of rows, and a recursive CTE
-     * would be one more thing to keep portable between SQL Server and SQLite.
-     *
-     * @return list<int>
-     */
-    public static function subtreeIds(int $rootId): array
-    {
-        $byParent = [];
-        foreach (static::query()->get(['id', 'parent_id']) as $d) {
-            $byParent[(int) $d->parent_id][] = (int) $d->id;
-        }
-
-        $ids = [$rootId];
-        // Guarded against a cycle, which nothing prevents in the data.
-        for ($i = 0; $i < count($ids); $i++) {
-            foreach ($byParent[$ids[$i]] ?? [] as $child) {
-                if (! in_array($child, $ids, true)) {
-                    $ids[] = $child;
-                }
-            }
-        }
-
-        return $ids;
-    }
-
-    /**
-     * The company this department belongs to: the top of its branch, or itself when it
-     * IS a company. Walks the loaded `parent` relation, so eager-load `parent` for a list.
-     */
-    public function company(): self
-    {
-        $node = $this;
-        $seen = [$this->id];
-        while ($node->parent !== null && ! in_array($node->parent->id, $seen, true)) {
-            $node = $node->parent;
-            $seen[] = $node->id;
-        }
-
-        return $node;
-    }
-
-    /** "PROMOSEVEN › Finance" — the name as the tree shows it. */
+    /** "PROMOSEVEN › Finance": the name as screens and reports print it. Load `company`. */
     public function path(): string
     {
-        $names = [$this->name];
-        $seen = [$this->id];
-        $node = $this->parent;
-        while ($node !== null && ! in_array($node->id, $seen, true)) {
-            array_unshift($names, $node->name);
-            $seen[] = $node->id;
-            $node = $node->parent;
-        }
-
-        return implode(' › ', $names);
+        return $this->company === null ? $this->name : "{$this->company->name} › {$this->name}";
     }
 
     public function manager(): BelongsTo

@@ -384,7 +384,8 @@ viewing the design before real attendance exists.
 | Parameter | |
 |---|---|
 | `search` | every word must match first name, last name, code, department or email — so the full name as shown finds the person (2026-10-11) |
-| `department_id` | that department **and every department beneath it** (the Company › Department tree, 2026-10-11); `none` = no department at all |
+| `company_id` | everyone in that company, its departments included; `none` = people in no company (2026-11-03; until then one tree node `department_id`) |
+| `department_id` | that department |
 | `device_id` | enrolled on that terminal, via the live mapping |
 | `unenrolled` | `1` = on no terminal at all; they cannot clock in anywhere |
 | `is_active` | |
@@ -462,12 +463,13 @@ a panel has been confirmed on this estate's hardware.
 
 | Method | Path |
 |---|---|
-| GET | `/api/attendance` — filters `employee_id`, `device_id`, `from`, `to`, and (2026-10-11) `department_id` (a tree node and everything beneath it; `none` = employees with no department, never unmatched punches) and `search` (every word must match the employee's first name, last name or code, or the terminal PIN). `employee_name` is first + last name. `/api/exports/attendance` takes the same filters. |
+| GET | `/api/attendance` — filters `employee_id`, `device_id`, `from`, `to`, and `company_id` / `department_id` (2026-11-03, `App\Support\OrgScope`: a company includes its departments; `company_id=none` = employees in no company, never unmatched punches) and `search` (every word must match the employee's first name, last name or code, or the terminal PIN). `employee_name` is first + last name. `/api/exports/attendance` takes the same filters. |
 | GET | `/api/holidays` · POST · PUT/PATCH · DELETE `/{holiday}` |
 | GET | `/api/dashboard/summary` |
 | GET | `/api/reports/attendance` |
 | GET | `/api/audit-logs` |
-| GET | `/api/departments` (+ full resource). Each carries `parent_id` (null = a top-level company); `meta.unassigned_count` = employees with no department |
+| GET | `/api/companies` (+ full resource, 2026-11-03): `departments_count`, `employees_count` (departments included); `meta.unassigned_count` = employees in no company |
+| GET | `/api/departments` (+ full resource). Each carries `company_id` and `company_name`; `?company_id=` narrows. Flat under their company, no `parent_id` since 2026-11-03 |
 | GET | `/api/notifications` · `/unread-count` · POST `/{notification}/read` · `/read-all` |
 
 ### Date filters are OFFICE-LOCAL dates

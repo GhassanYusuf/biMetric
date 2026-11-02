@@ -35,7 +35,8 @@ export default function EmployeeFilters({
 
                 {/* Department is not here: the Company › Department tree beside
                     the roster picks it (DepartmentTree.jsx, 2026-10-11). It is still
-                    `filters.department_id`, so "Clear filters" clears it too. */}
+                    `filters.org` (a company or department key), so "Clear filters"
+                    clears it too. */}
                 {devices.length > 0 && (
                     <SelectField
                         label="Terminal"

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Attendance;
 
 use App\Models\AttendanceLog;
+use App\Models\Company;
 use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
@@ -13,7 +14,7 @@ use Database\Seeders\DatabaseSeeder;
 
 /**
  * The fortnight both report tests read (2026-10-18): Sunday 2 to Thursday 13 August
- * 2026, ten Sun–Thu work days, under a "Lab" department with a "Bench" branch.
+ * 2026, ten Sun–Thu work days, in a "Lab" company with a "Bench" department.
  *
  * Punctual — every day, early in, late out.  Patchy — late on the 3rd, absent the
  * 4th and 5th, no punch-out on the 6th.  No Show — hired, never punched.  Never
@@ -32,7 +33,7 @@ trait AttendanceScenario
 
     private Device $device;
 
-    private Department $lab;
+    private Company $lab;
 
     /** @var array<string, Employee> */
     private array $people = [];
@@ -54,12 +55,13 @@ trait AttendanceScenario
 
         // Every scenario person sits under "Lab" (or a branch of it), so the report is
         // scoped to them and the seeder's own employees stay out of the arithmetic.
-        $this->lab = Department::create(['tenant_id' => $this->tenant->id, 'name' => 'Lab']);
-        $bench = Department::create(['tenant_id' => $this->tenant->id, 'name' => 'Bench', 'parent_id' => $this->lab->id]);
+        $this->lab = Company::create(['tenant_id' => $this->tenant->id, 'name' => 'Lab']);
+        $bench = Department::create(['tenant_id' => $this->tenant->id, 'name' => 'Bench', 'company_id' => $this->lab->id]);
 
-        $make = fn (string $name, ?string $hired, Department $dept) => $this->people[$name] = Employee::create([
+        $make = fn (string $name, ?string $hired, Company|Department $place) => $this->people[$name] = Employee::create([
             'tenant_id' => $this->tenant->id, 'name' => $name, 'employee_code' => 'L'.(count($this->people) + 1),
-            'is_active' => true, 'hired_date' => $hired, 'department_id' => $dept->id,
+            'is_active' => true, 'hired_date' => $hired,
+            ...($place instanceof Company ? ['company_id' => $place->id] : ['department_id' => $place->id]),
         ]);
 
         $make('Punctual', '2020-01-01', $this->lab);
