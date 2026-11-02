@@ -14,6 +14,7 @@ import EmployeesMobile from './EmployeesMobile';
 import EmployeeFormModal from './EmployeeFormModal';
 import MergeModal from './MergeModal';
 import DuplicateScanModal from './DuplicateScanModal';
+import MoveToCompanyModal from './MoveToCompanyModal';
 import PushModal from './PushModal';
 import EnrollModal from './EnrollModal';
 import EmployeeDetailModal from './EmployeeDetailModal';
@@ -97,6 +98,8 @@ export default function Employees() {
     const [merging, setMerging] = useState(null); // employee being merged with duplicates
     // null = closed, 'all' = the whole-roster scan, otherwise one employee's scan
     const [scanning, setScanning] = useState(null);
+    // Move terminal to company (2026-11-02).
+    const [movingTerminal, setMovingTerminal] = useState(false);
     const [viewing, setViewing] = useState(null); // employee whose enrollment is open
     const [readingDevice, setReadingDevice] = useState(false);
     const [total, setTotal] = useState(null);
@@ -892,6 +895,7 @@ export default function Employees() {
         // Opened from the toolbar (the whole roster) or from a row (that person
         // only) — same screen, different question.
         onScan: (target) => setScanning(target ?? 'all'),
+        onMoveTerminal: can('employees.update') && companies.length > 0 ? () => setMovingTerminal(true) : null,
         onReadFingerprints: readFingerprintsToSystem,
         onPushFingerprints: pushFingerprints,
         autoPush,
@@ -995,6 +999,19 @@ export default function Employees() {
                         await load(search, filters);
                     }}
                     onClose={() => setMerging(null)}
+                />
+            )}
+            {movingTerminal && (
+                <MoveToCompanyModal
+                    devices={devices}
+                    companies={companies}
+                    onMoved={async () => {
+                        setMovingTerminal(false);
+                        // People changed company: the list and the tree's counts both move.
+                        loadDepartments();
+                        await load(search, filters);
+                    }}
+                    onClose={() => setMovingTerminal(false)}
                 />
             )}
             {scanning && (

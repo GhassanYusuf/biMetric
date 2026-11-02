@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\DeviceReconciliationController;
 use App\Http\Controllers\Api\DeviceSyncController;
 use App\Http\Controllers\Api\DeviceTimezoneController;
 use App\Http\Controllers\Api\DuplicateScanController;
+use App\Http\Controllers\Api\EmployeeCompanyTransferController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\HolidayController;
@@ -125,6 +126,9 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Must precede the resource: `employees/next-code` would otherwise be matched
     // by `employees/{employee}` and 404 on model binding.
     Route::get('employees/next-code', [EmployeeController::class, 'nextCode']);
+    // Employees → Move terminal to company (2026-11-02). Fixed paths, before {employee}.
+    Route::get('employees/move-to-company/preview', [EmployeeCompanyTransferController::class, 'preview']);
+    Route::post('employees/move-to-company', [EmployeeCompanyTransferController::class, 'move']);
 
     /*
      * Duplicate scanning (2026-10-06). `duplicate-groups` is a fixed path with no

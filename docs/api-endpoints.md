@@ -468,6 +468,8 @@ a panel has been confirmed on this estate's hardware.
 | GET | `/api/dashboard/summary` |
 | GET | `/api/reports/attendance` |
 | GET | `/api/audit-logs` |
+| GET | `/api/employees/move-to-company/preview?device_id=&company_id=` (2026-11-02, `employees.update`): who is on that terminal (live link) and where they are: `total`, `unassigned`, `already`, `elsewhere[]`. Changes nothing |
+| POST | `/api/employees/move-to-company` `{device_id, company_id, include_assigned?}`: moves them into the company. Only people in no company unless `include_assigned`; a department not in the new company is cleared. Audited per person; nothing written to a terminal. `TerminalCompanyTransfer` |
 | GET | `/api/companies` (+ full resource, 2026-11-03): `departments_count`, `employees_count` (departments included); `meta.unassigned_count` = employees in no company |
 | GET | `/api/departments` (+ full resource). Each carries `company_id` and `company_name`; `?company_id=` narrows. Flat under their company, no `parent_id` since 2026-11-03 |
 | GET | `/api/notifications` · `/unread-count` · POST `/{notification}/read` · `/read-all` |

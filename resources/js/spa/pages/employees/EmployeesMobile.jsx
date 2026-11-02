@@ -21,7 +21,7 @@ export default function EmployeesMobile({
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
-    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
+    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -100,6 +100,12 @@ export default function EmployeesMobile({
             <Button variant="secondary" className="w-full" onClick={() => onScan()}>
                 Scan for duplicates
             </Button>
+
+            {onMoveTerminal && (
+                <Button variant="secondary" className="w-full" onClick={onMoveTerminal}>
+                    Move terminal to company
+                </Button>
+            )}
 
             {canReadDevice && (
                 <Button variant="secondary" className="w-full" loading={readingDevice} onClick={onReadFromDevice}>
