@@ -448,7 +448,7 @@ enrollment over the API is next. The old generated collection (`/root/ZKT-attend
    against the text ids and cannot be re-checked in a browser from here.
 3. **DONE 2026-11-02:** `gender` accepted in any capitalisation in v1 (stored lowercase).
 4. **Company and department, owner 2026-11-02: DONE and LIVE.** Option 1 (the API) then
-   option 2, a real `companies` table, cut over 2026-11-02 ~16:15 UTC with a verified backup
+   option 2, a real `companies` table, cut over 2026-11-02 ~13:15 UTC (16:15 Bahrain) with a verified backup
    and 0 differences across 217 employees. Details, decisions and evidence:
    `docs/plan-companies-table.md`. Owner still to click through the screens. Owner:
    the company "is represented as department_id in the backend and api and db, can we change

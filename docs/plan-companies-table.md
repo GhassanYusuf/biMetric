@@ -1,7 +1,7 @@
 # Plan: a real `companies` table (option 2)
 
-**Status: LIVE since 2026-11-02 ~16:15 UTC (cut-over with the owner).** `main` = `f5a0c24`.
-Backup taken first and verified (`NewAttendance-before-companies.bak`, 38,625 pages, 16:07 UTC,
+**Status: LIVE since 2026-11-02 ~13:15 UTC (16:15 Bahrain; cut-over with the owner).** `main` = `f5a0c24`.
+Backup taken first and verified (`NewAttendance-before-companies.bak`, 38,625 pages, 13:07 UTC (16:07 on the SQL Server clock, which runs on Bahrain time),
 "valid"); JSON snapshot `storage/app/companies-before-cutover-2026-11-02.json` (19 rows, 217
 employees). The owner ran merge + migrate + build + queue:restart as one command (the
 assistant's session is refused production changes). Migration 0.22 s, its own check passed;
