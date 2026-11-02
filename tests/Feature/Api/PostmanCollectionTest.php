@@ -4,7 +4,9 @@ namespace Tests\Feature\Api;
 
 use App\Models\Department;
 use App\Models\Device;
+use App\Models\DeviceCommand;
 use App\Models\Employee;
+use App\Models\EnrollmentSession;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Tenancy;
@@ -86,6 +88,11 @@ class PostmanCollectionTest extends TestCase
     {
         $r = $this->request($name);
         $path = '/'.implode('/', array_map(fn ($p) => $this->fill($p), $r['url']['path']));
+        $query = collect($r['url']['query'] ?? [])->reject(fn ($q) => $q['disabled'] ?? false)
+            ->mapWithKeys(fn ($q) => [$q['key'] => $this->fill($q['value'])])->all();
+        if ($query !== []) {
+            $path .= '?'.http_build_query($query);
+        }
         $body = isset($r['body']['raw']) ? json_decode($this->fill($r['body']['raw']), true, flags: JSON_THROW_ON_ERROR) : [];
 
         $token = $this->admin->createToken('postman', ['*'])->plainTextToken;
@@ -136,5 +143,39 @@ class PostmanCollectionTest extends TestCase
         $this->assertStringNotContainsString('invalid', (string) $command->json('message'), (string) $command->getContent());
         $this->assertEmpty(array_intersect(['full', 'from', 'to'], array_keys($command->json('errors') ?? [])));
         $this->assertArrayNotHasKey('finger_slot', $this->send('Start fingerprint enrollment')->json('errors') ?? []);
+    }
+    /**
+     * Starting an enrollment answers with its command; the collection then finds the session
+     * by that command (owner's test, 2026-11-02: it had saved the command id as a session id
+     * and got "Resource not found").
+     */
+    public function test_an_enrollment_session_is_found_by_the_command_that_started_it(): void
+    {
+        Tenancy::set(Employee::withoutGlobalScopes()->first()->tenant_id);
+        $make = function (string $status) {
+            $command = DeviceCommand::create([
+                'device_id' => (int) $this->vars['device_id'], 'command' => DeviceCommand::ENROLL_FINGERPRINT,
+                'payload' => ['employee_id' => (int) $this->vars['employee_id'], 'finger_slot' => 6],
+                'status' => DeviceCommand::STATUS_SUCCEEDED, 'max_attempts' => 1,
+            ]);
+            $session = EnrollmentSession::create([
+                'employee_id' => (int) $this->vars['employee_id'], 'device_id' => (int) $this->vars['device_id'],
+                'device_command_id' => $command->id, 'type' => EnrollmentSession::TYPE_FINGERPRINT,
+                'finger_slot' => 6, 'status' => $status, 'requested_at' => now(), 'timeout_seconds' => 30,
+            ]);
+
+            return [$command, $session];
+        };
+        [$old] = $make(EnrollmentSession::SUCCESS);
+        [$command, $session] = $make(EnrollmentSession::PENDING);
+        Tenancy::clear();
+
+        $this->vars['command_id'] = (string) $command->id;
+        $this->send('Find enrollment session (for this command)')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $session->id)
+            ->assertJsonPath('data.0.device_command_id', $command->id);
+        $this->assertNotSame($old->id, $session->id);
     }
 }

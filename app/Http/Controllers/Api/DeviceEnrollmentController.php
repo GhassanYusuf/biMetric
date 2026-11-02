@@ -41,6 +41,9 @@ class DeviceEnrollmentController extends Controller
         $request->validate([
             'employee_id' => ['nullable', 'integer'],
             'device_id' => ['nullable', 'integer'],
+            // Starting an enrollment answers with its COMMAND; the session is created when the
+            // command runs, a moment later. This finds it (2026-11-02, Postman testing).
+            'device_command_id' => ['nullable', 'integer'],
             'status' => ['nullable', 'string'],
             'active' => ['nullable', 'boolean'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
@@ -50,6 +53,7 @@ class DeviceEnrollmentController extends Controller
             ->with(['employee:id,name,employee_code', 'device:id,name'])
             ->when($request->filled('employee_id'), fn ($q) => $q->where('employee_id', $request->integer('employee_id')))
             ->when($request->filled('device_id'), fn ($q) => $q->where('device_id', $request->integer('device_id')))
+            ->when($request->filled('device_command_id'), fn ($q) => $q->where('device_command_id', $request->integer('device_command_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->boolean('active'), fn ($q) => $q->whereNotIn('status', EnrollmentSession::TERMINAL))
             ->latest('requested_at')

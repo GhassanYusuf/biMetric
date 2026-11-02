@@ -943,7 +943,7 @@
         },
         {
             "name": "3. Fingerprint and card enrollment",
-            "description": "Enrollment needs **a person at the terminal**. The call returns at once with a **session**; the terminal then waits for a finger (~30 s) or a card tap (~20 s).\n\nSession `status`: `pending → sent → waiting → success | timeout | failed | cancelled`. `timeout` means nobody came, not a broken terminal.\n\nThe person must be on the terminal first (**Push employee to terminal**).",
+            "description": "Enrollment needs **a person at the terminal**. The call returns at once with a **command**; when it runs, it opens a **session** and the terminal waits for a finger (~30 s) or a card tap (~20 s).\n\nSession `status`: `pending → sent → waiting → success | timeout | failed | cancelled`. `timeout` means nobody came, not a broken terminal.\n\nThe person must be on the terminal first (**Push employee to terminal**).",
             "item": [
                 {
                     "name": "Start fingerprint enrollment",
@@ -982,7 +982,7 @@
                             ],
                             "query": []
                         },
-                        "description": "Puts the terminal into capture mode for this person. **Be at the terminal**: press the same finger 3 times, lifting it in between.\n\n**Answer:** `202` with the session; its id is saved to `{{session_id}}`. Then **Get enrollment session** until `success`. `409` = a capture is already waiting for them there. `422` = this terminal cannot capture fingers.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `finger_slot` | integer 0–9 | yes | 0–4 left hand little→thumb, 5–9 right hand thumb→little. **6 = right index**. |\n\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending.",
+                        "description": "Puts the terminal into capture mode for this person. **Be at the terminal**: press the same finger 3 times, lifting it in between.\n\n**Answer:** `200` with the **command** that starts the capture; its id is saved to `{{command_id}}`. The enrollment **session** is created when that command runs, a second later: then run **Find enrollment session (for this command)** until `status` is `success`. `409` = a capture is already waiting for them there. `422` = this terminal cannot capture fingers.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `finger_slot` | integer 0–9 | yes | 0–4 left hand little→thumb, 5–9 right hand thumb→little. **6 = right index**. |\n\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n    \"finger_slot\": 6\n}",
@@ -1000,7 +1000,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "const j = pm.response.json();",
-                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('session_id', String(j.data.id)); }"
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('command_id', String(j.data.id)); }"
                                 ]
                             }
                         }
@@ -1039,7 +1039,7 @@
                             ],
                             "query": []
                         },
-                        "description": "Puts the terminal into card-capture mode (~20 s for a tap). `422` where the model cannot (e.g. the F18 cannot hand over a scanned card number: use **Assign card number** instead).\n\nNo body.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
+                        "description": "Puts the terminal into card-capture mode (~20 s for a tap). `422` where the model cannot (e.g. the F18 cannot hand over a scanned card number: use **Assign card number** instead).\n\nNo body. **Answer:** `200` with the command (saved to `{{command_id}}`); then **Find enrollment session (for this command)**.\n\n> ⚠ **Talks to a real terminal.** Check `{{device_id}}` before sending."
                     },
                     "event": [
                         {
@@ -1048,14 +1048,14 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "const j = pm.response.json();",
-                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('session_id', String(j.data.id)); }"
+                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('command_id', String(j.data.id)); }"
                                 ]
                             }
                         }
                     ]
                 },
                 {
-                    "name": "List enrollment sessions",
+                    "name": "Find enrollment session (for this command)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -1065,7 +1065,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/enrollment-sessions",
+                            "raw": "{{base_url}}/api/v1/enrollment-sessions?device_command_id={{command_id}}",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -1074,10 +1074,35 @@
                                 "v1",
                                 "enrollment-sessions"
                             ],
-                            "query": []
+                            "query": [
+                                {
+                                    "key": "device_command_id",
+                                    "value": "{{command_id}}",
+                                    "disabled": false,
+                                    "description": "from Start enrollment"
+                                },
+                                {
+                                    "key": "employee_id",
+                                    "value": "{{employee_id}}",
+                                    "disabled": true,
+                                    "description": ""
+                                }
+                            ]
                         },
-                        "description": "Recent enrollment sessions."
-                    }
+                        "description": "The session started by `{{command_id}}`, saved to `{{session_id}}`. **Run this after Start fingerprint/card enrollment, until `status` is final**: `success`, `timeout`, `failed` or `cancelled`. An empty `data` list = the command has not run yet: wait a second and send again.\n\nWithout `device_command_id` (untick it) it lists recent sessions.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `device_command_id` | integer | no | The command an enrollment start answered with. |\n| `employee_id` | integer | no |  |\n| `device_id` | integer | no |  |\n| `status` | string | no | `pending` `sent` `waiting` `success` `timeout` `failed` `cancelled` |\n| `active` | boolean | no | Only sessions still waiting. |\n"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const j = pm.response.json();",
+                                    "if (j && j.data && j.data[0] && j.data[0].id !== undefined && j.data[0] && j.data[0].id !== null) { pm.collectionVariables.set('session_id', String(j.data[0] && j.data[0].id)); }"
+                                ]
+                            }
+                        }
+                    ]
                 },
                 {
                     "name": "Get enrollment session",
@@ -1102,7 +1127,7 @@
                             ],
                             "query": []
                         },
-                        "description": "Poll this after starting an enrollment. Final states: `success`, `timeout`, `failed`, `cancelled`."
+                        "description": "One session by its id (set by **Find enrollment session**). Final states: `success`, `timeout`, `failed`, `cancelled`; `events` shows each step and the sample quality scores."
                     }
                 },
                 {

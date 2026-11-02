@@ -250,18 +250,27 @@ $items = [
             ['card_number' => '2857525']),
     ]),
 
-    folder('3. Fingerprint and card enrollment', "Enrollment needs **a person at the terminal**. The call returns at once with a **session**; the terminal then waits for a finger (~30 s) or a card tap (~20 s).\n\nSession `status`: `pending → sent → waiting → success | timeout | failed | cancelled`. `timeout` means nobody came, not a broken terminal.\n\nThe person must be on the terminal first (**Push employee to terminal**).", [
+    folder('3. Fingerprint and card enrollment', "Enrollment needs **a person at the terminal**. The call returns at once with a **command**; when it runs, it opens a **session** and the terminal waits for a finger (~30 s) or a card tap (~20 s).\n\nSession `status`: `pending → sent → waiting → success | timeout | failed | cancelled`. `timeout` means nobody came, not a broken terminal.\n\nThe person must be on the terminal first (**Push employee to terminal**).", [
         req('POST api/v1/employees/{employee}/devices/{device}/enrollment/fingerprint', 'Start fingerprint enrollment', '/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/fingerprint',
-            "Puts the terminal into capture mode for this person. **Be at the terminal**: press the same finger 3 times, lifting it in between.\n\n**Answer:** `202` with the session; its id is saved to `{{session_id}}`. Then **Get enrollment session** until `success`. `409` = a capture is already waiting for them there. `422` = this terminal cannot capture fingers.".fields('Body fields', [
+            "Puts the terminal into capture mode for this person. **Be at the terminal**: press the same finger 3 times, lifting it in between.\n\n**Answer:** `200` with the **command** that starts the capture; its id is saved to `{{command_id}}`. The enrollment **session** is created when that command runs, a second later: then run **Find enrollment session (for this command)** until `status` is `success`. `409` = a capture is already waiting for them there. `422` = this terminal cannot capture fingers.".fields('Body fields', [
                 ['finger_slot', 'integer 0–9', true, '0–4 left hand little→thumb, 5–9 right hand thumb→little. **6 = right index**.'],
             ]).TERMINAL,
-            ['finger_slot' => 6], [], saves(['session_id' => 'j.data.id'])),
+            ['finger_slot' => 6], [], $commandSaves),
         req('POST api/v1/employees/{employee}/devices/{device}/enrollment/card', 'Start card enrollment', '/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/card',
-            "Puts the terminal into card-capture mode (~20 s for a tap). `422` where the model cannot (e.g. the F18 cannot hand over a scanned card number: use **Assign card number** instead).\n\nNo body.".TERMINAL,
-            null, [], saves(['session_id' => 'j.data.id'])),
-        req('GET api/v1/enrollment-sessions', 'List enrollment sessions', '/api/v1/enrollment-sessions', 'Recent enrollment sessions.'),
+            "Puts the terminal into card-capture mode (~20 s for a tap). `422` where the model cannot (e.g. the F18 cannot hand over a scanned card number: use **Assign card number** instead).\n\nNo body. **Answer:** `200` with the command (saved to `{{command_id}}`); then **Find enrollment session (for this command)**.".TERMINAL,
+            null, [], $commandSaves),
+        req('GET api/v1/enrollment-sessions', 'Find enrollment session (for this command)', '/api/v1/enrollment-sessions',
+            "The session started by `{{command_id}}`, saved to `{{session_id}}`. **Run this after Start fingerprint/card enrollment, until `status` is final**: `success`, `timeout`, `failed` or `cancelled`. An empty `data` list = the command has not run yet: wait a second and send again.\n\nWithout `device_command_id` (untick it) it lists recent sessions.".fields('Query parameters', [
+                ['device_command_id', 'integer', false, 'The command an enrollment start answered with.'],
+                ['employee_id', 'integer', false, ''],
+                ['device_id', 'integer', false, ''],
+                ['status', 'string', false, '`pending` `sent` `waiting` `success` `timeout` `failed` `cancelled`'],
+                ['active', 'boolean', false, 'Only sessions still waiting.'],
+            ]),
+            null, ['device_command_id' => ['{{command_id}}', true, 'from Start enrollment'], 'employee_id' => ['{{employee_id}}', false, '']],
+            saves(['session_id' => 'j.data[0] && j.data[0].id'])),
         req('GET api/v1/enrollment-sessions/{session}', 'Get enrollment session', '/api/v1/enrollment-sessions/{{session_id}}',
-            "Poll this after starting an enrollment. Final states: `success`, `timeout`, `failed`, `cancelled`."),
+            "One session by its id (set by **Find enrollment session**). Final states: `success`, `timeout`, `failed`, `cancelled`; `events` shows each step and the sample quality scores."),
         req('POST api/v1/enrollment-sessions/{session}/cancel', 'Cancel enrollment session', '/api/v1/enrollment-sessions/{{session_id}}/cancel',
             "Releases the terminal. Do this if the person walked away.".TERMINAL),
         req('DELETE api/v1/employees/{employee}/devices/{device}/enrollment/fingerprints/{slot}', 'Delete one fingerprint (destructive)', '/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/fingerprints/{{finger_slot}}',

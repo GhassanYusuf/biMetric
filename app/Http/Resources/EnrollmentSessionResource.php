@@ -16,6 +16,8 @@ class EnrollmentSessionResource extends JsonResource
             'employee_name' => $this->whenLoaded('employee', fn () => $this->employee?->name),
             'device_id' => $this->device_id,
             'device_name' => $this->whenLoaded('device', fn () => $this->device?->name),
+            // The command that started it: what POST …/enrollment/* answers with (2026-11-02).
+            'device_command_id' => $this->device_command_id,
             'type' => $this->type,
             'finger_slot' => $this->finger_slot,
             'status' => $this->status,

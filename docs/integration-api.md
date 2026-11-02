@@ -77,8 +77,8 @@ capture would put a terminal into capture mode with a person standing at it). Sc
 token + method + path; kept 24 h; the same key with a *different* body is `422`; a `5xx` is
 never stored.
 
-**Queued, not instant** — anything that touches a terminal returns a **command id** (or
-enrollment **session id**), not a result. See §5.
+**Queued, not instant** — anything that touches a terminal returns a **command id**, not a
+result. An enrollment's **session** is found from its command (§4).
 
 ## 3. Employees
 
@@ -187,7 +187,7 @@ differently.
 | DELETE | `/employees/{e}/devices/{d}/enrollment/fingerprints/{slot}` | Delete one finger. **Destructive** — the person must re-enroll it. |
 | DELETE | `/employees/{e}/devices/{d}/enrollment/card` | Clear the card, keep the record and fingers. |
 | PUT | `/employees/{e}/devices/{d}/card` | **Synchronous.** Write a typed `card_number`, read it back. May take seconds; `502` if unreachable. Only endpoint here that holds the request on hardware (no queued form exists yet). |
-| GET | `/enrollment-sessions`, `/enrollment-sessions/{id}` | `devices:read` |
+| GET | `/enrollment-sessions`, `/enrollment-sessions/{id}` | `devices:read`. Filters: `device_command_id`, `employee_id`, `device_id`, `status`, `active` |
 | POST | `/enrollment-sessions/{id}/cancel` | Releases the terminal. Do this if the person walked away. |
 | GET | `/device-commands`, `/device-commands/{id}` | Poll an outcome. |
 | POST | `/device-commands/{id}/retry`, `/cancel` | |
@@ -198,8 +198,12 @@ or `unknown`, and `409` if a capture is already waiting for that person at that 
 (rule 9) applies to integrations too: do not show a button for something the firmware
 cannot do.
 
-**Enrollment is a human at a terminal.** The call returns at once; the outcome is
-`enrollment.finished` (webhook) or `GET /enrollment-sessions/{id}`. Session `status` ∈
+**Enrollment is a human at a terminal.** The call returns at once with `200` and the
+**command** that starts the capture (not a session: corrected 2026-11-02). The session is
+created when that command runs, a moment later; find it with
+`GET /enrollment-sessions?device_command_id={command id}` (each session carries its
+`device_command_id`). The outcome is `enrollment.finished` (webhook) or
+`GET /enrollment-sessions/{id}`. Session `status` ∈
 `pending → sent → waiting → success | timeout | failed | cancelled`. A `timeout` means
 nobody came, not that the terminal is broken.
 
