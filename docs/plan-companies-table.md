@@ -95,8 +95,16 @@ production (recorded in PROJECT-STATE). So:
    The `down()` reverses it. A rehearsal runs first on a copy of the production data
    (exported departments + employees) in the worktree.
 3. **The cut-over, at a quiet time, with the owner:**
-   1. full SQL Server backup of `NewAttendance` on 192.168.7.8 (whoever runs that server),
-      plus a JSON snapshot of `departments` and `employees` (id, department_id) in
+   1. full SQL Server backup of `NewAttendance` on 192.168.7.8, taken by the owner from
+      DBeaver (auto-commit ON; ONE line, select all, Ctrl+Enter, since DBeaver splits a
+      statement at line breaks), then verified:
+      ```sql
+      BACKUP DATABASE [NewAttendance] TO DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQL\Backup\NewAttendance-before-companies.bak' WITH COPY_ONLY, CHECKSUM, INIT, STATS = 10;
+      RESTORE VERIFYONLY FROM DISK = N'C:\Program Files\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQL\Backup\NewAttendance-before-companies.bak' WITH CHECKSUM;
+      ```
+      Rehearsed 2026-11-02: 38,561 pages in 5.5 s, "The backup set on file 1 is valid."
+      `COPY_ONLY` leaves the server's own nightly backups (about 23:49 every night) alone.
+      Plus a JSON snapshot of `departments` and `employees` (id, department_id) in
       `storage/app/`;
    2. merge the branch into `main` here (fast-forward, checked);
    3. `php artisan migrate --force` (the owner runs it; the assistant's session is refused
@@ -116,6 +124,14 @@ of the change (many screens and reports read the tree), not the data, which is s
 companies, 8 departments, 217 employees) and checked row by row. The full test suite runs
 before the cut-over; the website itself has to be checked by the owner in a browser after it,
 since there is no browser automation here.
+
+## Found while planning (2026-11-02)
+
+- **The app logs in to SQL Server as `sa`** (sysadmin). It should have its own login with
+  rights on `NewAttendance` only. Separate from this plan; on the housekeeping list.
+- **"P7H" exists twice:** a company (id 5, 2 employees) and a department "p7h" under
+  PROMOSEVEN (id 21, 5 employees). Owner to say whether they are the same; if so, merge before
+  or during the migration.
 
 ## Not part of this
 
