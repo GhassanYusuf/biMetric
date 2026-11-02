@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-10-29**
+**Last updated: 2026-11-02**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-037 | 2026-11-02 | JJs | A new terminal: Import staff brought no fingerprints, and the first fingerprint read would not decode | FIXED |
 | DC-036 | 2026-10-29 | Camelot | No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever | WORKAROUND |
 | DC-035 | 2026-10-27 | IT ROOM | IT ROOM's door does not lock: open to anyone | OPEN |
 | DC-034 | 2026-10-25 to 2026-10-26 | Camelot | Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17 | FIXED |
@@ -111,6 +112,45 @@ Template:
 ---
 
 ## Entries
+
+### DC-037 — A new terminal: Import staff brought no fingerprints, and the first fingerprint read would not decode
+
+- **Date:** 2026-11-02
+- **Devices:** JJs (F18/ID, 87.237.196.6, ZMM210_TFT, Ver 6.60 Apr 26 2016, serial AIOR211760709)
+- **Direction:** device → software
+- **Symptom:** Owner, 2026-11-02, after adding JJs: "JJs has not had its roster read yet, so
+  there is nothing to import"; then, after importing: "the import is done but it did not
+  bring the staff fingerprints, why?"
+- **What was done:** reads only; nothing written to JJs.
+  - The first message is by design: Import staff works from a roster read, and the website
+    has **no button to read a roster** (only `POST /api/devices/{id}/roster/read`, the
+    `device:roster` command and the nightly 02:30 UTC job). Ran `php artisan device:roster 19`
+    (read-only), 14:03 UTC: 157 users, ids 1–747, all digits, names decoded, 3 cards; 76 have
+    punched on JJs, 62 in the last 60 days. The owner then pressed Import staff: 157
+    employees created and linked.
+  - Import staff does not read fingerprints, by design; the fingerprint copy is
+    `sync_enrollment` (nightly, or per person: Employees → Read fingerprints to system).
+    Queued `sync_enrollment` (command 19373, read-only): "157 mapped to employees, but this
+    firmware's fingerprint table could not be decoded so counts are left unknown" (the
+    decoder failing safe, rule 10).
+  - `read_info` (19374): F18/ID, Ver 6.60 Apr 26 2016, ZMM210_TFT, the same model and firmware
+    as Camelot, over the internet from the same /24. So not an unknown firmware.
+  - `sync_enrollment` again (19375), minutes later, same session conditions: decoded, "157
+    mapped to employees". 255 fingers for 149 people stored in the system; 8 have none.
+- **Root cause:** the fingerprint table came back misaligned once over the internet link,
+  the transfer problem Camelot shows (DC-020, DC-036), and decoded on the next read. Not
+  established why that read and not the next; Camelot's version comes back after hours and
+  clears on restart, so JJs may develop the same pattern.
+- **Fix:** none needed for the data: the second read stored everything. Gaps recorded: no
+  website button to read a roster (a new terminal waits for the nightly job or the command
+  line), and Import staff does not chain a fingerprint read.
+- **Verified:** on JJs, 2026-11-02 ~14:10 UTC: 255 templates stored for 149 people.
+- **Evidence:** commands 19373, 19374, 19375; `device:roster 19` output.
+- **Status:** FIXED — watch the nightly reads of JJs over the next days; if they come back
+  undecodable the way Camelot's do, it is DC-036's pattern on a second terminal.
+- **Keywords:** has not had its roster read yet, nothing to import, Import staff, fingerprint
+  table could not be decoded, counts are left unknown, sync_enrollment, new terminal, JJs,
+  87.237.196.6
 
 ### DC-036 — No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever
 
