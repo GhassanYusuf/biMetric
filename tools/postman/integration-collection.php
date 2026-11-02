@@ -107,7 +107,7 @@ $employeeFields = fields('Body fields', [
     ['last_name', 'string ≤255', false, ''],
     ['employee_code', 'string, digits, 1–9', false, 'Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals.'],
     ['external_id', '**string** ≤128', false, 'YOUR system\'s id for the person. Must be text: `"1"`, not `1`. Unique per company. Never sent to a terminal.'],
-    ['gender', '`male` \| `female`', false, 'Lowercase.'],
+    ['gender', '`male` \| `female`', false, 'Any capitalisation: `"Male"` is stored as `male`.'],
     ['birthday', 'date `YYYY-MM-DD`', false, 'Before today.'],
     ['email', 'email', false, ''],
     ['mobile_phone', 'string ≤32', false, 'Digits, spaces, `()` and `-`, optional leading `+`. The website stores `"+973 33445566"`.'],
@@ -455,7 +455,7 @@ $collection = [
         'description' => "The Integration API (`/api/v1`) for other software: HR, payroll, access control. Contract: `docs/integration-api.md` in the repository.\n\n"
             ."Generated ".gmdate('Y-m-d')." by `tools/postman/integration-collection.php`. Every live `/api/v1` route is here; the generator refuses to run if one is missing.\n\n"
             ."**Setup**\n1. Collection → Variables: set `base_url`, and `email` / `password` for signing in (or paste a token into `token`).\n2. Run **0. Start here → Sign in**: the token is saved for every other request.\n3. Ids are variables (`employee_code` = Personnel ID, `device_id`, …). Requests that create something save its id for the next request.\n\n"
-            ."**Conventions**\n- Envelope: `{success, message, data, meta, errors}`. `401` no/bad token, `403` missing ability or permission, `404` not found, `422` validation (reason per field in `errors`), `429` rate limit (120/min per token).\n- Times are UTC ISO-8601.\n- Anything that touches a terminal answers `202` with a command or session: **queued, not done**. Poll it.\n- Writes accept an optional `Idempotency-Key` header (disabled by default in each request).\n\n"
+            ."**Conventions**\n- Envelope: `{success, message, data, meta, errors}`. `401` no/bad token, `403` missing ability or permission, `404` not found, `422` validation (reason per field in `errors`), `429` rate limit (120/min per token).\n- Times are UTC ISO-8601. Every `id` / `…_id` in an answer is a number; `external_id`, `employee_code` and `device_user_id` are text.\n- Anything that touches a terminal answers `202` with a command or session: **queued, not done**. Poll it.\n- Writes accept an optional `Idempotency-Key` header (disabled by default in each request).\n\n"
             ."⚠ **This is a live system.** Requests marked *Talks to a real terminal* write to real hardware. Default ids point at the test employee (Personnel ID 90110121) and IT ROOM (15).",
         'schema' => 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     ],

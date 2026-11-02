@@ -21,6 +21,8 @@ class StoreEmployeeRequest extends BaseRequest
 
     protected function prepareForValidation(): void
     {
+        $this->normaliseGender();
+
         if (! $this->filled('employee_code')) {
             $this->merge(['employee_code' => (string) app(EmployeeCodeAllocator::class)->next()['code']]);
         }

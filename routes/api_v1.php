@@ -34,10 +34,13 @@ use Illuminate\Support\Facades\Route;
 | EVERY route name starts `api.v1.` — an unprefixed `apiResource` name collides with the
 | legacy Inertia routes (see the warning at the top of routes/api.php).
 |
+| `numeric-ids` makes every id in an answer a number (SQL Server returns bigints as text;
+| 2026-11-02). Inside `idempotent`, so a replayed answer is the cast one too.
+|
 | `idempotent` replays the original answer when a write is retried with the same
 | `Idempotency-Key` header, so a timed-out POST can be repeated safely.
 */
-Route::prefix('v1')->middleware(['auth:sanctum', 'tenant', 'throttle:integration', 'idempotent'])->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum', 'tenant', 'throttle:integration', 'idempotent', 'numeric-ids'])->group(function () {
 
     Route::get('ping', PingController::class)->name('api.v1.ping');
 

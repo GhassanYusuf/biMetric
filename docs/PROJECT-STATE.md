@@ -443,8 +443,10 @@ enrollment over the API is next. The old generated collection (`/root/ZKT-attend
    `employee_code` filter; `/employees/by-code/{code}` kept as an alias. The website's own
    routes still take the row id. Tests: `IntegrationApiTest`
    (`test_an_employee_url_takes_the_personnel_id_never_the_row_id`), `PostmanCollectionTest`.
-2. Every id in a response is a number (some come back as text: `"employee_id": "1829"`).
-3. Accept `"Male"` / `"MALE"` as well as `"male"` for `gender`.
+2. **DONE 2026-11-02:** every id in a v1 answer is a number (`NumericIds` middleware on the
+   v1 group; SQL Server returns bigints as text). v1 only: the website's screens were written
+   against the text ids and cannot be re-checked in a browser from here.
+3. **DONE 2026-11-02:** `gender` accepted in any capitalisation in v1 (stored lowercase).
 4. **Company and department, owner 2026-11-02: option 1 DONE, option 2 planned.** Owner:
    the company "is represented as department_id in the backend and api and db, can we change
    that to be company, department?". Option 1 (API + a view, storage unchanged, low risk):

@@ -19,6 +19,17 @@ use Illuminate\Validation\Validator;
  */
 trait CompanyDepartmentFields
 {
+    /**
+     * `"Male"`, `"MALE"` and `" male "` are `male` (owner, 2026-11-02): other systems
+     * capitalise it. Anything else is still refused by the rule.
+     */
+    protected function normaliseGender(): void
+    {
+        if (is_string($this->input('gender'))) {
+            $this->merge(['gender' => strtolower(trim($this->input('gender')))]);
+        }
+    }
+
     /** @return array<string, list<mixed>> */
     protected function companyDepartmentRules(): array
     {

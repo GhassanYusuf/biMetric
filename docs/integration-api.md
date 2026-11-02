@@ -62,6 +62,11 @@ A token can only ever *narrow* its user. `403` means one of the two is missing.
 
 A sign-in token from the web app carries `*` and passes every ability check.
 
+**Ids are numbers** — every `id`, `…_id` and the items of every `…_ids` list in an answer is
+an integer (2026-11-02; before, SQL Server's text came through: `"employee_id": "1829"`). Text
+on purpose: `external_id` (yours), `device_user_id` (as the terminal stores it), and
+`employee_code` (the Personnel ID, which can carry leading zeros). `App\Http\Middleware\NumericIds`.
+
 **Time** — every timestamp is **UTC ISO-8601** (rule 10). The one exception is a bare
 date (`2026-10-01`) passed to `from` / `to` on `/attendance`, which means an
 **office-local** day (`ATTENDANCE_TIMEZONE`), exactly as the web app's filter does. Send a
@@ -120,6 +125,8 @@ Fields are the web form's (`name`, `employee_code`, `email`, `department_id`, `j
   clear the date first.
 - **`mobile_phone`, `home_phone`** — digits, spaces, `()` and `-`, optional leading `+`.
   The web form stores `"+973 33445566"`: the calling code, a space, the number.
+- **`gender`** — `male` or `female`, in any capitalisation (`"Male"` is stored as `male`;
+  2026-11-02).
 - **`country`** — free text; the web form stores the English country name (`"Bahrain"`).
 
 **Company and department are two fields** (2026-11-02, option 1 of 2):

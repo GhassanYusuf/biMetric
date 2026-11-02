@@ -147,4 +147,16 @@ class CompanyDepartmentApiTest extends TestCase
         $this->assertSame($this->promoseven->id, $rows['Information Technology']['company_id']);
         $this->assertSame($this->camelot->id, $rows['Camelot']['company_id']);
     }
+    /** Owner, 2026-11-02: other systems send "Male"; it is stored as "male". */
+    public function test_gender_is_accepted_in_any_capitalisation(): void
+    {
+        $this->api()->postJson('/api/v1/employees', ['name' => 'G', 'employee_code' => '31', 'gender' => 'Male'])
+            ->assertCreated()->assertJsonPath('data.gender', 'male');
+        $this->api()->patchJson('/api/v1/employees/31', ['gender' => ' FEMALE '])
+            ->assertOk()->assertJsonPath('data.gender', 'female');
+        $this->api()->putJson('/api/v1/employees/by-external-id/G-1', ['name' => 'G2', 'gender' => 'Male'])
+            ->assertCreated()->assertJsonPath('data.gender', 'male');
+        $this->api()->patchJson('/api/v1/employees/31', ['gender' => 'Other'])
+            ->assertUnprocessable()->assertJsonValidationErrors('gender');
+    }
 }

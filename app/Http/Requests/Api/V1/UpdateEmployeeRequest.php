@@ -17,6 +17,11 @@ class UpdateEmployeeRequest extends BaseRequest
 {
     use CompanyDepartmentFields;
 
+    protected function prepareForValidation(): void
+    {
+        $this->normaliseGender();
+    }
+
     public function rules(): array
     {
         $rules = collect(parent::rules())

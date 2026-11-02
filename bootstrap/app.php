@@ -44,6 +44,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
             'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,
             'idempotent' => \App\Http\Middleware\EnforceIdempotency::class,
+            // Integration API answers carry ids as numbers (2026-11-02).
+            'numeric-ids' => \App\Http\Middleware\NumericIds::class,
             'permission' => PermissionMiddleware::class,
             'role' => RoleMiddleware::class,
         ]);
