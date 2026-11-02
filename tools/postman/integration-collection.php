@@ -455,6 +455,17 @@ $collection = [
         'schema' => 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     ],
     'auth' => ['type' => 'bearer', 'bearer' => [['key' => 'token', 'value' => '{{token}}', 'type' => 'string']]],
+    /*
+     * Stops a request whose URL names an empty variable, with a message that says which and
+     * how to fill it. Without it an empty {{session_id}} sent ".../enrollment-sessions/",
+     * which the server redirects and then refuses (owner's test, 2026-11-02).
+     */
+    'event' => [['listen' => 'prerequest', 'script' => ['type' => 'text/javascript', 'exec' => [
+        "const how = { token: 'run 0. Start here → Sign in', command_id: 'send a request that queues a command first (Push, Start enrollment, …)', session_id: 'run 3. → Find enrollment session (for this command) first', new_department_id: 'run Create department first', webhook_id: 'run Create webhook first', delivery_id: 'run List deliveries first', token_id: 'run Create token first', run_id: 'copy an id from List attendance sync runs' };",
+        "const names = (pm.request.url.toString().match(/{{(\\w+)}}/g) || []).map(v => v.slice(2, -2));",
+        "if (pm.request.auth === undefined || pm.request.auth === null || pm.request.auth.type !== 'noauth') { names.push('token'); }",
+        "for (const n of names) { if (n === 'token' && pm.info.requestName.startsWith('Sign in')) { continue; } const v = pm.variables.get(n); if (v === undefined || v === null || String(v).trim() === '') { throw new Error('{{' + n + '}} is empty: ' + (how[n] || 'set it under Collection → Variables') + '. (If it is filled under Variables, check no Environment is selected, top right.)'); } }",
+    ]]]],
     'variable' => array_map(fn ($k, $v) => ['key' => $k, 'value' => $v[0], 'description' => $v[1]], array_keys($vars = [
         'base_url' => ['https://zkt.takeone.bh', 'No trailing slash.'],
         'email' => ['', 'For Sign in. Kept in your Postman only.'],
