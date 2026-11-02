@@ -432,7 +432,21 @@ employee 1829, Personnel ID 90110121, command 18967). A new Postman collection w
 bodies: `docs/postman/` (generator `tools/postman/integration-collection.php`). Fingerprint
 enrollment over the API is next. The old generated collection (`/root/ZKT-attendance-API…`,
 2026-10-20, website routes mixed in, invalid placeholder bodies) should no longer be used.
-Candidate change noted by the owner's test: accept `"Male"` as well as `"male"`.
+**API changes the owner asked for (2026-11-02), not built yet:**
+1. **Every v1 endpoint that needs an employee takes the Personnel ID (`employee_code`),
+   not the system's `employee_id`.** Owner: "all the apis where you require a employee_id
+   it should be emp_code". Why: `employee_id` (e.g. 1829) is an internal row number another
+   system has no way of knowing; the Personnel ID (CPR, e.g. 90110121) is what both sides
+   already share, and it is also the user ID on the terminals. Today only
+   `GET`/`DELETE /employees/by-code/{code}` take it. Applies to the path (`/employees/{id}/…`:
+   update, photo, attendance summary, push, remove, card, enrollment, fingerprint delete)
+   and to the filters (`employee_id` on `/attendance`, `/enrollment-sessions`). Design to
+   settle before building: the v1 docs promise "`/employees/1000` is always the id", so
+   either the employee routes switch to the code (a breaking change, acceptable only while
+   no outside system uses v1 yet: confirm with the owner) or each gets a `/by-code/{code}/…`
+   twin. Responses keep `id` and `employee_code` both.
+2. Every id in a response is a number (some come back as text: `"employee_id": "1829"`).
+3. Accept `"Male"` / `"MALE"` as well as `"male"` for `gender`.
 
 Decisions and the reasoning:
 
