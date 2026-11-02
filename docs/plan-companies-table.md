@@ -1,8 +1,10 @@
 # Plan: a real `companies` table (option 2)
 
-**Status: IN PROGRESS since 2026-11-02** on branch `companies`, in the worktree `/var/www/zkt-companies` (owner: "yes you can start"; decisions 1-3 accepted). Written 2026-11-02 at the owner's request ("let's plan for
-option 2 directly"). Option 1 (the API and the `v_employee_company` view, storage unchanged) is
-done and live; see `docs/PROJECT-STATE.md`, API change 4.
+**Status: BUILT, NOT DEPLOYED (2026-11-03).** Branch `companies` (`0cc2b7a`, pushed), worktree
+`/var/www/zkt-companies`. 795 tests pass there, the website builds. Live production is still
+`main`, untouched. Next: rehearsal on a restored copy of production (`NewAttendance_rehearsal`
+on 192.168.7.8, restored by the owner from the backup), then the cut-over with the owner.
+Decisions 1-3 accepted by the owner 2026-11-02; P7H and p7h stay separate.
 
 ## Why
 

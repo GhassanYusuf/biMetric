@@ -447,7 +447,9 @@ enrollment over the API is next. The old generated collection (`/root/ZKT-attend
    v1 group; SQL Server returns bigints as text). v1 only: the website's screens were written
    against the text ids and cannot be re-checked in a browser from here.
 3. **DONE 2026-11-02:** `gender` accepted in any capitalisation in v1 (stored lowercase).
-4. **Company and department, owner 2026-11-02: option 1 DONE, option 2 planned.** Owner:
+4. **Company and department, owner 2026-11-02: option 1 DONE and live; option 2 BUILT on
+   branch `companies` (worktree `/var/www/zkt-companies`), NOT DEPLOYED, see
+   `docs/plan-companies-table.md` for status and the cut-over.** Owner:
    the company "is represented as department_id in the backend and api and db, can we change
    that to be company, department?". Option 1 (API + a view, storage unchanged, low risk):
    v1 takes and returns `company_id` and `department_id` as separate fields
