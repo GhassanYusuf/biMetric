@@ -34,6 +34,9 @@ class PostmanCollectionTest extends TestCase
 
     private array $vars;
 
+    /** The row id of the employee the collection's {{employee_code}} names. URLs never use it. */
+    private int $testEmployeeId;
+
     private User $admin;
 
     protected function setUp(): void
@@ -61,7 +64,7 @@ class PostmanCollectionTest extends TestCase
 
         $this->collection = json_decode(file_get_contents(self::FILE), true, flags: JSON_THROW_ON_ERROR);
         $this->vars = array_column($this->collection['variable'], 'value', 'key');
-        $this->vars['employee_id'] = (string) $test->id;
+        $this->testEmployeeId = $test->id;
         $this->vars['device_id'] = (string) $device->id;
     }
 
@@ -155,11 +158,11 @@ class PostmanCollectionTest extends TestCase
         $make = function (string $status) {
             $command = DeviceCommand::create([
                 'device_id' => (int) $this->vars['device_id'], 'command' => DeviceCommand::ENROLL_FINGERPRINT,
-                'payload' => ['employee_id' => (int) $this->vars['employee_id'], 'finger_slot' => 6],
+                'payload' => ['employee_id' => $this->testEmployeeId, 'finger_slot' => 6],
                 'status' => DeviceCommand::STATUS_SUCCEEDED, 'max_attempts' => 1,
             ]);
             $session = EnrollmentSession::create([
-                'employee_id' => (int) $this->vars['employee_id'], 'device_id' => (int) $this->vars['device_id'],
+                'employee_id' => $this->testEmployeeId, 'device_id' => (int) $this->vars['device_id'],
                 'device_command_id' => $command->id, 'type' => EnrollmentSession::TYPE_FINGERPRINT,
                 'finger_slot' => 6, 'status' => $status, 'requested_at' => now(), 'timeout_seconds' => 30,
             ]);
@@ -177,5 +180,14 @@ class PostmanCollectionTest extends TestCase
             ->assertJsonPath('data.0.id', $session->id)
             ->assertJsonPath('data.0.device_command_id', $command->id);
         $this->assertNotSame($old->id, $session->id);
+    }
+    /** Owner, 2026-11-02: the collection addresses employees by Personnel ID only. */
+    public function test_no_request_addresses_an_employee_by_row_id(): void
+    {
+        $json = file_get_contents(self::FILE);
+
+        $this->assertStringNotContainsString('{{employee_id}}', $json);
+        $this->assertArrayNotHasKey('employee_id', $this->vars);
+        $this->send('Get employee')->assertOk()->assertJsonPath('data.employee_code', '90110121');
     }
 }

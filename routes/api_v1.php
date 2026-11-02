@@ -60,24 +60,30 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'tenant', 'throttle:integration
     });
 
     // --- Employees.
+    //
+    // Every `{employee}` here is the PERSONNEL ID (`employee_code`), not the row id (owner,
+    // 2026-11-02: "all the apis where you require a employee_id it should be emp_code"). The
+    // row id is ours; the Personnel ID is what an outside system already holds, and it is the
+    // user ID on the terminals. The SPA's own routes keep the row id.
     Route::middleware('abilities:employees:read')->group(function () {
         Route::get('employees', [EmployeeController::class, 'index'])->name('api.v1.employees.index');
         Route::get('employees/next-code', [SpaEmployeeController::class, 'nextCode'])->name('api.v1.employees.next-code');
         // The fixed paths MUST precede `employees/{employee}`.
         Route::get('employees/by-external-id/{externalId}', [EmployeeController::class, 'showByExternalId'])->name('api.v1.employees.show-by-external-id');
-        // Personnel ID (employee_code), 2026-10-22 — its own path: ids and codes are both numbers.
+        // Personnel ID (employee_code), 2026-10-22. Since 2026-11-02 the same as `employees/{code}`,
+        // kept so a caller already using it does not break.
         Route::get('employees/by-code/{code}', [EmployeeController::class, 'showByCode'])->name('api.v1.employees.show-by-code');
-        Route::get('employees/{employee}', [EmployeeController::class, 'show'])->whereNumber('employee')->name('api.v1.employees.show');
+        Route::get('employees/{employee:employee_code}', [EmployeeController::class, 'show'])->whereNumber('employee')->name('api.v1.employees.show');
     });
     Route::middleware('abilities:employees:write')->group(function () {
         Route::post('employees', [EmployeeController::class, 'store'])->name('api.v1.employees.store');
         Route::put('employees/by-external-id/{externalId}', [EmployeeController::class, 'upsert'])->name('api.v1.employees.upsert');
-        Route::match(['put', 'patch'], 'employees/{employee}', [EmployeeController::class, 'update'])->whereNumber('employee')->name('api.v1.employees.update');
+        Route::match(['put', 'patch'], 'employees/{employee:employee_code}', [EmployeeController::class, 'update'])->whereNumber('employee')->name('api.v1.employees.update');
         // Personnel ID, system AND terminals (2026-10-21). Fixed path, before `{employee}`.
         Route::delete('employees/by-code/{code}', [EmployeeController::class, 'destroyByCode'])->name('api.v1.employees.destroy-by-code');
-        Route::delete('employees/{employee}', [EmployeeController::class, 'destroy'])->whereNumber('employee')->name('api.v1.employees.destroy');
-        Route::post('employees/{employee}/photo', [SpaEmployeeController::class, 'uploadPhoto'])->name('api.v1.employees.photo.store');
-        Route::delete('employees/{employee}/photo', [SpaEmployeeController::class, 'removePhoto'])->name('api.v1.employees.photo.destroy');
+        Route::delete('employees/{employee:employee_code}', [EmployeeController::class, 'destroy'])->whereNumber('employee')->name('api.v1.employees.destroy');
+        Route::post('employees/{employee:employee_code}/photo', [SpaEmployeeController::class, 'uploadPhoto'])->name('api.v1.employees.photo.store');
+        Route::delete('employees/{employee:employee_code}/photo', [SpaEmployeeController::class, 'removePhoto'])->name('api.v1.employees.photo.destroy');
     });
 
     // --- Terminals and device work. Everything here is queued: the response is a
@@ -98,26 +104,26 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'tenant', 'throttle:integration
         Route::post('device-commands/{command}/retry', [DeviceSyncController::class, 'retry'])->name('api.v1.device-commands.retry');
         Route::post('device-commands/{command}/cancel', [DeviceSyncController::class, 'cancel'])->name('api.v1.device-commands.cancel');
 
-        Route::post('employees/{employee}/devices/{device}/push', [EmployeeController::class, 'pushToDevice'])->name('api.v1.employees.devices.push');
-        Route::post('employees/{employee}/devices/{device}/remove', [EmployeeController::class, 'removeFromDevice'])->name('api.v1.employees.devices.remove');
+        Route::post('employees/{employee:employee_code}/devices/{device}/push', [EmployeeController::class, 'pushToDevice'])->name('api.v1.employees.devices.push');
+        Route::post('employees/{employee:employee_code}/devices/{device}/remove', [EmployeeController::class, 'removeFromDevice'])->name('api.v1.employees.devices.remove');
 
         // Enrollment: queued, tracked as a session, finishes with an `enrollment.finished` webhook.
-        Route::post('employees/{employee}/devices/{device}/enrollment/fingerprint', [DeviceEnrollmentController::class, 'fingerprint'])->name('api.v1.enrollment.fingerprint');
-        Route::post('employees/{employee}/devices/{device}/enrollment/card', [DeviceEnrollmentController::class, 'card'])->name('api.v1.enrollment.card');
-        Route::delete('employees/{employee}/devices/{device}/enrollment/fingerprints/{slot}', [DeviceEnrollmentController::class, 'deleteFingerprint'])->whereNumber('slot')->name('api.v1.enrollment.fingerprint.destroy');
-        Route::delete('employees/{employee}/devices/{device}/enrollment/card', [DeviceEnrollmentController::class, 'deleteCard'])->name('api.v1.enrollment.card.destroy');
+        Route::post('employees/{employee:employee_code}/devices/{device}/enrollment/fingerprint', [DeviceEnrollmentController::class, 'fingerprint'])->name('api.v1.enrollment.fingerprint');
+        Route::post('employees/{employee:employee_code}/devices/{device}/enrollment/card', [DeviceEnrollmentController::class, 'card'])->name('api.v1.enrollment.card');
+        Route::delete('employees/{employee:employee_code}/devices/{device}/enrollment/fingerprints/{slot}', [DeviceEnrollmentController::class, 'deleteFingerprint'])->whereNumber('slot')->name('api.v1.enrollment.fingerprint.destroy');
+        Route::delete('employees/{employee:employee_code}/devices/{device}/enrollment/card', [DeviceEnrollmentController::class, 'deleteCard'])->name('api.v1.enrollment.card.destroy');
         Route::post('enrollment-sessions/{session}/cancel', [DeviceEnrollmentController::class, 'cancel'])->name('api.v1.enrollment-sessions.cancel');
 
         // SYNCHRONOUS: writes a typed card number and reads it back before answering
         // (the SPA's own endpoint — there is no queued form of it yet). May take seconds
         // and answer 502 if the terminal is unreachable.
-        Route::put('employees/{employee}/devices/{device}/card', [SpaEmployeeController::class, 'assignCard'])->name('api.v1.employees.devices.card.assign');
+        Route::put('employees/{employee:employee_code}/devices/{device}/card', [SpaEmployeeController::class, 'assignCard'])->name('api.v1.employees.devices.card.assign');
     });
 
     // --- Attendance.
     Route::middleware('abilities:attendance:read')->group(function () {
         Route::get('attendance', [AttendanceController::class, 'index'])->name('api.v1.attendance.index');
-        Route::get('employees/{employee}/attendance-summary', [SpaEmployeeController::class, 'attendanceSummary'])->whereNumber('employee')->name('api.v1.employees.attendance-summary');
+        Route::get('employees/{employee:employee_code}/attendance-summary', [SpaEmployeeController::class, 'attendanceSummary'])->whereNumber('employee')->name('api.v1.employees.attendance-summary');
         Route::get('reports/attendance', [ReportController::class, 'attendance'])->name('api.v1.reports.attendance');
     });
 

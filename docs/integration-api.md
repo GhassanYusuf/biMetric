@@ -82,20 +82,25 @@ result. An enrollment's **session** is found from its command (§4).
 
 ## 3. Employees
 
+**Every `{id}` / `{e}` below is the Personnel ID (`employee_code`), not the system's row id**
+(owner, 2026-11-02: an outside system knows the Personnel ID, which is also the user ID on the
+terminals; the row id is internal). Answers still carry both `id` and `employee_code`. Before
+2026-11-02 these paths took the row id; the website's own routes still do.
+
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/employees` | Filters: `search`, `external_id`, `employee_code`, `department_id`, `is_active`, `resigned` (`1` only resigned, `0` none), `employment_type`, `device_id`, `updated_since`. `per_page` ≤ 200. Ordered by `id` — stable while rows are added. |
-| GET | `/employees/{id}` | |
+| GET | `/employees/{code}` | By Personnel ID. |
 | GET | `/employees/by-external-id/{externalId}` | |
-| GET | `/employees/by-code/{code}` | By **Personnel ID** (`employee_code`), the same answer as `/employees/{id}`. Exact match as text (`0099902` ≠ `99902`); `404` if no employee in your company has it. A path of its own because ids and codes are both numbers — `/employees/1000` is always the id. |
+| GET | `/employees/by-code/{code}` | The same as `/employees/{code}` since 2026-11-02 (kept for callers already using it). Exact match as text (`0099902` ≠ `99902`); `404` if no employee in your company has it. |
 | POST | `/employees` | `employee_code` optional — the next free one is allocated. |
 | PUT | `/employees/by-external-id/{externalId}` | **Upsert.** `201` + `meta.created=true` or `200` + `meta.created=false`. The URL's id wins over any `external_id` in the body. |
-| PATCH / PUT | `/employees/{id}` | **Partial** — send only what changed. |
-| DELETE | `/employees/{id}` | Record only, unless `?remove_from_devices=1` — see below. |
+| PATCH / PUT | `/employees/{code}` | **Partial** — send only what changed. |
+| DELETE | `/employees/{code}` | Record only, unless `?remove_from_devices=1` — see below. |
 | DELETE | `/employees/by-code/{code}` | By **Personnel ID** (`employee_code`), from the system **and every terminal** — always, no flag. See below. |
-| POST / DELETE | `/employees/{id}/photo` | multipart `photo`. |
+| POST / DELETE | `/employees/{code}/photo` | multipart `photo`. |
 | GET | `/employees/next-code` | |
-| GET | `/employees/{id}/attendance-summary` | `from`, `to`. |
+| GET | `/employees/{code}/attendance-summary` | `from`, `to`. |
 
 Fields are the web form's (`name`, `employee_code`, `email`, `department_id`, `job_title`,
 `hired_date`, `access_level_ids`, …) plus:
@@ -137,7 +142,7 @@ save.
 
 ### Deleting an employee, and taking them off the terminals
 
-`DELETE /employees/{id}?remove_from_devices=1` answers **202**, not 200:
+`DELETE /employees/{code}?remove_from_devices=1` answers **202**, not 200:
 
 1. A `remove_user` command is queued per terminal they are on.
 2. The employee is made **inactive immediately**.
@@ -153,7 +158,7 @@ If a removal **fails** (after its retries) or a terminal cannot be written to
 again. Without the flag the call just deletes the record and is `200`.
 
 **By Personnel ID — `DELETE /employees/by-code/{code}`** (2026-10-21). The same delete,
-addressed by `employee_code` instead of `id`, and it **always** takes the person off the
+addressed by `employee_code` like every path since 2026-11-02, and it **always** takes the person off the
 terminals: there is no record-only form, because a record-only delete by code is how
 casebook DC-025 left a deleted employee able to punch on three terminals.
 
@@ -187,7 +192,7 @@ differently.
 | DELETE | `/employees/{e}/devices/{d}/enrollment/fingerprints/{slot}` | Delete one finger. **Destructive** — the person must re-enroll it. |
 | DELETE | `/employees/{e}/devices/{d}/enrollment/card` | Clear the card, keep the record and fingers. |
 | PUT | `/employees/{e}/devices/{d}/card` | **Synchronous.** Write a typed `card_number`, read it back. May take seconds; `502` if unreachable. Only endpoint here that holds the request on hardware (no queued form exists yet). |
-| GET | `/enrollment-sessions`, `/enrollment-sessions/{id}` | `devices:read`. Filters: `device_command_id`, `employee_id`, `device_id`, `status`, `active` |
+| GET | `/enrollment-sessions`, `/enrollment-sessions/{id}` | `devices:read`. Filters: `device_command_id`, `employee_code`, `employee_id`, `device_id`, `status`, `active` |
 | POST | `/enrollment-sessions/{id}/cancel` | Releases the terminal. Do this if the person walked away. |
 | GET | `/device-commands`, `/device-commands/{id}` | Poll an outcome. |
 | POST | `/device-commands/{id}/retry`, `/cancel` | |
@@ -229,7 +234,7 @@ second command to a busy terminal waits rather than failing.
 | `after_id` | Return rows with `id` greater than this. **Persist `meta.next_after_id` and send it next time.** |
 | `limit` | ≤ 1000, default 200 |
 | `from`, `to` | punch time bounds (see Time) |
-| `employee_id`, `external_id`, `device_id` | filters. An unknown `external_id` returns nothing, never everyone. |
+| `employee_code`, `employee_id`, `external_id`, `device_id` | filters. An unknown `employee_code` or `external_id` returns nothing, never everyone. |
 | `matched` | `true` = linked to an employee, `false` = unclaimed PINs only |
 
 Oldest first, keyed on the row id: ids only grow, so the cursor never skips or repeats a
@@ -322,7 +327,8 @@ network and the customer's HR system is usually on it.
 
 ## 7. Things an integrator should know
 
-- **PIN vs code vs your id.** Three different numbers: `external_id` is yours;
+- **PIN vs code vs your id.** `employee_code` (Personnel ID) addresses an employee in every
+  URL; `external_id` is yours; the row `id` is internal and never needed;
   `employee_code` is what a terminal keypad types; `device_user_id` is the PIN a particular
   terminal recorded. Do not assume the last two match across terminals.
 - **Not every terminal can do everything.** Two of this estate's six are C3 panels that

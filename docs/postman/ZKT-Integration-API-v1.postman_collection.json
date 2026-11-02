@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "ZKT Integration API v1",
-        "description": "The Integration API (`/api/v1`) for other software: HR, payroll, access control. Contract: `docs/integration-api.md` in the repository.\n\nGenerated 2026-11-02 by `tools/postman/integration-collection.php`. Every live `/api/v1` route is here; the generator refuses to run if one is missing.\n\n**Setup**\n1. Collection → Variables: set `base_url`, and `email` / `password` for signing in (or paste a token into `token`).\n2. Run **0. Start here → Sign in**: the token is saved for every other request.\n3. Ids are variables (`employee_id`, `device_id`, …). Requests that create something save its id for the next request.\n\n**Conventions**\n- Envelope: `{success, message, data, meta, errors}`. `401` no/bad token, `403` missing ability or permission, `404` not found, `422` validation (reason per field in `errors`), `429` rate limit (120/min per token).\n- Times are UTC ISO-8601.\n- Anything that touches a terminal answers `202` with a command or session: **queued, not done**. Poll it.\n- Writes accept an optional `Idempotency-Key` header (disabled by default in each request).\n\n⚠ **This is a live system.** Requests marked *Talks to a real terminal* write to real hardware. Default ids point at the test employee (1829, Personnel ID 90110121) and IT ROOM (15).",
+        "description": "The Integration API (`/api/v1`) for other software: HR, payroll, access control. Contract: `docs/integration-api.md` in the repository.\n\nGenerated 2026-11-02 by `tools/postman/integration-collection.php`. Every live `/api/v1` route is here; the generator refuses to run if one is missing.\n\n**Setup**\n1. Collection → Variables: set `base_url`, and `email` / `password` for signing in (or paste a token into `token`).\n2. Run **0. Start here → Sign in**: the token is saved for every other request.\n3. Ids are variables (`employee_code` = Personnel ID, `device_id`, …). Requests that create something save its id for the next request.\n\n**Conventions**\n- Envelope: `{success, message, data, meta, errors}`. `401` no/bad token, `403` missing ability or permission, `404` not found, `422` validation (reason per field in `errors`), `429` rate limit (120/min per token).\n- Times are UTC ISO-8601.\n- Anything that touches a terminal answers `202` with a command or session: **queued, not done**. Poll it.\n- Writes accept an optional `Idempotency-Key` header (disabled by default in each request).\n\n⚠ **This is a live system.** Requests marked *Talks to a real terminal* write to real hardware. Default ids point at the test employee (Personnel ID 90110121) and IT ROOM (15).",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "auth": {
@@ -48,11 +48,6 @@
             "key": "token",
             "value": "",
             "description": "Set by Sign in, or paste an integration token."
-        },
-        {
-            "key": "employee_id",
-            "value": "1829",
-            "description": "This system's id (the test employee)."
         },
         {
             "key": "employee_code",
@@ -241,7 +236,7 @@
         },
         {
             "name": "1. Employees",
-            "description": "Create, read, change and delete employees.\n\nThree different numbers: `id` (this system's row id, used in URLs), `employee_code` (Personnel ID, also the user ID on terminals) and `external_id` (yours).\n\nEvery response uses the envelope `{success, message, data, meta, errors}`. `422` = validation, with the reason per field in `errors`.",
+            "description": "Create, read, change and delete employees.\n\n**Every employee URL takes the Personnel ID** (`employee_code`, e.g. 90110121), which is also the user ID on the terminals. Answers still show the system's own `id` beside it; you never need it. `external_id` is your system's id, if you keep one.\n\nEvery response uses the envelope `{success, message, data, meta, errors}`. `422` = validation, with the reason per field in `errors`.",
             "item": [
                 {
                     "name": "List employees",
@@ -331,7 +326,7 @@
                             ],
                             "query": []
                         },
-                        "description": "Creates one employee. **Answer:** `201` with the employee; its `id` is saved to `{{employee_id}}`.\n\nThe example body passes validation as it is. It uses `{{new_employee_code}}` and `{{new_external_id}}`; change them before a second run, since both must be unique. Afterwards `{{employee_id}}` and `{{employee_code}}` point at the new employee.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Lowercase. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `department_id` | integer | no | A company or a department from `GET /departments` (e.g. 4 = PROMOSEVEN). Must exist. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `department_id`).",
+                        "description": "Creates one employee. **Answer:** `201` with the employee; its Personnel ID is saved to `{{employee_code}}`, so the next requests address the new employee.\n\nThe example body passes validation as it is. It uses `{{new_employee_code}}` and `{{new_external_id}}`; change them before a second run, since both must be unique.\n\n**Body fields**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `name` | string ≤255 | yes | First name(s). On POST only; on PUT/PATCH send only what changes. |\n| `last_name` | string ≤255 | no |  |\n| `employee_code` | string, digits, 1–9 | no | Personnel ID (CPR). Leave out and the next free one is allocated. Unique per company. Becomes the user ID on terminals. |\n| `external_id` | **string** ≤128 | no | YOUR system's id for the person. Must be text: `\"1\"`, not `1`. Unique per company. Never sent to a terminal. |\n| `gender` | `male` \\| `female` | no | Lowercase. |\n| `birthday` | date `YYYY-MM-DD` | no | Before today. |\n| `email` | email | no |  |\n| `mobile_phone` | string ≤32 | no | Digits, spaces, `()` and `-`, optional leading `+`. The website stores `\"+973 33445566\"`. |\n| `home_phone` | string ≤32 | no | As mobile_phone. |\n| `department_id` | integer | no | A company or a department from `GET /departments` (e.g. 4 = PROMOSEVEN). Must exist. |\n| `job_title` | string ≤255 | no |  |\n| `hired_date` | date | no |  |\n| `employment_type` | `full_time` \\| `part_time` | no | Default `full_time`. Do not send `\"\"`. |\n| `resigned_at` | date, today or earlier | no | **Setting it makes them inactive and queues their removal from every terminal.** Leave out for a current employee; `null` to clear. |\n| `privilege` | `user` \\| `enroller` \\| `admin` \\| `superadmin` | no | Role on terminals. Leave out for a normal user. |\n| `device_password` | string, 1–8 digits | no | Keypad password on terminals. Write-only: never returned. |\n| `card_number` | integer 0–4294967295 | no | Stored; reaches a terminal only through a push. |\n| `access_level_ids` | array of integers | no | From `GET /access-levels`. Send `[]` for none, never `\"\"`. |\n| `multi_card_group_id` | integer | no | Must exist; leave out when not used. |\n| `valid_period_enabled` | boolean | no | When true, both dates below are required and **to must be after from**. |\n| `access_valid_from` | date | no |  |\n| `access_valid_to` | date | no | After access_valid_from. |\n| `office, education, country, city, postal_code, political_status, race` | string | no | Free text. `country` is the English name, e.g. `\"Bahrain\"`. |\n| `home_address, work_address` | string ≤500 | no |  |\n| `is_active` | boolean | no |  |\n| `push_to_device_ids` | array of integers | no | After saving, queue the person onto these terminals (`meta.device_commands` / `meta.skipped_devices`). ⚠ real terminals. |\n| `push_to_mapped_devices` | boolean | no | Update only: re-push to every terminal they are on now. |\n\n\nNot accepted here: `photo` (use **Upload photo**, multipart) and the old text field `department` (use `department_id`).",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n    \"name\": \"API\",\n    \"last_name\": \"Test\",\n    \"employee_code\": \"{{new_employee_code}}\",\n    \"external_id\": \"{{new_external_id}}\",\n    \"gender\": \"male\",\n    \"birthday\": \"1990-01-15\",\n    \"email\": \"api.test@example.com\",\n    \"mobile_phone\": \"+973 17000000\",\n    \"department_id\": 4,\n    \"job_title\": \"Test\",\n    \"hired_date\": \"2026-11-01\",\n    \"employment_type\": \"full_time\",\n    \"country\": \"Bahrain\",\n    \"access_level_ids\": [],\n    \"valid_period_enabled\": false\n}",
@@ -349,7 +344,6 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "const j = pm.response.json();",
-                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('employee_id', String(j.data.id)); }",
                                     "if (j && j.data && j.data.employee_code !== undefined && j.data.employee_code !== null) { pm.collectionVariables.set('employee_code', String(j.data.employee_code)); }"
                                 ]
                             }
@@ -357,7 +351,7 @@
                     ]
                 },
                 {
-                    "name": "Get employee by id",
+                    "name": "Get employee",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -367,7 +361,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -375,7 +369,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}"
+                                "{{employee_code}}"
                             ],
                             "query": []
                         },
@@ -383,7 +377,7 @@
                     }
                 },
                 {
-                    "name": "Get employee by Personnel ID",
+                    "name": "Get employee (old by-code path)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -488,7 +482,7 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "const j = pm.response.json();",
-                                    "if (j && j.data && j.data.id !== undefined && j.data.id !== null) { pm.collectionVariables.set('employee_id', String(j.data.id)); }"
+                                    "if (j && j.data && j.data.employee_code !== undefined && j.data.employee_code !== null) { pm.collectionVariables.set('employee_code', String(j.data.employee_code)); }"
                                 ]
                             }
                         }
@@ -515,7 +509,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -523,7 +517,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}"
+                                "{{employee_code}}"
                             ],
                             "query": []
                         },
@@ -582,7 +576,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/photo",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/photo",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -590,7 +584,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "photo"
                             ],
                             "query": []
@@ -626,7 +620,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/photo",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/photo",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -634,7 +628,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "photo"
                             ],
                             "query": []
@@ -653,7 +647,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/attendance-summary?from=2026-10-01&to=2026-10-31",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/attendance-summary?from=2026-10-01&to=2026-10-31",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -661,7 +655,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "attendance-summary"
                             ],
                             "query": [
@@ -699,7 +693,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}?remove_from_devices=1",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}?remove_from_devices=1",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -707,7 +701,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}"
+                                "{{employee_code}}"
                             ],
                             "query": [
                                 {
@@ -828,7 +822,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/push",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/devices/{{device_id}}/push",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -836,7 +830,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "devices",
                                 "{{device_id}}",
                                 "push"
@@ -875,7 +869,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/remove",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/devices/{{device_id}}/remove",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -883,7 +877,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "devices",
                                 "{{device_id}}",
                                 "remove"
@@ -926,7 +920,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/card",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/devices/{{device_id}}/card",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -934,7 +928,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "devices",
                                 "{{device_id}}",
                                 "card"
@@ -980,7 +974,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/fingerprint",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/devices/{{device_id}}/enrollment/fingerprint",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -988,7 +982,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "devices",
                                 "{{device_id}}",
                                 "enrollment",
@@ -1037,7 +1031,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/card",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/devices/{{device_id}}/enrollment/card",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -1045,7 +1039,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "devices",
                                 "{{device_id}}",
                                 "enrollment",
@@ -1096,14 +1090,14 @@
                                     "description": "from Start enrollment"
                                 },
                                 {
-                                    "key": "employee_id",
-                                    "value": "{{employee_id}}",
+                                    "key": "employee_code",
+                                    "value": "{{employee_code}}",
                                     "disabled": true,
                                     "description": ""
                                 }
                             ]
                         },
-                        "description": "The session started by `{{command_id}}`, saved to `{{session_id}}`. **Run this after Start fingerprint/card enrollment, until `status` is final**: `success`, `timeout`, `failed` or `cancelled`. An empty `data` list = the command has not run yet: wait a second and send again.\n\nWithout `device_command_id` (untick it) it lists recent sessions.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `device_command_id` | integer | no | The command an enrollment start answered with. |\n| `employee_id` | integer | no |  |\n| `device_id` | integer | no |  |\n| `status` | string | no | `pending` `sent` `waiting` `success` `timeout` `failed` `cancelled` |\n| `active` | boolean | no | Only sessions still waiting. |\n"
+                        "description": "The session started by `{{command_id}}`, saved to `{{session_id}}`. **Run this after Start fingerprint/card enrollment, until `status` is final**: `success`, `timeout`, `failed` or `cancelled`. An empty `data` list = the command has not run yet: wait a second and send again.\n\nWithout `device_command_id` (untick it) it lists recent sessions.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `device_command_id` | integer | no | The command an enrollment start answered with. |\n| `employee_code` | string | no | Personnel ID. |\n| `device_id` | integer | no |  |\n| `status` | string | no | `pending` `sent` `waiting` `success` `timeout` `failed` `cancelled` |\n| `active` | boolean | no | Only sessions still waiting. |\n"
                     },
                     "event": [
                         {
@@ -1194,7 +1188,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/fingerprints/{{finger_slot}}",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/devices/{{device_id}}/enrollment/fingerprints/{{finger_slot}}",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -1202,7 +1196,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "devices",
                                 "{{device_id}}",
                                 "enrollment",
@@ -1231,7 +1225,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/v1/employees/{{employee_id}}/devices/{{device_id}}/enrollment/card",
+                            "raw": "{{base_url}}/api/v1/employees/{{employee_code}}/devices/{{device_id}}/enrollment/card",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -1239,7 +1233,7 @@
                                 "api",
                                 "v1",
                                 "employees",
-                                "{{employee_id}}",
+                                "{{employee_code}}",
                                 "devices",
                                 "{{device_id}}",
                                 "enrollment",
@@ -1554,10 +1548,10 @@
                                     "description": "≤ 1000"
                                 },
                                 {
-                                    "key": "employee_id",
-                                    "value": "{{employee_id}}",
+                                    "key": "employee_code",
+                                    "value": "{{employee_code}}",
                                     "disabled": true,
-                                    "description": ""
+                                    "description": "Personnel ID"
                                 },
                                 {
                                     "key": "from",
@@ -1567,7 +1561,7 @@
                                 }
                             ]
                         },
-                        "description": "A **feed**, oldest first, keyed on the row `id`. Store `meta.next_after_id` and send it as `after_id` next time: you get every new punch exactly once, including punches synced late. `meta.has_more` = call again.\n\nA punch by a terminal user linked to no employee has `employee_id: null` and still appears, with `device_user_id`.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `after_id` | integer | no | Rows with a greater id. Start at 0. |\n| `limit` | integer ≤1000 | no | Default 200. |\n| `from` | date or UTC timestamp | no |  |\n| `to` | date or UTC timestamp | no |  |\n| `employee_id` | integer | no |  |\n| `external_id` | string | no | Unknown id returns nothing, never everyone. |\n| `device_id` | integer | no |  |\n| `matched` | boolean | no | `true` linked to an employee, `false` unlinked only. |\n"
+                        "description": "A **feed**, oldest first, keyed on the row `id`. Store `meta.next_after_id` and send it as `after_id` next time: you get every new punch exactly once, including punches synced late. `meta.has_more` = call again.\n\nA punch by a terminal user linked to no employee has `employee_id: null` and still appears, with `device_user_id`.\n\n**Query parameters**\n\n| Field | Type | Required | Notes |\n|---|---|---|---|\n| `after_id` | integer | no | Rows with a greater id. Start at 0. |\n| `limit` | integer ≤1000 | no | Default 200. |\n| `from` | date or UTC timestamp | no |  |\n| `to` | date or UTC timestamp | no |  |\n| `employee_code` | string | no | Personnel ID. Unknown code returns nothing, never everyone. |\n| `external_id` | string | no | Unknown id returns nothing, never everyone. |\n| `device_id` | integer | no |  |\n| `matched` | boolean | no | `true` linked to an employee, `false` unlinked only. |\n"
                     }
                 },
                 {

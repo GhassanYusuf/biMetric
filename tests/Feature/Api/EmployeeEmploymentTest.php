@@ -168,7 +168,7 @@ class EmployeeEmploymentTest extends TestCase
         EmployeeDeviceMap::create(['employee_id' => $e->id, 'device_id' => $device->id, 'device_user_id' => '12']);
         Tenancy::clear();
 
-        $res = $this->as(['employees:write'])->patchJson("/api/v1/employees/{$e->id}", [
+        $res = $this->as(['employees:write'])->patchJson("/api/v1/employees/{$e->employee_code}", [
             'resigned_at' => '2026-10-01',
             // Ignored: a resignation takes them off, it does not put them on.
             'push_to_device_ids' => [$device->id],
@@ -188,7 +188,7 @@ class EmployeeEmploymentTest extends TestCase
         $this->assertNotNull(Employee::withoutGlobalScopes()->find($e->id), 'a resignation keeps the record');
 
         // A second save of an already-resigned employee queues nothing more.
-        $this->as(['employees:write'])->patchJson("/api/v1/employees/{$e->id}", ['job_title' => 'Ex-clerk'])
+        $this->as(['employees:write'])->patchJson("/api/v1/employees/{$e->employee_code}", ['job_title' => 'Ex-clerk'])
             ->assertOk()->assertJsonCount(0, 'meta.device_commands');
     }
 

@@ -432,19 +432,17 @@ employee 1829, Personnel ID 90110121, command 18967). A new Postman collection w
 bodies: `docs/postman/` (generator `tools/postman/integration-collection.php`). Fingerprint
 enrollment over the API is next. The old generated collection (`/root/ZKT-attendance-API…`,
 2026-10-20, website routes mixed in, invalid placeholder bodies) should no longer be used.
-**API changes the owner asked for (2026-11-02), not built yet:**
-1. **Every v1 endpoint that needs an employee takes the Personnel ID (`employee_code`),
-   not the system's `employee_id`.** Owner: "all the apis where you require a employee_id
-   it should be emp_code". Why: `employee_id` (e.g. 1829) is an internal row number another
-   system has no way of knowing; the Personnel ID (CPR, e.g. 90110121) is what both sides
-   already share, and it is also the user ID on the terminals. Today only
-   `GET`/`DELETE /employees/by-code/{code}` take it. Applies to the path (`/employees/{id}/…`:
-   update, photo, attendance summary, push, remove, card, enrollment, fingerprint delete)
-   and to the filters (`employee_id` on `/attendance`, `/enrollment-sessions`). Design to
-   settle before building: the v1 docs promise "`/employees/1000` is always the id", so
-   either the employee routes switch to the code (a breaking change, acceptable only while
-   no outside system uses v1 yet: confirm with the owner) or each gets a `/by-code/{code}/…`
-   twin. Responses keep `id` and `employee_code` both.
+**API changes the owner asked for (2026-11-02):**
+1. **DONE 2026-11-02: every v1 endpoint that needs an employee takes the Personnel ID
+   (`employee_code`), not the system's row id.** Owner: "all the apis where you require a
+   employee_id it should be emp_code". Why: the row id (e.g. 1829) is internal and another
+   system cannot know it; the Personnel ID (e.g. 90110121) is what both sides share, and it is
+   the user ID on the terminals. Done as a switch, not twins (option A), because no outside
+   system used v1 yet (owner, 2026-11-02): `routes/api_v1.php` binds `{employee:employee_code}`
+   on all 13 employee routes; `/attendance` and `/enrollment-sessions` gained an
+   `employee_code` filter; `/employees/by-code/{code}` kept as an alias. The website's own
+   routes still take the row id. Tests: `IntegrationApiTest`
+   (`test_an_employee_url_takes_the_personnel_id_never_the_row_id`), `PostmanCollectionTest`.
 2. Every id in a response is a number (some come back as text: `"employee_id": "1829"`).
 3. Accept `"Male"` / `"MALE"` as well as `"male"` for `gender`.
 

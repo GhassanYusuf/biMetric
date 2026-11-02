@@ -38,6 +38,8 @@ class AttendanceController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'employee_id' => ['nullable', 'integer'],
+            // The Personnel ID: what an outside system holds (owner, 2026-11-02).
+            'employee_code' => ['nullable', 'string', 'max:255'],
             'external_id' => ['nullable', 'string', 'max:128'],
             'device_id' => ['nullable', 'integer'],
             'matched' => ['nullable', 'boolean'],
@@ -46,6 +48,10 @@ class AttendanceController extends Controller
         $limit = (int) ($f['limit'] ?? 200);
 
         $employeeId = $f['employee_id'] ?? null;
+        if (isset($f['employee_code'])) {
+            // As external_id: an unknown code matches nothing, never everyone.
+            $employeeId = Employee::query()->where('employee_code', $f['employee_code'])->value('id') ?? 0;
+        }
         if (isset($f['external_id'])) {
             // An unknown external id matches nothing; it must not widen to everyone.
             $employeeId = Employee::query()->where('external_id', $f['external_id'])->value('id') ?? 0;

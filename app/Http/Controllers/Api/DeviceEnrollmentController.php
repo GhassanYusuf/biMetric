@@ -40,6 +40,8 @@ class DeviceEnrollmentController extends Controller
 
         $request->validate([
             'employee_id' => ['nullable', 'integer'],
+            // The Personnel ID, for the integration API (owner, 2026-11-02).
+            'employee_code' => ['nullable', 'string', 'max:255'],
             'device_id' => ['nullable', 'integer'],
             // Starting an enrollment answers with its COMMAND; the session is created when the
             // command runs, a moment later. This finds it (2026-11-02, Postman testing).
@@ -52,6 +54,7 @@ class DeviceEnrollmentController extends Controller
         $sessions = EnrollmentSession::query()
             ->with(['employee:id,name,employee_code', 'device:id,name'])
             ->when($request->filled('employee_id'), fn ($q) => $q->where('employee_id', $request->integer('employee_id')))
+            ->when($request->filled('employee_code'), fn ($q) => $q->whereHas('employee', fn ($e) => $e->where('employee_code', $request->string('employee_code'))))
             ->when($request->filled('device_id'), fn ($q) => $q->where('device_id', $request->integer('device_id')))
             ->when($request->filled('device_command_id'), fn ($q) => $q->where('device_command_id', $request->integer('device_command_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))

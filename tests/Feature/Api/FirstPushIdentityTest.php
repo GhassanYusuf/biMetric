@@ -88,7 +88,7 @@ class FirstPushIdentityTest extends TestCase
         Queue::fake();
         $e = $this->employee('Test', '90110121');
 
-        $this->as()->postJson("/api/v1/employees/{$e->id}/devices/{$this->device->id}/push")
+        $this->as()->postJson("/api/v1/employees/{$e->employee_code}/devices/{$this->device->id}/push")
             ->assertStatus(202)
             ->assertJsonPath('data.command', DeviceCommand::PUSH_USER);
 
@@ -99,7 +99,7 @@ class FirstPushIdentityTest extends TestCase
     {
         Queue::fake();
         $holder = $this->employee('Holder', '555');
-        $this->as()->postJson("/api/v1/employees/{$holder->id}/devices/{$this->device->id}/push")->assertStatus(202);
+        $this->as()->postJson("/api/v1/employees/{$holder->employee_code}/devices/{$this->device->id}/push")->assertStatus(202);
 
         // Same digits in a free-text code is impossible (unique per company), so take it over
         // through the terminal: a second person whose code is already somebody's user ID there.
@@ -108,7 +108,7 @@ class FirstPushIdentityTest extends TestCase
         Tenancy::clear();
         $e = $this->employee('Second', '777');
 
-        $this->as()->postJson("/api/v1/employees/{$e->id}/devices/{$this->device->id}/push")->assertStatus(202);
+        $this->as()->postJson("/api/v1/employees/{$e->employee_code}/devices/{$this->device->id}/push")->assertStatus(202);
 
         $this->assertNotNull($this->pin($e));
         $this->assertNotSame('777', $this->pin($e));
@@ -119,8 +119,8 @@ class FirstPushIdentityTest extends TestCase
         Queue::fake();
         $e = $this->employee('Test', '90110121');
 
-        $this->as()->postJson("/api/v1/employees/{$e->id}/devices/{$this->device->id}/push")->assertStatus(202);
-        $this->as()->postJson("/api/v1/employees/{$e->id}/devices/{$this->device->id}/push")->assertStatus(202);
+        $this->as()->postJson("/api/v1/employees/{$e->employee_code}/devices/{$this->device->id}/push")->assertStatus(202);
+        $this->as()->postJson("/api/v1/employees/{$e->employee_code}/devices/{$this->device->id}/push")->assertStatus(202);
 
         $this->assertSame(1, EmployeeDeviceMap::withoutGlobalScopes()->where('employee_id', $e->id)->count());
     }

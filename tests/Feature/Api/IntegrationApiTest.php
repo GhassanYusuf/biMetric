@@ -143,7 +143,14 @@ class IntegrationApiTest extends TestCase
         $rows = $this->as(['employees:read'])->getJson('/api/v1/employees')->assertOk()->json('data');
         $this->assertSame(['Mine'], array_column($rows, 'name'));
 
-        $this->as(['employees:read'])->getJson('/api/v1/employees/'.$theirs->id)->assertNotFound();
+        // Their Personnel ID, which my company does not use: theirs must not answer.
+        Tenancy::set($other->id);
+        Employee::create(['name' => 'Theirs only', 'employee_code' => '7']);
+        Tenancy::clear();
+        $this->as(['employees:read'])->getJson('/api/v1/employees/7')->assertNotFound();
+        // The code both companies use answers with mine.
+        $this->as(['employees:read'])->getJson('/api/v1/employees/'.$theirs->employee_code)
+            ->assertOk()->assertJsonPath('data.name', 'Mine');
     }
 
     // ------------------------------------------------------------------ employees
@@ -187,7 +194,7 @@ class IntegrationApiTest extends TestCase
     {
         $e = $this->employee('Lina', '5', ['email' => 'lina@x.test']);
 
-        $this->as(['employees:write'])->patchJson('/api/v1/employees/'.$e->id, ['job_title' => 'Nurse'])
+        $this->as(['employees:write'])->patchJson('/api/v1/employees/'.$e->employee_code, ['job_title' => 'Nurse'])
             ->assertOk()
             ->assertJsonPath('data.name', 'Lina')
             ->assertJsonPath('data.email', 'lina@x.test')
@@ -243,7 +250,7 @@ class IntegrationApiTest extends TestCase
         Queue::fake();
         $e = $this->employee('Gone', '9');
 
-        $this->as(['employees:write'])->deleteJson('/api/v1/employees/'.$e->id)
+        $this->as(['employees:write'])->deleteJson('/api/v1/employees/'.$e->employee_code)
             ->assertOk()->assertJsonPath('meta.deleted', true);
 
         $this->assertNull(Employee::withoutGlobalScopes()->find($e->id));
@@ -260,7 +267,7 @@ class IntegrationApiTest extends TestCase
         EmployeeDeviceMap::create(['employee_id' => $e->id, 'device_id' => $device->id, 'device_user_id' => '12']);
         Tenancy::clear();
 
-        $res = $this->as(['employees:write'])->deleteJson('/api/v1/employees/'.$e->id.'?remove_from_devices=1');
+        $res = $this->as(['employees:write'])->deleteJson('/api/v1/employees/'.$e->employee_code.'?remove_from_devices=1');
 
         if ($device->fresh()->userWriteRefusal()) {
             // This fixture's terminal is not writable here: honest outcome is "kept, inactive".
@@ -359,14 +366,21 @@ class IntegrationApiTest extends TestCase
      * Why it is its own path: an id and another person's Personnel ID can be the same
      * number. by-code must return the person whose CODE it is, never the one whose id.
      */
-    public function test_by_code_never_returns_the_employee_whose_id_is_that_number(): void
+    /**
+     * Owner, 2026-11-02: every v1 employee URL takes the Personnel ID. A number that is one
+     * employee's row id and another's Personnel ID addresses the Personnel ID's holder, on
+     * the plain path and on by-code alike.
+     */
+    public function test_an_employee_url_takes_the_personnel_id_never_the_row_id(): void
     {
-        $first = $this->employee('First', 'A-1');
+        $first = $this->employee('First', '9001');
         $other = $this->employee('Other', (string) $first->id);
 
         $this->as(['employees:read'])->getJson("/api/v1/employees/by-code/{$first->id}")
             ->assertOk()->assertJsonPath('data.id', $other->id);
         $this->as(['employees:read'])->getJson("/api/v1/employees/{$first->id}")
+            ->assertOk()->assertJsonPath('data.id', $other->id);
+        $this->as(['employees:read'])->getJson('/api/v1/employees/9001')
             ->assertOk()->assertJsonPath('data.id', $first->id);
     }
 
@@ -402,7 +416,7 @@ class IntegrationApiTest extends TestCase
         EmployeeDeviceMap::create(['employee_id' => $e->id, 'device_id' => $device->id, 'device_user_id' => '13']);
         Tenancy::clear();
 
-        $this->as(['employees:write'])->deleteJson('/api/v1/employees/'.$e->id.'?remove_from_devices=1')->assertStatus(202);
+        $this->as(['employees:write'])->deleteJson('/api/v1/employees/'.$e->employee_code.'?remove_from_devices=1')->assertStatus(202);
 
         Tenancy::set($this->tenant->id);
         $command = DeviceCommand::query()->first();
@@ -441,6 +455,12 @@ class IntegrationApiTest extends TestCase
 
         // An unknown external id matches nothing; it must not widen to everyone.
         $this->as(['attendance:read'])->getJson('/api/v1/attendance?external_id=nope')->assertJsonCount(0, 'data');
+
+        // By Personnel ID (owner, 2026-11-02), with the same rule for an unknown one.
+        $this->employee('Other', '4');
+        $this->as(['attendance:read'])->getJson('/api/v1/attendance?employee_code=3')->assertJsonCount(3, 'data');
+        $this->as(['attendance:read'])->getJson('/api/v1/attendance?employee_code=4')->assertJsonCount(0, 'data');
+        $this->as(['attendance:read'])->getJson('/api/v1/attendance?employee_code=999')->assertJsonCount(0, 'data');
     }
 
     // ---------------------------------------------------------------- idempotency
