@@ -447,14 +447,15 @@ enrollment over the API is next. The old generated collection (`/root/ZKT-attend
    v1 group; SQL Server returns bigints as text). v1 only: the website's screens were written
    against the text ids and cannot be re-checked in a browser from here.
 3. **DONE 2026-11-02:** `gender` accepted in any capitalisation in v1 (stored lowercase).
-4. **Company and department, owner 2026-11-02: option 1 DONE and live; option 2 BUILT on
-   branch `companies` (worktree `/var/www/zkt-companies`), NOT DEPLOYED, see
-   `docs/plan-companies-table.md` for status and the cut-over.** Owner:
+4. **Company and department, owner 2026-11-02: DONE and LIVE.** Option 1 (the API) then
+   option 2, a real `companies` table, cut over 2026-11-02 ~16:15 UTC with a verified backup
+   and 0 differences across 217 employees. Details, decisions and evidence:
+   `docs/plan-companies-table.md`. Owner still to click through the screens. Owner:
    the company "is represented as department_id in the backend and api and db, can we change
    that to be company, department?". Option 1 (API + a view, storage unchanged, low risk):
    v1 takes and returns `company_id` and `department_id` as separate fields
    (`App\Http\Requests\Api\V1\CompanyDepartmentFields`, `App\Http\Resources\V1\EmployeeResource`),
-   `/departments` says `is_company` / `company_id`, and the SQL view `v_employee_company`
+   (superseded the same day by option 2: `/companies` and `/departments` apart), and the SQL view `v_employee_company`
    (migration `2026_11_02_100000`, run on production by the owner 2026-11-02: 217 rows for 217
    employees, Camelot 14). Option 2, a real `companies` table with
    `employees.company_id`, is the owner's next step (plan: `docs/plan-companies-table.md`): about 30 backend files, 36 website

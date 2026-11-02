@@ -1,8 +1,15 @@
 # Plan: a real `companies` table (option 2)
 
-**Status: BUILT AND REHEARSED, NOT DEPLOYED (2026-11-03).** Branch `companies` (`0cc2b7a`,
-pushed), worktree `/var/www/zkt-companies`; 795 tests pass, the website builds. Live production
-is still `main`, untouched. Next: the cut-over with the owner, at a time the owner picks.
+**Status: LIVE since 2026-11-02 ~16:15 UTC (cut-over with the owner).** `main` = `f5a0c24`.
+Backup taken first and verified (`NewAttendance-before-companies.bak`, 38,625 pages, 16:07 UTC,
+"valid"); JSON snapshot `storage/app/companies-before-cutover-2026-11-02.json` (19 rows, 217
+employees). The owner ran merge + migrate + build + queue:restart as one command (the
+assistant's session is refused production changes). Migration 0.22 s, its own check passed;
+compared after with the snapshot: **217 employees, 0 differences**; 11 companies, 8
+departments, no `parent_id`; Camelot 14, PROMOSEVEN 117, no company 12. `/api/companies`,
+`/api/v1/companies`, `/api/departments` answer. Still to do: the owner clicks through the
+screens (list below in the cut-over section); drop `NewAttendance_rehearsal`; remove the
+worktree `/var/www/zkt-companies`.
 
 **Rehearsal, 2026-11-03, on SQL Server:** the owner restored this morning's backup as
 `NewAttendance_rehearsal` on 192.168.7.8 (DBeaver, `RESTORE … WITH MOVE`); the migration ran
