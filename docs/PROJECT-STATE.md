@@ -455,7 +455,7 @@ enrollment over the API is next. The old generated collection (`/root/ZKT-attend
    `/departments` says `is_company` / `company_id`, and the SQL view `v_employee_company`
    (migration `2026_11_02_100000`, run on production by the owner 2026-11-02: 217 rows for 217
    employees, Camelot 14). Option 2, a real `companies` table with
-   `employees.company_id`, is the owner's next step: about 30 backend files, 36 website
+   `employees.company_id`, is the owner's next step (plan: `docs/plan-companies-table.md`): about 30 backend files, 36 website
    files, 10 tests, and a live data migration (11 companies, every employee re-linked), with a
    backup and a before/after check of every employee's company. Plan it before building.
    The tenant "Default Company" is a separate, higher level and does not conflict; renaming
