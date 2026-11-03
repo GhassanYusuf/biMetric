@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-11-02**
+**Last updated: 2026-11-03**
 
 ---
 
@@ -78,6 +78,30 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 ---
 
 ## Where we stopped
+
+### Open at the end of 2026-11-03 (resume here)
+
+Everything below is committed; `7da1d96` (DC-040) was committed locally and may still need
+`git push origin main`. Owner owes the answers marked **(owner)**.
+
+1. **DC-040, clocks (owner):** at 05:00 Bahrain on 2026-11-03, IT ROOM, On The Road,
+   Entrance and Glass Door were all ~11 min 20 s slow (set by something on the LAN?). Is any
+   other software (ZKAccess, ZKBioTime) syncing terminal clocks? Check the 05:00 job of
+   2026-11-04 for the same offset.
+2. **City Center Hotel (owner):** device #20 at 192.168.21.254, added 2026-11-03, never
+   answered (other subnet). How is it reached (VPN, other office)?
+3. **Duplicates to merge (owner's yes):** Ghassan (#1830 JJs record ↔ #1429) and Ragesh
+   (#1840 ↔ #1416), same cards.
+4. **Merge leaves the folded record's users on the terminals (owner's yes):** the cause of
+   DC-038; proposal: the merge removes them (fingerprints saved first).
+5. **PROMOSEVEN Personnel IDs:** 65 people still have a short terminal number as Personnel
+   ID; export for HR at `draft/PROMOSEVEN-personnel-id-still-terminal-id-2026-11-03.xlsx`
+   (CPR column to fill). 57 of them have 0 punches and are only on the door panels, which
+   hold ~17,000 punches with an empty user ID (worth a look).
+6. **Clean-up:** drop `NewAttendance_rehearsal` on 192.168.7.8 (owner, DBeaver); remove the
+   worktree `/var/www/zkt-companies`; owner to click through the screens after the companies
+   switch-over (`docs/plan-companies-table.md`).
+7. Ideas offered, not asked for yet: write the full name (first + last) to terminals.
 
 ### Camelot reads only straight after a restart — DC-036 WORKAROUND (2026-10-29)
 
@@ -894,6 +918,22 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-11-02 / 2026-11-03 — Integration API polished; a real companies table; door-panel fixes
+
+- **API:** employees addressed by Personnel ID in every v1 URL; company/department as two
+  fields; ids numeric; gender any case; push gives a new employee a user ID first; enrollment
+  session found by its command; Postman collection generated and tested
+  (`docs/postman/`, `tools/postman/integration-collection.php`).
+- **Companies table (option 2) LIVE** 2026-11-02 ~13:15 UTC after a verified backup and a
+  SQL Server rehearsal: 0 differences across 217 employees (`docs/plan-companies-table.md`).
+- **New terminal JJs** (F18/ID, 87.237.196.6) imported, 157 people into JJ'S, 255 fingerprints
+  stored (DC-037). Import staff now reads the roster itself and copies fingerprints after.
+- **Employees page:** Move terminal to company; Delete asks what to delete (record only /
+  resign / everywhere); highlight people with no punches; the tree counts current staff.
+- **Door panels:** Suji's duplicate removed and moved to his CPR (DC-038, library 2.22.0
+  "Free this number" on panel refusals); Troy re-added after being removed outside the system
+  (DC-039, a gone user is added back, not moved). Clock finding DC-040.
+
 ### 2026-10-27 — Bahrain ID card (CPR) reading: the reader works on Ubuntu through a Windows VM
 
 New feature in flight, **with the owner's colleague** (who built the browser kit on Windows):
