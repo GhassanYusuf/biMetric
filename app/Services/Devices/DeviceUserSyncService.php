@@ -685,7 +685,32 @@ class DeviceUserSyncService
 
         $this->identity->assertPinFreeFor($device, $employee, $newPin);
 
-        $user = $this->driver->renumberUser($device, $oldPin, $newPin);
+        try {
+            $user = $this->driver->renumberUser($device, $oldPin, $newPin);
+        } catch (\Throwable $e) {
+            if (! $this->goneFromTerminal($device, $oldPin)) {
+                throw $e;
+            }
+
+            /*
+             * Not there to move (casebook DC-039, 2026-11-03: Troy, user 685, was deleted
+             * from both door panels outside this system, and every save failed "Pin 685 is
+             * not on this panel"). Two reads agree he is gone: the terminal's own list now,
+             * and the last roster read. So the stale link closes and the new ID is reserved;
+             * the caller's push then ADDS them there, card and fingers restored from the
+             * system's copies (rule 19). Nothing on the terminal is deleted.
+             */
+            DB::transaction(function () use ($device, $employee, $oldPin, $newPin) {
+                $this->identity->activeMap($device, $employee)?->close("Not on {$device->name} any more (removed outside this system); added back as {$newPin}");
+                $this->identity->claim($device, $employee, $newPin);
+            });
+
+            return [
+                'message' => "{$employee->name} was no longer on {$device->name} as user ID {$oldPin} (removed outside this system), so is added back as {$newPin}.",
+                'from' => $oldPin,
+                'to' => $newPin,
+            ];
+        }
 
         /*
          * The driver can find the person already on the requested ID — a C3 stores
@@ -745,6 +770,31 @@ class DeviceUserSyncService
             'from' => $oldPin,
             'to' => $user->userId,
         ];
+    }
+
+    /**
+     * True only when two reads agree a user ID is not on the terminal: the terminal's own
+     * user list read now, and the last roster read (its entry for that ID, if any, was not
+     * seen then). One read alone is not enough to close a link (rule 10): a terminal that
+     * answered with half a list must not lose anyone. A read that fails says nothing.
+     */
+    private function goneFromTerminal(Device $device, string $pin): bool
+    {
+        try {
+            $onTerminal = collect($this->driver->readUsers($device))->contains(fn ($u) => (string) $u->userId === $pin);
+        } catch (\Throwable) {
+            return false;
+        }
+        if ($onTerminal) {
+            return false;
+        }
+
+        $entry = DeviceRosterEntry::query()->where('device_id', $device->id)->where('device_user_id', $pin)->first();
+
+        return $entry === null
+            || $device->roster_read_at === null
+            || $entry->last_seen_at === null
+            || $entry->last_seen_at->lt($device->roster_read_at);
     }
 
     /**

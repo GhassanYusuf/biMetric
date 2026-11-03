@@ -116,6 +116,14 @@ Deleting one finger, clearing a card, a Personnel ID move — every other destru
 action keeps the copy too. A stored template is removed only with its employee or its
 terminal (database cascade).
 
+#### A person missing from a terminal is added back, not "moved" (2026-11-03, DC-039)
+
+When a push moves someone to a new user ID in place (C3 panels) and the terminal says the old
+ID is not there, two reads must agree before anything changes: the terminal's user list now,
+and the last roster read not having seen that ID. Then the stale link closes and the push ADDS
+them under the new ID, card and fingers restored from the system's copies as on every add.
+Nothing on the terminal is deleted. Otherwise the move's failure stands.
+
 #### Deleting an employee from the website (2026-11-03)
 
 Employees → Delete asks (owner: "whether to delete it from the system, or from the system and

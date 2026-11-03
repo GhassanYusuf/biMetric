@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-039 | 2026-11-03 | Entrance, Glass Door | Troy cannot be moved to his CPR: "Pin 685 is not on this panel", a link to a user removed outside the system | FIXED |
 | DC-038 | 2026-11-03 | Entrance, Glass Door | Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge | FIXED |
 | DC-037 | 2026-11-02 | JJs | A new terminal: Import staff brought no fingerprints, and the first fingerprint read would not decode | FIXED |
 | DC-036 | 2026-10-29 | Camelot | No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever | WORKAROUND |
@@ -113,6 +114,49 @@ Template:
 ---
 
 ## Entries
+
+### DC-039 — Troy cannot be moved to his CPR: "Pin 685 is not on this panel", a link to a user removed outside the system
+
+- **Date:** 2026-11-03
+- **Devices:** Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61)
+- **Direction:** software → device
+- **Symptom:** Owner, 2026-11-03: "TROY LAWRENCE was not written to any terminal. FAILED on
+  Entrance — Pin 685 is not on this panel.; Glass Door — Pin 685 is not on this panel."
+- **What was done:** reads first; then the owner's go-ahead ("yes add him back and build the
+  automatic handling"), and the fix below used on Troy as its first run.
+  - Troy (#1713, company UM) was given his CPR 870894382 as Personnel ID on
+    2026-11-03 12:30 UTC (ID card read by Ali Mohammed). The push then asked each panel to
+    move user 685 to 870894382 (C3 `Panel::moveUser`), and each refused: no user 685.
+  - Read both panels (users, under the queue lock): neither holds 685, 870894382, a "troy" or
+    his card. Their roster entries for 685 were last seen 2026-09-27, while every other entry
+    was refreshed today. The system still held LIVE links Entrance/Glass Door = 685.
+  - Whole panels compared with the system's live links: Entrance 232 users / 80 links, Glass
+    Door 231 / 80; linked but absent: **1 on each, Troy**. Nobody else.
+  - Troy: 0 fingerprints stored, 0 active cards (his record has a card number), 9 punches,
+    last 2026-08-27; nothing under 685 on the panels since 2026-09-27.
+- **Root cause:** Troy was deleted from both panels outside the system (ZKAccess or the panel)
+  between 2026-08-27 and 2026-09-27; nothing closed his links. A move needs the old user, so it
+  can only fail; the right action is an add.
+- **Fix:** `DeviceUserSyncService::renumberEmployee()`: when the in-place move fails and
+  `goneFromTerminal()` finds two reads agree the old ID is not there (the terminal's user list
+  now, and its roster entry not seen at the last roster read), the stale link closes ("Not on
+  X any more (removed outside this system); added back as N") and the new ID is reserved; the
+  push then ADDS the person, card and fingers restored from the system (rule 19). One read alone
+  closes nothing (rule 10). Only models that move users in place (the C3 panels) take this
+  path; the F18 re-adds anyway, so its path is untouched. Tests:
+  `EmployeePropagationTest::test_a_person_gone_from_the_terminal_is_added_back_under_the_new_id`,
+  `test_a_person_the_last_roster_read_still_saw_is_not_assumed_gone`.
+  **Writes on the owner's go-ahead, 2026-11-03, under each panel's queue lock:** the normal
+  push of Troy (`toEmployeeCode`) to Entrance, then Glass Door: "was no longer on … as user ID
+  685 (removed outside this system), so is added back as 870894382 … Card #2854364 written."
+  The panels hold no photo or birthday (C3 user fields: Pin, Name, CardNo, Password, Privilege,
+  validity); his photo stays in the system.
+- **Verified:** read back from both panels: user 870894382 "TROY LAWRENCE", card present, no
+  fingers (a card user; none stored); links Entrance = Glass Door = 870894382.
+- **Evidence:** the push result quoted above; panel reads 2026-11-03.
+- **Status:** FIXED
+- **Keywords:** is not on this panel, Pin 685, moveUser, renumber, stale link, removed outside
+  the system, C3, TF1700, inBIO460, Troy, 870894382
 
 ### DC-038 — Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge
 

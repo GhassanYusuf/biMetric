@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Devices;
 
+use App\Models\DeviceRosterEntry;
 use App\Services\Devices\DeviceUserSyncService;
 
 use Promoseven\Biometric\Capability\Capability;
@@ -579,6 +580,55 @@ class EmployeePropagationTest extends TestCase
         ]);
         // The name push afterwards addressed the NEW user ID.
         $this->assertSame('501', end($driver->writes)[0]);
+    }
+
+    /**
+     * Casebook DC-039 (2026-11-03): Troy, user 685, had been deleted from both door panels
+     * outside this system, so moving him to his CPR failed "Pin 685 is not on this panel"
+     * on every save. Two reads agree he is gone (the panel now, and the last roster read did
+     * not see him), so the stale link closes and he is ADDED under the new ID.
+     */
+    public function test_a_person_gone_from_the_terminal_is_added_back_under_the_new_id(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [\Promoseven\Biometric\Capability\Capability::USER_RENUMBER => 'implemented'];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $old = $this->mapTo($this->adopted, '685');
+        DeviceRosterEntry::create(['tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'device_user_id' => '685',
+            'device_name' => 'Troy', 'claim_status' => DeviceRosterEntry::CLAIMED, 'claimed_employee_id' => $this->employee->id,
+            'first_seen_at' => now()->subMonths(2), 'last_seen_at' => now()->subMonths(2)]);
+        $this->adopted->forceFill(['roster_read_at' => now()->subDay()])->save();
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(1, 'data.written')->assertJsonPath('data.written.0.pin', '501');
+
+        $this->assertSame([], $driver->renumbers, 'nothing to move');
+        $this->assertNotNull($old->fresh()->valid_to);
+        $this->assertStringContainsString('removed outside this system', $old->fresh()->closed_reason);
+        $this->assertSame([['501', $this->employee->name]], $driver->writes);
+    }
+
+    /** One read alone is not enough: the last roster read still saw him, so nothing is closed. */
+    public function test_a_person_the_last_roster_read_still_saw_is_not_assumed_gone(): void
+    {
+        $driver = new FakeBiometricDriver;
+        $driver->capabilityOverrides = [\Promoseven\Biometric\Capability\Capability::USER_RENUMBER => 'implemented'];
+        $this->app->instance(BiometricDeviceDriver::class, $driver);
+        $old = $this->mapTo($this->adopted, '685');
+        $this->adopted->forceFill(['roster_read_at' => now()->subDay()])->save();
+        DeviceRosterEntry::create(['tenant_id' => $this->tenant->id, 'device_id' => $this->adopted->id, 'device_user_id' => '685',
+            'device_name' => 'Troy', 'claim_status' => DeviceRosterEntry::CLAIMED, 'claimed_employee_id' => $this->employee->id,
+            'first_seen_at' => now()->subMonths(2), 'last_seen_at' => now()]);
+
+        $this->asAdmin()->postJson("/api/employees/{$this->employee->id}/propagate", [
+            'device_ids' => [$this->adopted->id],
+            'to_employee_code' => true,
+        ])->assertOk()->assertJsonCount(0, 'data.written')->assertJsonCount(1, 'data.failed');
+
+        $this->assertNull($old->fresh()->valid_to);
+        $this->assertSame([], $driver->writes);
     }
 
     /**
