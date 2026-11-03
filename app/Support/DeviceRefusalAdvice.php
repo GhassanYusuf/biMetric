@@ -37,4 +37,20 @@ final class DeviceRefusalAdvice
 
         return $advice === null ? $e->getMessage() : rtrim($e->getMessage()).' '.$advice;
     }
+
+    /**
+     * The user number the terminal itself refused as already taken (library 2.22.0, context
+     * reason pin_in_use), or null when the failure is anything else. Casebook DC-038.
+     */
+    public static function numberInUse(\Throwable $e): ?string
+    {
+        // The literal, not ProtocolException::PIN_IN_USE: the constant exists from library
+        // 2.22.0, and this must not fail where an older one is installed.
+        if (! $e instanceof DeviceException || ($e->context()['reason'] ?? null) !== 'pin_in_use') {
+            return null;
+        }
+        $pin = (string) ($e->context()['pin'] ?? '');
+
+        return $pin === '' ? null : $pin;
+    }
 }

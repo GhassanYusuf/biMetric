@@ -3,7 +3,9 @@
 namespace App\Services\Employees;
 
 use App\Models\Device;
+use App\Models\DeviceRosterEntry;
 use App\Models\Employee;
+use App\Models\EmployeeDeviceMap;
 use App\Services\Devices\DeviceIdentityResolver;
 use App\Services\Devices\DeviceUserSyncService;
 use App\Support\DeviceRefusalAdvice;
@@ -244,12 +246,39 @@ class EmployeeDevicePropagator
                     // What the operator can press to resolve it, when there is such a
                     // thing (2026-10-11): free a number held by an unlinked record, or
                     // test fingerprint writing on a model that never did it.
-                    'action' => method_exists($e, 'action') ? $e->action() : null,
+                    'action' => method_exists($e, 'action') ? $e->action() : $this->freeNumberAction($device, $employee, $e),
                 ];
             }
         }
 
         return ['written' => $written, 'skipped' => $skipped, 'failed' => $failed];
+    }
+
+    /**
+     * The terminal itself refused a number as taken (library 2.22.0, context reason
+     * pin_in_use) although our records let it through: offer "Free this number" as the
+     * system's own check does (PinInUseException::action()). Only when no OTHER employee is
+     * linked to that number there now, so a real person's record is never offered for deletion;
+     * the release itself checks again. Casebook DC-038: a merge left Suji's duplicate under
+     * his CPR on both door panels, and the operator had a red row and no button.
+     *
+     * @return array{type:string, device_user_id:string, holder:?string}|null
+     */
+    private function freeNumberAction(Device $device, Employee $employee, \Throwable $e): ?array
+    {
+        $pin = DeviceRefusalAdvice::numberInUse($e);
+        // Our own claim on the number is expected (the push reserves it first); anyone
+        // ELSE linked to it there is a real person, and their record is never offered.
+        if ($pin === null || EmployeeDeviceMap::query()->where('device_id', $device->id)->where('device_user_id', $pin)
+            ->whereNull('valid_to')->where('employee_id', '!=', $employee->id)->exists()) {
+            return null;
+        }
+
+        return [
+            'type' => 'release_number',
+            'device_user_id' => $pin,
+            'holder' => DeviceRosterEntry::query()->where('device_id', $device->id)->where('device_user_id', $pin)->value('device_name'),
+        ];
     }
 
     /** One sentence for the result row; throws when the terminal refused or read back wrong. */

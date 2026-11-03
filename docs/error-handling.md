@@ -160,6 +160,16 @@ Test: `tests/Feature/Devices/SyncFailureClosesRunTest.php`.
 **If a run is ever found `running` with its command already finished**, it was left by a
 failure this missed. Close it as `failed` (save the row first) and open a casebook entry.
 
+## A terminal that refuses a number as taken offers to free it (2026-11-03)
+
+The system checks a user number is free before writing (`DeviceIdentityResolver`), but a
+terminal can still hold a user under it that our records no longer link to anyone (casebook
+DC-038: a merge's leftover). A C3 panel then refuses with `context()['reason'] = 'pin_in_use'`
+(library 2.22.0); `DeviceRefusalAdvice::numberInUse()` recognises it and
+`EmployeeDevicePropagator` offers the `release_number` action ("Same person" / "Remove it"),
+exactly as for the system's own check. Not offered when another employee is linked to the
+number on that terminal.
+
 ## A killed worker holds its lock
 
 `WithoutOverlapping` locks live in `cache_locks`. Killing a worker mid-command

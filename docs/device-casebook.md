@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-11-02**
+**Last updated: 2026-11-03**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-038 | 2026-11-03 | Entrance, Glass Door | Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge | FIXED |
 | DC-037 | 2026-11-02 | JJs | A new terminal: Import staff brought no fingerprints, and the first fingerprint read would not decode | FIXED |
 | DC-036 | 2026-10-29 | Camelot | No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever | WORKAROUND |
 | DC-035 | 2026-10-27 | IT ROOM | IT ROOM's door does not lock: open to anyone | OPEN |
@@ -112,6 +113,54 @@ Template:
 ---
 
 ## Entries
+
+### DC-038 — Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge
+
+- **Date:** 2026-11-03
+- **Devices:** Entrance (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61)
+- **Direction:** software → device
+- **Symptom:** Owner, 2026-11-03: "I am trying to write to the entrance and glass door this
+  employee 711247579 but it's failing saying already this cpr 711247579 in use". Log:
+  `C3 panel operation failed … "Pin 711247579 is already used in 'user' on this panel."`
+- **What was done:** read-only diagnosis first, then (owner: "yes fix suji") the fix below.
+  - Suji had two records: #1644 "Suji", code 5 (user 5 on both panels and
+    IT ROOM) and #1702 "suji", code 671. 2026-11-03 14:20 UTC Ali Mohammed read Suji's ID
+    card into #1702 (name SUJI RAMANKUTTY, last NAIR, code 711247579), which moved #1702 on
+    both panels from 671 to 711247579 (in place, C3). 14:21 he merged #1702 INTO #1644: the
+    merge kept #1644's name and code (5), carried the photo and last name, and closed #1702's
+    711247579 links ("superseded by the merge") but did not touch the panels. 14:28 the owner
+    set #1644's name and code to SUJI RAMANKUTTY / 711247579; the push then asked each panel
+    to move user 5 to 711247579, and each refused: user 711247579 (the old #1702) was still
+    on it. The system's own pre-write check passed (711247579 had only ever been Suji's), so
+    the panel was the first to see the clash, and its refusal carried no "Free this number"
+    action.
+  - IT ROOM: both of Suji's links closed 14:22 and 14:25 UTC, "Removed from device";
+    the owner confirms that was intended (he was there for a test only).
+  - **Writes, owner's go-ahead ("yes fix suji"), 2026-11-03, each under the device's queue
+    lock:** per panel, Entrance then Glass Door, (1) `releaseUnlinkedNumber(device,
+    '711247579', #1644, samePerson: true)`: the leftover record read off and kept in
+    `storage/app/private/removed-records/` first, its fingers adopted (0) and punches credited
+    (0), then deleted; (2) `EmployeeDevicePropagator::push(#1644, toEmployeeCode: true)`:
+    user 5 moved in place to 711247579, card and fingers restored. Each answered "written as
+    711247579". To undo: the snapshots in removed-records hold the deleted records.
+- **Root cause:** a merge closes the folded record's terminal links but leaves its user on
+  the terminals; here that user held the CPR the kept record was then given.
+- **Fix:** the two writes above, for Suji. For next time (owner: "build the button"): library
+  2.22.0 gives the C3 refusal a structured reason (`context()['reason'] = 'pin_in_use'`, with
+  `pin`), `DeviceRefusalAdvice::numberInUse()` reads it, and `EmployeeDevicePropagator` turns it
+  into the same `release_number` action the system's own check offers, so the red row shows
+  "Same person" / "Remove it" (`TerminalFixes.jsx`). Never when another employee is linked to
+  that number there. Test `tests/Feature/Devices/PanelNumberInUseTest.php`. The button appears
+  once 2.22.0 is installed; until then the panel's refusal carries no reason and nothing
+  changes. Gap still open: a merge leaves the folded record's users on the terminals.
+- **Verified:** read back from both panels, 2026-11-03: user 711247579 "SUJI RAMANKUTTY" once
+  on each, card present, fingers [3, 6]; no user 5; system links Entrance = Glass Door =
+  711247579.
+- **Evidence:** `storage/logs/laravel.log` 2026-11-03 14:28:38, 14:59:27; audit log of
+  employees #1644 and #1702.
+- **Status:** FIXED
+- **Keywords:** already used in 'user' on this panel, Pin is already used, already in use,
+  merge, duplicate, renumber, C3, TF1700, inBIO460, Suji, 711247579
 
 ### DC-037 — A new terminal: Import staff brought no fingerprints, and the first fingerprint read would not decode
 
