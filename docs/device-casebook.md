@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-040 | 2026-11-03 | IT ROOM, On The Road, Entrance, Glass Door; City Center Hotel | Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers | OPEN |
 | DC-039 | 2026-11-03 | Entrance, Glass Door | Troy cannot be moved to his CPR: "Pin 685 is not on this panel", a link to a user removed outside the system | FIXED |
 | DC-038 | 2026-11-03 | Entrance, Glass Door | Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge | FIXED |
 | DC-037 | 2026-11-02 | JJs | A new terminal: Import staff brought no fingerprints, and the first fingerprint read would not decode | FIXED |
@@ -114,6 +115,39 @@ Template:
 ---
 
 ## Entries
+
+### DC-040 — Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers
+
+- **Date:** 2026-11-03
+- **Devices:** IT ROOM (F18, 192.168.7.62), On The Road (F22/ID, 192.168.7.63), Entrance
+  (TF1700, 192.168.7.60), Glass Door (inBIO460, 192.168.7.61); City Center Hotel (F18,
+  192.168.21.254)
+- **Direction:** both
+- **Symptom:** Owner, 2026-11-03 ~16:00 UTC: "all the devices time is set right?"
+- **What was done:** reads only.
+  - Read every active terminal's clock 2026-11-03 ~16:00 UTC: all within 8 s of Bahrain time
+    (Entrance, Glass Door 0 s; IT ROOM, JJs, On The Road, Catering +1 s; Camelot, Good
+    Wheels +8 s). City Center Hotel did not answer.
+  - The 05:00 Bahrain clock job (02:00 UTC, `device-morning-routine`) found On The Road
+    −11:26, Glass Door −11:19, Entrance −11:20 and set them; IT ROOM was −11 min too and
+    "accepted the clock but reads back 04:49", so it stayed wrong until the 10:00 job. Every
+    other correction since 2026-10-29 was under a minute; Camelot, Good Wheels and JJs
+    (internet) were not affected.
+  - The same offset on four LAN terminals of three models is not drift: something set them.
+    Candidates, not checked: another program on the LAN syncing terminal clocks to a PC whose
+    clock is 11 min slow (an old ZKAccess, or ZKBioTime: a `zkbiotime` database exists on the
+    SQL Server 192.168.7.8).
+  - City Center Hotel: added 2026-11-03 07:06 UTC at 192.168.21.254, a different subnet from
+    every other terminal; 110 health checks failed, never seen. A routing/VPN question first.
+- **Root cause:** not established.
+- **Fix:** none yet. The two daily clock jobs corrected the four by 10:00 Bahrain.
+- **Verified:** —
+- **Evidence:** `sync_time` commands 2026-11-03 02:00 UTC; `storage/logs/device-2026-11-03.log`
+  line 1 (IT ROOM read-back); the clock read above.
+- **Status:** OPEN — owner: is any other software on the LAN that sets terminal clocks? and how
+  is 192.168.21.x reached? Watch the 05:00 job of 2026-11-04 for the same offset.
+- **Keywords:** clock, time, sync_time, 11 minutes, slow, accepted the clock but reads back,
+  ZKAccess, ZKBioTime, City Center Hotel, 192.168.21.254, did not answer
 
 ### DC-039 — Troy cannot be moved to his CPR: "Pin 685 is not on this panel", a link to a user removed outside the system
 
