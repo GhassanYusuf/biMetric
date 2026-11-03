@@ -468,6 +468,7 @@ a panel has been confirmed on this estate's hardware.
 | GET | `/api/dashboard/summary` |
 | GET | `/api/reports/attendance` |
 | GET | `/api/audit-logs` |
+| POST | `/api/employees/{id}/offboard` `{mode: record \| resign \| everywhere}` (2026-11-03): the website's Delete. `record` = the record only (terminals untouched); `resign` = off every terminal, kept as resigned with fingerprints and card (`employees.update`); `everywhere` = off every terminal, deleted once all confirm (`employees.delete`). `docs/credential-preservation.md` |
 | GET | `/api/employees/move-to-company/preview?device_id=&company_id=` (2026-11-02, `employees.update`): who is on that terminal (live link) and where they are: `total`, `unassigned`, `already`, `elsewhere[]`. Changes nothing |
 | POST | `/api/employees/move-to-company` `{device_id, company_id, include_assigned?}`: moves them into the company. Only people in no company unless `include_assigned`; a department not in the new company is cleared. Audited per person; nothing written to a terminal. `TerminalCompanyTransfer` |
 | GET | `/api/companies` (+ full resource, 2026-11-03): `departments_count`, `employees_count` (everyone, departments included), `current_count` (the same without the resigned, what the employee list shows by default); `meta.unassigned_count` / `meta.unassigned_current_count` = employees in no company. `/api/departments` carries the same pair |

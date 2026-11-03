@@ -13,6 +13,7 @@ import EmployeesDesktop from './EmployeesDesktop';
 import EmployeesMobile from './EmployeesMobile';
 import EmployeeFormModal from './EmployeeFormModal';
 import MergeModal from './MergeModal';
+import DeleteEmployeeModal from './DeleteEmployeeModal';
 import DuplicateScanModal from './DuplicateScanModal';
 import MoveToCompanyModal from './MoveToCompanyModal';
 import PushModal from './PushModal';
@@ -101,6 +102,8 @@ export default function Employees() {
     const [scanning, setScanning] = useState(null);
     // Move terminal to company (2026-11-02).
     const [movingTerminal, setMovingTerminal] = useState(false);
+    // Delete, with the choice spelled out (2026-11-03).
+    const [deleting, setDeleting] = useState(null);
     const [viewing, setViewing] = useState(null); // employee whose enrollment is open
     const [readingDevice, setReadingDevice] = useState(false);
     const [total, setTotal] = useState(null);
@@ -731,38 +734,11 @@ export default function Employees() {
     }
 
     /**
-     * Deletes the employee from THIS APP only. Their record on the terminal is
-     * untouched, so their fingerprints keep working and they can still clock in —
-     * which is exactly the kind of thing a bare "Remove X?" prompt hides. The
-     * confirmation says so, and points at the fix.
+     * Delete asks what to delete (2026-11-03, DeleteEmployeeModal): the record only, or
+     * also their access on every terminal, keeping their fingerprints (resigned) or not.
      */
-    async function deleteEmployee(employee) {
-        const onDevice = employee.enrollment_synced_at != null;
-
-        const ok = await confirm({
-            title: `Delete ${employee.name} from the payroll app?`,
-            body: [
-                `This removes their record and their ${(employee.attendance_logs_count ?? 0).toLocaleString()} attendance punches from this app.`,
-                onDevice
-                    ? 'It does NOT remove them from the biometric terminal — their fingerprints will keep working '
-                      + 'and punches will keep arriving. Remove them from the terminal first if that is what you want.'
-                    : 'They are not on a terminal, so nothing else needs doing.',
-            ],
-            confirmLabel: 'Delete employee',
-            danger: true,
-        });
-        if (!ok) return;
-
-        try {
-            await api.delete(`/employees/${employee.id}`);
-            setRows((prev) => prev.filter((r) => r.id !== employee.id));
-            setTotal((t) => (t == null ? t : Math.max(0, t - 1)));
-            toast.success(`${employee.name} deleted.`);
-        } catch (err) {
-            // Previously unhandled: a 403 or a failed request vanished silently
-            // and the row stayed put with no explanation.
-            toast.error(err instanceof ApiError ? err.message : `Could not delete ${employee.name}.`);
-        }
+    function deleteEmployee(employee) {
+        setDeleting(employee);
     }
 
     /*
@@ -1006,6 +982,23 @@ export default function Employees() {
                         await load(search, filters);
                     }}
                     onClose={() => setMerging(null)}
+                />
+            )}
+            {deleting && (
+                <DeleteEmployeeModal
+                    employee={deleting}
+                    onDone={async (result) => {
+                        const gone = deleting;
+                        setDeleting(null);
+                        if (result.deleted) {
+                            setRows((prev) => prev.filter((r) => r.id !== gone.id));
+                            setTotal((t) => (t == null ? t : Math.max(0, t - 1)));
+                        }
+                        // Resigned or awaiting the terminals: the row changed, and the tree counts did.
+                        loadDepartments();
+                        await load(search, filters);
+                    }}
+                    onClose={() => setDeleting(null)}
                 />
             )}
             {movingTerminal && (

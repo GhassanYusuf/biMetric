@@ -145,6 +145,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     Route::get('employees/by-code/{code}', [EmployeeController::class, 'showByCode']);
 
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
+    // Delete with the choice spelled out: record only / resign / everywhere (2026-11-03).
+    Route::post('employees/{employee}/offboard', [EmployeeController::class, 'offboard']);
     Route::get('employees/{employee}/duplicates', [DuplicateScanController::class, 'forEmployee']);
     Route::get('employees/{employee}/attendance-summary', [EmployeeController::class, 'attendanceSummary']);
     Route::get('employees/{employee}/report', [EmployeeController::class, 'report']);

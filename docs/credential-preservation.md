@@ -116,6 +116,24 @@ Deleting one finger, clearing a card, a Personnel ID move — every other destru
 action keeps the copy too. A stored template is removed only with its employee or its
 terminal (database cascade).
 
+#### Deleting an employee from the website (2026-11-03)
+
+Employees → Delete asks (owner: "whether to delete it from the system, or from the system and
+remove access from the terminal, and whether to save their fingerprints"),
+`POST /api/employees/{id}/offboard`, `EmployeeController::offboard()`:
+
+| Choice | Terminals | Record, fingerprints, card |
+|---|---|---|
+| Delete from the system only | **untouched: their access keeps working** (shown in red) | deleted |
+| Remove access, keep (resign) | `REMOVE_USER` on every terminal they are on | kept, resigned and inactive |
+| Remove access, delete | `REMOVE_USER` on every terminal; deleted once all succeed (`EmployeeOffboarding`) | deleted with the record |
+
+Every `REMOVE_USER` saves card and fingers first (`removeEmployee()`, this section), so "do
+not keep them" is honoured by deleting the copy WITH the record, not by skipping it: a terminal
+that cannot be written leaves the record, inactive, with its copy, never half a person. Not an
+exception to rule 19. Punches are kept in every case (`attendance_logs.employee_id` SET NULL).
+Before 2026-11-03 Delete was the record only, behind an easy-to-miss warning (DC-025).
+
 ### 3. Restore on every add — automatically
 
 Every way a person is put on a terminal ends in `DeviceUserSyncService::pushEmployee()`

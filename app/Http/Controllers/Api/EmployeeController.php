@@ -19,12 +19,14 @@ use App\Services\Employees\EmployeeMergeService;
 use App\Services\Employees\EmployeeRosterQuery;
 use App\Services\Employees\FingerprintPusher;
 use App\Services\Employees\FingerprintVault;
+use App\Services\Integration\EmployeeOffboarding;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Promoseven\Biometric\Exception\DeviceException;
 use Promoseven\Biometric\Exception\UnsupportedCommandException;
 
@@ -238,6 +240,81 @@ class EmployeeController extends Controller
         $employee->delete();
 
         return ApiResponse::success(null, 'Employee removed.');
+    }
+
+    /**
+     * Delete, with the choice spelled out (owner, 2026-11-03: "if I click delete it asks me
+     * whether to delete it from the system, or from the system and remove access from the
+     * terminal, and whether to save their fingerprints"):
+     *
+     *   record      the record only. Their fingerprints and card keep working on every
+     *               terminal (the DC-025 trap, offered knowingly).
+     *   resign      off every terminal, record kept as resigned with its fingerprints,
+     *               card and punches ("remove access, keep their fingerprints").
+     *   everywhere  off every terminal, then the record is deleted, with its fingerprints
+     *               and card ("remove access, do not keep them").
+     *
+     * Every terminal removal saves the card and fingers first (rule 19), whichever the
+     * choice: if a terminal cannot be written, the record (and that copy) stays, inactive,
+     * instead of half a person. With "everywhere" the copy then goes with the record.
+     * Punches are kept in every case; deleted people's punches stay, attributed to nobody.
+     */
+    public function offboard(Request $request, Employee $employee, EmployeeOffboarding $offboarding): JsonResponse
+    {
+        $mode = $request->validate(['mode' => ['required', Rule::in(['record', 'resign', 'everywhere'])]])['mode'];
+        $this->authorize($mode === 'resign' ? 'update' : 'delete', $employee);
+        $name = $employee->name;
+
+        if ($mode === 'record') {
+            $offboarding->remove($employee, fromDevices: false);
+
+            return ApiResponse::success(['deleted' => true], "{$name} deleted from the system. Their access on the terminals is unchanged.");
+        }
+
+        if ($mode === 'resign') {
+            if (! $employee->isResigned()) {
+                $employee->forceFill(['resigned_at' => now(config('attendance.timezone'))->toDateString()])->save();
+            }
+            $result = $offboarding->takeOffTerminals($employee);
+
+            return ApiResponse::success(
+                ['deleted' => false] + $this->offboardSummary($result),
+                $this->offboardMessage("{$name} is marked resigned and kept with their fingerprints, card and punches.", $result),
+            );
+        }
+
+        $result = $offboarding->remove($employee, fromDevices: true);
+        if ($result['deleted']) {
+            return ApiResponse::success(['deleted' => true], "{$name} deleted from the system. They were on no terminal.");
+        }
+
+        return ApiResponse::success(
+            ['deleted' => false] + $this->offboardSummary($result),
+            $this->offboardMessage("{$name} is inactive now and will be deleted once every terminal confirms the removal.", $result),
+        );
+    }
+
+    /** @param array{commands:list<mixed>, skipped:list<array{device_name:string,reason:string}>} $result */
+    private function offboardSummary(array $result): array
+    {
+        return [
+            'device_commands' => count($result['commands']),
+            'skipped_devices' => array_map(fn ($s) => ['device_name' => $s['device_name'], 'reason' => $s['reason']], $result['skipped']),
+        ];
+    }
+
+    private function offboardMessage(string $lead, array $result): string
+    {
+        $n = count($result['commands']);
+        $parts = [$lead];
+        if ($n > 0) {
+            $parts[] = sprintf('Removing them from %d terminal%s now (card and fingerprints saved first).', $n, $n === 1 ? '' : 's');
+        }
+        if ($result['skipped'] !== []) {
+            $parts[] = 'Not removed from '.implode(', ', array_map(fn ($s) => "{$s['device_name']} ({$s['reason']})", $result['skipped'])).'.';
+        }
+
+        return implode(' ', $parts);
     }
 
     /** Per-day attendance breakdown + payroll hours for one employee. */
