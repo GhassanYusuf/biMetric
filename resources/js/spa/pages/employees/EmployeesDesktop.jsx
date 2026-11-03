@@ -1,5 +1,6 @@
 import { ActionMenu, Avatar, Button, EmptyState, Pager, PageHeader, TableShell, Thead } from '../../shared/ui';
 import AutoPushToggle from './AutoPushToggle';
+import { hasNoPunches, NoPunchesBadge, NoPunchHighlightToggle } from './NoPunchHighlight';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, DeviceUserIdCell, FingerprintCell, TerminalsCell, syncedAgo } from './enrollmentCells';
 import EmployeeFilters from './EmployeeFilters';
@@ -15,7 +16,7 @@ export default function EmployeesDesktop({
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
-    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
+    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, highlightNoPunches, onToggleHighlightNoPunches, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -89,11 +90,10 @@ export default function EmployeesDesktop({
                 {canCreate && <Button onClick={onAdd}>+ Add employee</Button>}
             </PageHeader>
 
-            {canManageSettings && (
-                <div className="flex justify-end">
-                    <AutoPushToggle on={autoPush} busy={savingAutoPush} onToggle={onToggleAutoPush} />
-                </div>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1">
+                <NoPunchHighlightToggle on={highlightNoPunches} onToggle={onToggleHighlightNoPunches} />
+                {canManageSettings && <AutoPushToggle on={autoPush} busy={savingAutoPush} onToggle={onToggleAutoPush} />}
+            </div>
 
             {/*
               * Tree on the left, roster on the right (2026-10-11). The tree picks the
@@ -204,9 +204,13 @@ export default function EmployeesDesktop({
                              * `aria-selected`-style open state is carried by the tint too,
                              * so the row that owns the menu is obvious once it drops.
                              */
-                            className={`cursor-pointer odd:bg-white even:bg-slate-50/70 transition-colors duration-150 hover:bg-violet-50 ${
-                                menuFor === e.id ? 'bg-violet-50' : ''
-                            } ${FOCUS}`}
+                            className={`cursor-pointer transition-colors duration-150 ${
+                                // No punches, with the highlight on (2026-11-03): amber in place
+                                // of the stripe, and a deeper amber on hover.
+                                highlightNoPunches && hasNoPunches(e)
+                                    ? 'bg-amber-50 hover:bg-amber-100'
+                                    : 'odd:bg-white even:bg-slate-50/70 hover:bg-violet-50'
+                            } ${menuFor === e.id ? 'bg-violet-50' : ''} ${FOCUS}`}
                         >
                             <td className="px-5 py-3.5 text-center tabular-nums text-slate-600">{i + 1}</td>
                             <td className="px-5 py-3.5">
@@ -235,7 +239,9 @@ export default function EmployeesDesktop({
                                 <TerminalsCell employee={e} />
                             </td>
                             <td className="px-5 py-3.5 text-right font-medium tabular-nums text-slate-700">
-                                {(e.attendance_logs_count ?? 0).toLocaleString()}
+                                {highlightNoPunches && hasNoPunches(e)
+                                    ? <NoPunchesBadge />
+                                    : (e.attendance_logs_count ?? 0).toLocaleString()}
                             </td>
                         </tr>
                     ))}

@@ -1,5 +1,6 @@
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, Pager, ActionMenu } from '../../shared/ui';
 import AutoPushToggle from './AutoPushToggle';
+import { hasNoPunches, NoPunchesBadge, NoPunchHighlightToggle } from './NoPunchHighlight';
 import { FOCUS } from '../../shared/theme';
 import { CardCell, DeviceUserIdCell, FingerprintCell, TerminalsCell } from './enrollmentCells';
 import EmployeeFilters from './EmployeeFilters';
@@ -21,7 +22,7 @@ export default function EmployeesMobile({
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
-    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
+    onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, highlightNoPunches, onToggleHighlightNoPunches, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -68,11 +69,10 @@ export default function EmployeesMobile({
                 {canCreate && <Button onClick={onAdd} className="px-3">+ Add</Button>}
             </PageHeader>
 
-            {canManageSettings && (
-                <div className="flex justify-end">
-                    <AutoPushToggle on={autoPush} busy={savingAutoPush} onToggle={onToggleAutoPush} />
-                </div>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-1">
+                <NoPunchHighlightToggle on={highlightNoPunches} onToggle={onToggleHighlightNoPunches} />
+                {canManageSettings && <AutoPushToggle on={autoPush} busy={savingAutoPush} onToggle={onToggleAutoPush} />}
+            </div>
 
             {/* Rule 5: the same tree as desktop's left panel, folded into a card. */}
             <DepartmentTree
@@ -156,7 +156,9 @@ export default function EmployeesMobile({
                                     openMenuFromKey(event, e, event.key === 'ArrowDown' ? 'first' : 'last');
                                 }
                             }}
-                            className={`cursor-pointer p-4 active:bg-slate-50 ${menuFor === e.id ? 'bg-violet-50/60' : ''} ${FOCUS}`}
+                            className={`cursor-pointer p-4 active:bg-slate-50 ${
+                                highlightNoPunches && hasNoPunches(e) ? '!bg-amber-50' : ''
+                            } ${menuFor === e.id ? 'bg-violet-50/60' : ''} ${FOCUS}`}
                         >
                             <div className="flex items-start justify-between gap-3">
                                 <div className="flex min-w-0 items-baseline gap-2.5">
@@ -178,7 +180,9 @@ export default function EmployeesMobile({
                                     </div>
                                 </div>
                                 <div className="shrink-0 text-right text-xs tabular-nums text-slate-500">
-                                    {(e.attendance_logs_count ?? 0).toLocaleString()} punches
+                                    {highlightNoPunches && hasNoPunches(e)
+                                        ? <NoPunchesBadge />
+                                        : `${(e.attendance_logs_count ?? 0).toLocaleString()} punches`}
                                 </div>
                             </div>
 

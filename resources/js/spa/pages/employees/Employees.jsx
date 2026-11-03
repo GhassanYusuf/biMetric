@@ -14,6 +14,7 @@ import EmployeesMobile from './EmployeesMobile';
 import EmployeeFormModal from './EmployeeFormModal';
 import MergeModal from './MergeModal';
 import DeleteEmployeeModal from './DeleteEmployeeModal';
+import { useNoPunchHighlight } from './NoPunchHighlight';
 import DuplicateScanModal from './DuplicateScanModal';
 import MoveToCompanyModal from './MoveToCompanyModal';
 import PushModal from './PushModal';
@@ -104,6 +105,8 @@ export default function Employees() {
     const [movingTerminal, setMovingTerminal] = useState(false);
     // Delete, with the choice spelled out (2026-11-03).
     const [deleting, setDeleting] = useState(null);
+    // Amber rows for people with no punches, this viewer's choice (2026-11-03).
+    const [highlightNoPunches, setHighlightNoPunches] = useNoPunchHighlight();
     const [viewing, setViewing] = useState(null); // employee whose enrollment is open
     const [readingDevice, setReadingDevice] = useState(false);
     const [total, setTotal] = useState(null);
@@ -878,6 +881,8 @@ export default function Employees() {
         // Opened from the toolbar (the whole roster) or from a row (that person
         // only) — same screen, different question.
         onScan: (target) => setScanning(target ?? 'all'),
+        highlightNoPunches,
+        onToggleHighlightNoPunches: setHighlightNoPunches,
         onMoveTerminal: can('employees.update') && companies.length > 0 ? () => setMovingTerminal(true) : null,
         onReadFingerprints: readFingerprintsToSystem,
         onPushFingerprints: pushFingerprints,
