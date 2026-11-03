@@ -23,8 +23,11 @@ class CompanyController extends Controller
     {
         $this->authorize('viewAny', Company::class);
 
+        // employees_count is everyone (the delete guard needs it); current_count leaves out
+        // the resigned, as the employee list does by default (2026-11-03: the tree said 117
+        // beside PROMOSEVEN while its list said 111).
         $companies = Company::query()
-            ->withCount(['departments', 'employees'])
+            ->withCount(['departments', 'employees', 'employees as current_count' => fn ($q) => $q->whereNull('resigned_at')])
             ->with('manager:id,name')
             ->orderBy('name')
             ->get();
@@ -32,6 +35,7 @@ class CompanyController extends Controller
         // The tree's "Unassigned" node: people in no company.
         return ApiResponse::success(CompanyResource::collection($companies), 'Companies retrieved.', [
             'unassigned_count' => Employee::query()->whereNull('company_id')->count(),
+            'unassigned_current_count' => Employee::query()->whereNull('company_id')->whereNull('resigned_at')->count(),
         ]);
     }
 

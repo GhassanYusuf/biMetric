@@ -67,7 +67,7 @@ function NodeButton({ label, count, selected, depth = 0, onSelect, emphasis = fa
     );
 }
 
-function CompanyNode({ company, value, open, onToggle, onChange, counts }) {
+function CompanyNode({ company, value, open, onToggle, onChange, counts, countOf }) {
     const key = companyKey(company.id);
     const hasChildren = company.departments.length > 0;
 
@@ -89,7 +89,7 @@ function CompanyNode({ company, value, open, onToggle, onChange, counts }) {
                 )}
                 <NodeButton
                     label={company.name}
-                    count={counts ? company.employees_count : null}
+                    count={counts ? countOf(company) : null}
                     selected={value === key}
                     emphasis
                     onSelect={() => onChange(key)}
@@ -103,7 +103,7 @@ function CompanyNode({ company, value, open, onToggle, onChange, counts }) {
                                 <span className="h-7 w-7 shrink-0" aria-hidden="true" />
                                 <NodeButton
                                     label={d.name}
-                                    count={counts ? d.employees_count : null}
+                                    count={counts ? countOf(d) : null}
                                     selected={value === departmentKey(d.id)}
                                     onSelect={() => onChange(departmentKey(d.id))}
                                 />
@@ -119,7 +119,15 @@ function CompanyNode({ company, value, open, onToggle, onChange, counts }) {
 export default function DepartmentTree({
     companies, departments, unassignedCount = 0, loaded = true,
     value = '', onChange, variant = 'panel', counts = true, allLabel = 'All employees',
+    // Which people the numbers count, matching the list's Status filter (2026-11-03: the
+    // tree said 117 beside PROMOSEVEN while the list, which hides the resigned, said 111):
+    // 'all', 'current' (everyone but the resigned) or 'resigned'. `unassignedCount` is
+    // the caller's, already counted the same way.
+    countKind = 'all',
 }) {
+    const countOf = (node) => (countKind === 'current' ? node.current_count
+        : countKind === 'resigned' ? node.employees_count - node.current_count
+            : node.employees_count);
     const org = useMemo(() => buildOrg(companies ?? [], departments ?? []), [companies, departments]);
     // What the operator opened or closed by hand: company key -> true/false.
     const [toggled, setToggled] = useState(() => ({}));
@@ -146,7 +154,7 @@ export default function DepartmentTree({
         setMobileOpen(false);
     }
 
-    const total = org.reduce((sum, c) => sum + c.employees_count, 0) + unassignedCount;
+    const total = org.reduce((sum, c) => sum + countOf(c), 0) + unassignedCount;
     const selectedDepartment = value.startsWith('d:')
         ? selectedCompany?.departments.find((d) => departmentKey(d.id) === value)
         : null;
@@ -168,7 +176,7 @@ export default function DepartmentTree({
                 </li>
                 {org.map((company) => (
                     <CompanyNode key={company.id} company={company} value={value}
-                        open={expanded.has(companyKey(company.id))} onToggle={toggle} onChange={select} counts={counts} />
+                        open={expanded.has(companyKey(company.id))} onToggle={toggle} onChange={select} counts={counts} countOf={countOf} />
                 ))}
                 {unassignedCount > 0 && (
                     <li className="mt-1 flex border-t border-slate-100 pt-1">

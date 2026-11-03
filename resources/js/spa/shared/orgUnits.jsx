@@ -50,6 +50,8 @@ export async function fetchOrg() {
         companies: companies?.data ?? [],
         departments: departments?.data ?? [],
         unassignedCount: Number(companies?.meta?.unassigned_count ?? 0),
+        // Without the resigned, as the employee list counts by default (2026-11-03).
+        unassignedCurrentCount: Number(companies?.meta?.unassigned_current_count ?? companies?.meta?.unassigned_count ?? 0),
     };
 }
 
@@ -66,13 +68,19 @@ export function buildOrg(companies, departments) {
         ...c,
         id: Number(c.id),
         employees_count: Number(c.employees_count ?? 0),
+        // Everyone but the resigned (2026-11-03); the whole count where a server sends none.
+        current_count: Number(c.current_count ?? c.employees_count ?? 0),
         departments: [],
     }));
     const byId = new Map(list.map((c) => [c.id, c]));
     departments.forEach((d) => {
         const company = byId.get(Number(d.company_id));
         if (!company) return;
-        company.departments.push({ ...d, id: Number(d.id), company_id: company.id, employees_count: Number(d.employees_count ?? 0) });
+        company.departments.push({
+            ...d, id: Number(d.id), company_id: company.id,
+            employees_count: Number(d.employees_count ?? 0),
+            current_count: Number(d.current_count ?? d.employees_count ?? 0),
+        });
     });
     list.forEach((c) => {
         c.departments.sort(byName);

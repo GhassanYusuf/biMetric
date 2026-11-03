@@ -20,7 +20,7 @@ class DepartmentController extends Controller
         // Departments only, each with its company (2026-11-03). Companies, and the count of
         // people in no company, come from CompanyController.
         $departments = Department::query()
-            ->withCount('employees')
+            ->withCount(['employees', 'employees as current_count' => fn ($q) => $q->whereNull('resigned_at')])
             ->with(['manager:id,name', 'company:id,name'])
             ->when(request()->filled('company_id'), fn ($q) => $q->where('company_id', request()->integer('company_id')))
             ->orderBy('name')

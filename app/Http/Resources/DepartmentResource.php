@@ -23,6 +23,7 @@ class DepartmentResource extends JsonResource
             'manager_id' => $this->manager_id === null ? null : (int) $this->manager_id,
             'manager_name' => $this->whenLoaded('manager', fn () => $this->manager?->name),
             'employees_count' => $this->whenCounted('employees'),
+            'current_count' => $this->whenCounted('current'),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

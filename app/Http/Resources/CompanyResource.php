@@ -21,6 +21,8 @@ class CompanyResource extends JsonResource
             'departments_count' => $this->whenCounted('departments'),
             // Everyone in the company, its departments included: an employee row carries company_id.
             'employees_count' => $this->whenCounted('employees'),
+            // The same, without the resigned (what the employee list shows by default).
+            'current_count' => $this->whenCounted('current'),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

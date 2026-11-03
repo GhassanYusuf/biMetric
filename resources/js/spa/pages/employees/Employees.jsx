@@ -90,6 +90,7 @@ export default function Employees() {
     const [companies, setCompanies] = useState([]);
     const [departments, setDepartments] = useState([]);
     const [unassignedCount, setUnassignedCount] = useState(0);
+    const [unassignedCurrentCount, setUnassignedCurrentCount] = useState(0);
     const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
     const [formOpen, setFormOpen] = useState(false);
     const [enrolling, setEnrolling] = useState(null); // employee being enrolled
@@ -189,6 +190,7 @@ export default function Employees() {
                 setCompanies(org.companies);
                 setDepartments(org.departments);
                 setUnassignedCount(org.unassignedCount);
+                setUnassignedCurrentCount(org.unassignedCurrentCount);
             })
             .finally(() => setDepartmentsLoaded(true));
     }, []);
@@ -869,7 +871,12 @@ export default function Employees() {
         onFilters: setFilters,
         companies,
         departments,
-        unassignedCount,
+        // The tree counts the people the Status filter lists (2026-11-03): everyone for
+        // "All", the resigned for "Resigned", otherwise everyone but the resigned.
+        treeCountKind: filters?.status === 'all' ? 'all' : filters?.status === 'resigned' ? 'resigned' : 'current',
+        unassignedCount: filters?.status === 'all' ? unassignedCount
+            : filters?.status === 'resigned' ? unassignedCount - unassignedCurrentCount
+                : unassignedCurrentCount,
         departmentsLoaded,
         devices,
         canCreate: can('employees.create'),

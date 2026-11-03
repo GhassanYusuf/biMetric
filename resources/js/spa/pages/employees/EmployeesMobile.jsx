@@ -17,7 +17,7 @@ import { useRef, useState } from 'react';
 | card number joined the department badge and both buttons.
 */
 export default function EmployeesMobile({
-    rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, departmentsLoaded, devices,
+    rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, treeCountKind, departmentsLoaded, devices,
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
@@ -80,6 +80,7 @@ export default function EmployeesMobile({
                 companies={companies}
                 departments={departments}
                 unassignedCount={unassignedCount}
+                countKind={treeCountKind}
                 loaded={departmentsLoaded}
                 value={filters?.org ?? ''}
                 onChange={(key) => onFilters({ ...(filters ?? {}), org: key })}

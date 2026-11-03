@@ -97,6 +97,30 @@ class DepartmentTreeFilterTest extends TestCase
         $this->assertSame([], collect($response->json('data'))->whereNotNull('company_id')->all());
     }
 
+    /**
+     * Owner, 2026-11-03: "PROMOSEVEN shows 117 but the list says 111". The list hides the
+     * resigned by default, so the tree's current_count must say what the list will show.
+     */
+    public function test_the_current_count_is_what_the_list_shows_by_default(): void
+    {
+        Tenancy::set(Tenant::where('slug', 'acme')->value('id'));
+        Employee::create(['name' => 'Tree Leaver', 'employee_code' => 'T-4', 'company_id' => $this->company->id, 'resigned_at' => '2026-10-01']);
+        Employee::create(['name' => 'Tree Gone', 'employee_code' => 'T-5', 'resigned_at' => '2026-10-01']);
+        Tenancy::clear();
+
+        $tree = collect($this->api('/api/companies')->assertOk()->json('data'))->firstWhere('id', $this->company->id);
+        $this->assertSame(3, $tree['employees_count']);
+        $this->assertSame(2, $tree['current_count']);
+        $listed = $this->codes($this->api('/api/employees?per_page=100&resigned=0&company_id='.$this->company->id));
+        $this->assertCount($tree['current_count'], $listed);
+
+        $finance = collect($this->api('/api/departments')->json('data'))->firstWhere('id', $this->finance->id);
+        $this->assertSame(1, $finance['current_count']);
+
+        $meta = $this->api('/api/companies')->json('meta');
+        $this->assertSame($meta['unassigned_count'] - 1, $meta['unassigned_current_count']);
+    }
+
     /** Since the companies table (2026-11-03): departments name their company, companies count the unassigned. */
     public function test_departments_carry_their_company_and_companies_the_unassigned_count(): void
     {
