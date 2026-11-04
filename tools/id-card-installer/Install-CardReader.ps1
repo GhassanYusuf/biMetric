@@ -5,8 +5,8 @@
 
 .DESCRIPTION
   Run by Install.cmd (double-click it). What it does, in order, each step logged:
-    1. Installs iGA's "GCC CardRead Server" from the iGA-installer folder, if it is not installed
-       yet (an .msi silently; an .exe as iGA's own wizard, which the operator clicks through).
+    1. Installs iGA's "GCC CardRead Server" if it is not installed yet, from the copy inside this
+       package (files\service): nothing is downloaded.
     2. Checks a smart card reader is connected (a warning only: the reader can come later).
     3. Backs up the service's Extensions\BAH folder and its config.
     4. Copies the Bahrain extension that is proven to read current Bahrain cards (eRevealer's
@@ -24,7 +24,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ServiceName = 'SCardReadServer'
+# iGA's service registers itself as SCardReadService (its install log); an older note here said
+# SCardReadServer. It is found by its program file, so either name works.
+$ServiceName = $null
 $ConfigName = 'BH.CIO.Smartcard.IDCardManager.dll.config'
 $bah = Join-Path $ServicePath 'Extensions\BAH'
 $config = Join-Path $ServicePath $ConfigName
@@ -36,8 +38,13 @@ function Warn($text) { Write-Host "    !!  $text" -ForegroundColor Yellow }
 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $admin) { throw 'Run Install.cmd (it asks Windows for administrator rights).' }
 
+function Get-CardService {
+    $w = Get-CimInstance Win32_Service | Where-Object { $_.PathName -like '*SCardReadWebApi.exe*' } | Select-Object -First 1
+    if ($w) { Get-Service $w.Name }
+}
+
 function Stop-CardService {
-    if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
+    if ($ServiceName -and (Get-Service $ServiceName -ErrorAction SilentlyContinue)) {
         Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
         # Stop-Service returns before the process lets go of its DLLs.
         $exe = Join-Path $ServicePath 'SCardReadWebApi.exe'
@@ -62,6 +69,7 @@ if ($Restore) {
     $backup = Get-ChildItem $ServicePath -Directory -Filter 'backup-oneclick-*' | Sort-Object Name -Descending | Select-Object -First 1
     if (-not $backup) { throw 'No backup made by this installer was found.' }
     Write-Host "Restoring $($backup.FullName)..."
+    $ServiceName = (Get-CardService).Name
     Stop-CardService
     Remove-Item $bah -Recurse -Force
     Copy-Item (Join-Path $backup.FullName 'BAH') $bah -Recurse -Force
@@ -73,23 +81,34 @@ if ($Restore) {
 
 # 1. iGA's service ---------------------------------------------------------------------------
 Step 1 "iGA GCC CardRead Server"
-if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
-    Ok 'already installed'
+if (Get-CardService) {
+    Ok "already installed ($((Get-CardService).Name))"
 } else {
-    $installer = Get-ChildItem (Join-Path $KitPath 'iGA-installer') -File -Include *.msi, *.exe -Recurse | Select-Object -First 1
-    if (-not $installer) { throw "iGA's installer is not in the iGA-installer folder. Put iGA's SDK installer (from bahrain.bh) there and run Install.cmd again." }
-    Write-Host "    installing $($installer.Name)..."
-    if ($installer.Extension -eq '.msi') {
-        $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$($installer.FullName)`"", '/qn', '/norestart' -Wait -PassThru
-    } else {
-        Write-Host '    iGA''s installer opens now: click through it with the default choices.' -ForegroundColor Yellow
-        $p = Start-Process $installer.FullName -Wait -PassThru
-    }
-    for ($i = 0; $i -lt 30 -and -not (Get-Service $ServiceName -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 2 }
-    if (-not (Get-Service $ServiceName -ErrorAction SilentlyContinue)) { throw "iGA's installer finished (code $($p.ExitCode)) but the $ServiceName service is not there." }
-    Ok 'installed'
+    # Nothing is downloaded (owner, 2026-11-04: "I don't want to install anything from the
+    # internet"). files\service is iGA's service exactly as iGA's installer laid it out on a
+    # working PC; it is copied into place and registered by .NET's own InstallUtil, which runs
+    # the installer class inside SCardReadWebApi.exe - the same thing iGA's installer does
+    # (its SCardReadWebApi.InstallLog says so). No iGA file is changed.
+    $bundled = Join-Path $KitPath 'files\service'
+    if (-not (Test-Path (Join-Path $bundled 'SCardReadWebApi.exe'))) { throw 'The package is incomplete: files\service is missing.' }
+    $installUtil = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\InstallUtil.exe'
+    if (-not (Test-Path $installUtil)) { throw ".NET Framework 4 is missing ($installUtil). Windows 10 and 11 include it: turn it on in 'Windows features'." }
+    Write-Host "    copying the service to $ServicePath..."
+    New-Item -ItemType Directory -Path $ServicePath -Force | Out-Null
+    Copy-Item (Join-Path $bundled '*') $ServicePath -Recurse -Force
+    Get-ChildItem $ServicePath -Recurse -File | Unblock-File
+    Write-Host '    registering the Windows service...'
+    $ErrorActionPreference = 'Continue'   # InstallUtil's own messages are not script errors
+    $out = & $installUtil (Join-Path $ServicePath 'SCardReadWebApi.exe') 2>&1
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    for ($i = 0; $i -lt 10 -and -not (Get-CardService); $i++) { Start-Sleep -Seconds 1 }
+    if (-not (Get-CardService)) { $out | ForEach-Object { Write-Host "      $_" }; throw "Registering the service failed (InstallUtil code $code)." }
+    Ok "installed ($((Get-CardService).Name))"
 }
-if (-not (Test-Path (Join-Path $ServicePath 'SCardReadWebApi.exe'))) { throw "The service is installed, but not in $ServicePath." }
+$ServiceName = (Get-CardService).Name
+$exePath = ((Get-CimInstance Win32_Service -Filter "Name='$ServiceName'").PathName).Trim('"')
+if ((Split-Path $exePath -Parent) -ne $ServicePath) { throw "The service runs from $(Split-Path $exePath -Parent), not $ServicePath." }
 
 # 2. Reader ----------------------------------------------------------------------------------
 Step 2 'Card reader'
@@ -106,11 +125,13 @@ Ok $backupDir
 
 # 4. Bahrain extension -----------------------------------------------------------------------
 Step 4 'Bahrain cards (proven extension and ATR list)'
-$source = Join-Path $KitPath 'files\BAH'
-$atrConfig = Join-Path $KitPath "files\$ConfigName"
-if (-not (Test-Path (Join-Path $source 'BH.CIO.Smartcard.Bahrain.dll'))) { throw "The kit is incomplete: files\BAH is missing." }
+# The bundled service already carries both (checked when the package is built); on a PC whose
+# service was installed earlier, this is what brings it up to date.
+$source = Join-Path $KitPath 'files\service\Extensions\BAH'
+$atrConfig = Join-Path $KitPath "files\service\$ConfigName"
+if (-not (Test-Path (Join-Path $source 'BH.CIO.Smartcard.Bahrain.dll'))) { throw "The package is incomplete: files\service\Extensions\BAH is missing." }
 $bahLine = [regex]::Match((Get-Content $atrConfig -Raw), '<add key="BAH" value="[^"]*"\s*/>').Value
-if (-not $bahLine) { throw "The kit is incomplete: no Bahrain ATR list in files\$ConfigName." }
+if (-not $bahLine) { throw "The package is incomplete: no Bahrain ATR list in files\service\$ConfigName." }
 try {
     Stop-CardService
     Copy-Item (Join-Path $source '*') $bah -Recurse -Force

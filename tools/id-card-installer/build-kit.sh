@@ -1,7 +1,10 @@
 #!/bin/bash
 # Assembles the one-click ID card reader package from this folder's scripts (in git) and iGA's
 # files (NOT in git: draft/ is ignored, the files are licensed to the organisation).
-#   tools/id-card-installer/build-kit.sh [iga-installer-file]
+#   tools/id-card-installer/build-kit.sh
+# Self-contained (owner, 2026-11-04: "put all in one file, I don't want to install anything from
+# the internet"): files/service is iGA's GCC CardRead Server as iGA's installer laid it out on the
+# owner's VM (draft/card-reading/iga/GCC CardRead Server), without its backups and install logs.
 # Output: draft/card-reading/ID-Card-Reader-Setup/ and ID-Card-Reader-Setup.zip
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -11,18 +14,26 @@ out="$src/ID-Card-Reader-Setup"
 kit="$src/extracted/ID-Card-Reader-Kit"
 
 rm -rf "$out" "$out.zip"
-mkdir -p "$out/files" "$out/iGA-installer"
+mkdir -p "$out/files"
 for f in Install.cmd Check.cmd Undo.cmd README.txt; do
   sed 's/\r$//; s/$/\r/' "$here/$f" > "$out/$f"          # Windows line endings
 done
 cp "$here/Install-CardReader.ps1" "$out/files/"
-cp "$kit/files/Check-CardReader.ps1" "$out/files/"                         # the colleague's check, unchanged
-cp "$kit/files/cards/BH.CIO.Smartcard.IDCardManager.dll.config" "$out/files/" # iGA's 2025 Bahrain ATR list
-cp -r "$src/iga/eRevealer.GCC/Extensions/BAH" "$out/files/BAH"             # iGA's proven Bahrain extension, unchanged
-if [ "${1:-}" != "" ]; then
-  cp "$1" "$out/iGA-installer/"
-else
-  printf "Put iGA's SDK installer (GCC CardRead Server, from bahrain.bh) in this folder.\r\n" > "$out/iGA-installer/PUT-THE-INSTALLER-HERE.txt"
-fi
+# The colleague's check, with the service found by its program file: iGA's service is named
+# SCardReadService (its install log), not SCardReadServer as the check assumed.
+sed -e "s/^\$svc = Get-Service SCardReadServer$/\$svc = Get-CimInstance Win32_Service | Where-Object { \$_.PathName -like '*SCardReadWebApi.exe*' } | Select-Object -First 1 | ForEach-Object { Get-Service \$_.Name }/" \
+    -e 's/start the "SCardReadServer" service/start the "SCardReadService" service/; s/خدمة SCardReadServer/خدمة SCardReadService/' \
+    -e "s/Run the iGA installer (see iGA-installer folder)./Run Install.cmd./; s/ثبّت برنامج الهيئة (انظر مجلد iGA-installer)./شغّل الملف Install.cmd./; s/Run 1-Setup.cmd./Run Install.cmd./; s/شغّل الملف 1-Setup.cmd./شغّل الملف Install.cmd./" \
+    "$kit/files/Check-CardReader.ps1" > "$out/files/Check-CardReader.ps1"
+grep -q 'PathName -like' "$out/files/Check-CardReader.ps1" || { echo "Check-CardReader.ps1: service lookup not patched" >&2; exit 1; }
+svc="$src/iga/GCC CardRead Server"
+[ -f "$svc/SCardReadWebApi.exe" ] || { echo "missing $svc" >&2; exit 1; }
+mkdir -p "$out/files/service"
+(cd "$svc" && find . -mindepth 1 -maxdepth 1 ! -name 'backup-*' ! -name '*.InstallLog' -exec cp -r {} "$out/files/service/" \;)
+# Install step 4 takes the Bahrain fix from the bundled service, so it must be the proven one:
+# eRevealer's whole Extensions\BAH and iGA's 2025 Bahrain ATR list, byte for byte.
+diff -rq "$src/iga/eRevealer.GCC/Extensions/BAH" "$out/files/service/Extensions/BAH" >/dev/null || { echo "bundled Extensions/BAH is not eRevealer's" >&2; exit 1; }
+atr() { grep -o '<add key="BAH"[^>]*>' "$1"; }
+[ "$(atr "$kit/files/cards/BH.CIO.Smartcard.IDCardManager.dll.config")" = "$(atr "$out/files/service/BH.CIO.Smartcard.IDCardManager.dll.config")" ] || { echo "bundled ATR list differs" >&2; exit 1; }
 (cd "$src" && python3 -m zipfile -c "ID-Card-Reader-Setup.zip" "ID-Card-Reader-Setup")
 echo "built: $out ($(du -sh "$out" | cut -f1)), $out.zip ($(du -sh "$out.zip" | cut -f1))"
