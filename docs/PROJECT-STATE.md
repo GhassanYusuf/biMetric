@@ -102,6 +102,16 @@ Everything below is committed; `7da1d96` (DC-040) was committed locally and may 
    worktree `/var/www/zkt-companies`; owner to click through the screens after the companies
    switch-over (`docs/plan-companies-table.md`).
 7. Ideas offered, not asked for yet: write the full name (first + last) to terminals.
+8. **ID card reading: SDK on every reading PC (owner, 2026-11-04).** A central server cannot
+   read a card in a reader on someone's desk (browsers block smart card access; iGA's service
+   reads only its own machine's readers), so each Windows PC with a reader gets iGA's service.
+   One-click package: scripts in `tools/id-card-installer/` (in git, no iGA files); built with
+   `tools/id-card-installer/build-kit.sh [installer]` into
+   `draft/card-reading/ID-Card-Reader-Setup.zip` (git-ignored, iGA-licensed). Install.cmd:
+   runs iGA's installer if needed, copies eRevealer's whole Extensions\BAH (the proven fix)
+   and the 2025 ATR list, backs up first, starts the service, test-reads; Undo.cmd restores.
+   **Missing: iGA's SDK installer** (bahrain.bh) is not on this server; the owner adds it.
+   Not yet run on a Windows PC: first run on the Proxmox Windows VM.
 
 ### Camelot reads only straight after a restart — DC-036 WORKAROUND (2026-10-29)
 
