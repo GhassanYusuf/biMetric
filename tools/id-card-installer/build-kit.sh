@@ -25,6 +25,17 @@ sed -e "s/^\$svc = Get-Service SCardReadServer$/\$svc = Get-CimInstance Win32_Se
     -e 's/start the "SCardReadServer" service/start the "SCardReadService" service/; s/خدمة SCardReadServer/خدمة SCardReadService/' \
     -e "s/Run the iGA installer (see iGA-installer folder)./Run Install.cmd./; s/ثبّت برنامج الهيئة (انظر مجلد iGA-installer)./شغّل الملف Install.cmd./; s/Run 1-Setup.cmd./Run Install.cmd./; s/شغّل الملف 1-Setup.cmd./شغّل الملف Install.cmd./" \
     "$kit/files/Check-CardReader.ps1" > "$out/files/Check-CardReader.ps1"
+# Its test read tries each reader in turn, as Install-CardReader.ps1 does (a keyboard slot next to a
+# second reader: the service's own choice was the empty one, 2026-11-04).
+python3 - "$out/files/Check-CardReader.ps1" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding='utf-8-sig').read()
+old = "$r = Invoke-RestMethod -Method Post -Uri 'http://localhost:5050/api/operation/ReadCard' -ContentType 'application/json' -Body $body -TimeoutSec 60 -ErrorAction Stop"
+new = "$r = $null; foreach ($ix in -1, 0, 1, 2, 3) { $r = Invoke-RestMethod -Method Post -Uri 'http://localhost:5050/api/operation/ReadCard' -ContentType 'application/json' -Body ($body -replace '\"ReaderIndex\":-1', ('\"ReaderIndex\":' + $ix)) -TimeoutSec 60 -ErrorAction Stop; if ($r -is [string]) { $r = $r | ConvertFrom-Json }; if ($r.CardCountry) { break } }"
+if s.count(old) != 1: sys.exit("Check-CardReader.ps1: test read not found")
+open(p, 'w', encoding='utf-8-sig').write(s.replace(old, new))
+PY
 grep -q 'PathName -like' "$out/files/Check-CardReader.ps1" || { echo "Check-CardReader.ps1: service lookup not patched" >&2; exit 1; }
 svc="$src/iga/GCC CardRead Server"
 [ -f "$svc/SCardReadWebApi.exe" ] || { echo "missing $svc" >&2; exit 1; }

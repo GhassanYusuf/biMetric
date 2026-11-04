@@ -148,7 +148,9 @@ try {
 Step 6 'Test read'
 $body = '{"ReadCardInfo":true,"ReadPersonalInfo":true,"ReadAddressDetails":false,"ReadBiometrics":false,"ReadEmploymentInfo":false,"ReadImmigrationDetails":false,"ReadTrafficDetails":false,"SilentReading":true,"ReaderIndex":-1,"ReaderName":"","OutputFormat":"JSON","ValidateCard":false}'
 try {
-    $r = Invoke-RestMethod -Method Post -Uri 'http://localhost:5050/api/operation/ReadCard' -ContentType 'application/json' -Body $body -TimeoutSec 60
+    # Each reader in turn: with two readers (a keyboard slot and another), the service's own choice
+    # (-1) can be the empty one (owner's PC, 2026-11-04: -1 and 0 'card removed', 1 read the card).
+    $r = $null; foreach ($ix in -1, 0, 1, 2, 3) { $r = Invoke-RestMethod -Method Post -Uri 'http://localhost:5050/api/operation/ReadCard' -ContentType 'application/json' -Body ($body -replace '"ReaderIndex":-1', ('"ReaderIndex":' + $ix)) -TimeoutSec 60 -ErrorAction Stop; if ($r -is [string]) { $r = $r | ConvertFrom-Json }; if ($r.CardCountry) { break } }
     if ($r -is [string]) { $r = $r | ConvertFrom-Json }
     if (-not [string]::IsNullOrWhiteSpace($r.EnglishFullName) -and $r.CardCountry -eq 'BAH') { Ok 'a Bahrain card was read with its names' }
     else { Warn "a card answered (country '$($r.CardCountry)') but without names" }

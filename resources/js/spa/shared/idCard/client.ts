@@ -84,17 +84,54 @@ const READ_OPTIONS = {
 }
 
 /**
+ * Which reader to ask. ReaderIndex -1 lets the service choose, and on a PC with two readers it can choose the
+ * empty one: a keyboard with a card slot next to a second "Alcorlink USB Smart Card Reader" answered "The smart
+ * card has been removed" on -1 and on index 0, and read the card on index 1 (owner's PC, 2026-11-04). So a read
+ * that finds no card tries each reader in turn, and the one that answered with a card is remembered in this
+ * browser and asked first next time. No card anywhere is still 'no_card'.
+ */
+const READER_KEY = 'idCard.readerIndex'
+const MAX_READERS = 4
+const rememberedReader = (): number | null => {
+  try {
+    const v = localStorage.getItem(READER_KEY)
+    return v !== null && /^-?\d+$/.test(v) ? Number(v) : null
+  } catch { return null }
+}
+const rememberReader = (i: number) => { try { localStorage.setItem(READER_KEY, String(i)) } catch { /* private window: ask again next time */ } }
+const readerOrder = (): number[] => {
+  const first = rememberedReader()
+  return [...new Set([...(first === null ? [] : [first]), -1, ...Array.from({ length: MAX_READERS }, (_, i) => i)])]
+}
+
+/**
  * Read the card in the reader once. The body is a JSON string sent with a form content type, exactly
  * like the vendor sample: that keeps it a "simple" cross-origin request, so the local service never has
  * to answer a CORS preflight.
  */
 export async function readCard(signal?: AbortSignal, silent = false, withPhoto = true): Promise<CardData> {
+  let missing: unknown = cardError('no_card')
+  for (const index of readerOrder()) {
+    try {
+      const card = await readCardFrom(index, signal, silent, withPhoto)
+      rememberReader(index)
+      return card
+    } catch (e) {
+      // Only "no card here" moves on to the next reader; anything else (service down, card unreadable) is the answer.
+      if (cardErrorCode(e) !== 'no_card' || (e as Error).name === 'AbortError') throw e
+      missing = e
+    }
+  }
+  throw missing
+}
+
+async function readCardFrom(index: number, signal: AbortSignal | undefined, silent: boolean, withPhoto: boolean): Promise<CardData> {
   let res: Response
   try {
     res = await fetch(settings.restUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-      body: JSON.stringify({ ...READ_OPTIONS, SilentReading: silent, ReadBiometrics: withPhoto }),
+      body: JSON.stringify({ ...READ_OPTIONS, SilentReading: silent, ReadBiometrics: withPhoto, ReaderIndex: index }),
       signal,
     })
   } catch (e) {
@@ -298,7 +335,7 @@ export function watchCards(onCard: (c: CardData) => void, onStatus: (s: 'connect
   let opened = false
   let polling = false
   let lastKey: string | null = null
-  const readCmd = 'ReadCard' + JSON.stringify({ ...READ_OPTIONS, ReadBiometrics: true })
+  const readCmd = 'ReadCard' + JSON.stringify({ ...READ_OPTIONS, ReadBiometrics: true, ReaderIndex: rememberedReader() ?? -1 })
 
   const deliver = (card: CardData) => {
     if (stopped || card.cardKey === lastKey) return
