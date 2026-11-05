@@ -13,7 +13,7 @@ const NO_FILTERS = { employee_id: '', device_id: '', org: '', search: '', from: 
 // whole first screen), then punches grouped under sticky day headers.
 export default function AttendanceMobile({
     rows, devices, companies, departments, unassignedCount, departmentsLoaded,
-    filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems,
+    filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems, onPersonnelIds,
 }) {
     const [filtersOpen, setFiltersOpen] = useState(false);
     const hasFilters = !!(filters.employee_id || filters.device_id || filters.org || filters.search || filters.from || filters.to);
@@ -30,6 +30,8 @@ export default function AttendanceMobile({
             <PageHeader title="Attendance" compact>
                 {/* Same exports as desktop, same filters, same server-side scope. */}
                 <ActionMenu label="Export" className="min-h-[38px] px-3 text-sm" items={exportItems} />
+                {/* Rule 5: on both layouts. Hidden without employees.update. */}
+                {onPersonnelIds && <Button variant="secondary" className="min-h-[38px] px-3 text-sm" onClick={onPersonnelIds}>Personnel IDs</Button>}
                 <Button
                     variant="secondary"
                     className="min-h-[38px] px-3 text-sm"

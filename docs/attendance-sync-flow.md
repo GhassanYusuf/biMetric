@@ -241,7 +241,18 @@ id to be the CPR, so it shows in the HR system". Many people were moved on their
 from an old number (701, 119, …) to their CPR during October; their earlier punches were
 stored under the old number, and the HR integration reads `device_user_id`.
 
+**On the Attendance page** (owner, 2026-11-05: "build it as a feature"): the
+**Personnel IDs** button (needs `employees.update` and `attendance.view`) opens a dialog: a
+company, a department or "No department", the first day; a preview per employee (punches,
+already CPR, will change, recorded as); apply after a confirm; and **Changes made**, every run
+with Undo. Endpoints: `GET /api/attendance/personnel-ids/preview`, `POST
+/api/attendance/personnel-ids`, `GET …/runs`, `POST …/runs/{id}/undo`
+(`AttendancePersonnelIdController`). Both the page and the command go through
+`PersonnelIdReplacer`; each run is an `audit_logs` row (`attendance.personnel_ids_applied` /
+`_undone`) holding the backup's path, which is what Undo reads.
+
 ```
+php artisan attendance:personnel-ids --company=PROMOSEVEN --department=none              # the company's staff with no department
 php artisan attendance:personnel-ids --company=PROMOSEVEN --department=Catering           # shows only
 php artisan attendance:personnel-ids --company=PROMOSEVEN --department=Catering --apply
 php artisan attendance:personnel-ids --undo=<the backup file it printed>

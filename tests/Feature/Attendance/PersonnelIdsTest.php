@@ -161,6 +161,73 @@ class PersonnelIdsTest extends TestCase
 
         $this->assertSame([['701', null], ['701', null], ['701', null], ['921257970', null]], $this->ids());
     }
+
+    // --- Attendance → Personnel IDs on punches (the same rules, from the page) ---
+
+    private function owner(): \App\Models\User
+    {
+        return \App\Models\User::withoutGlobalScopes()->where('tenant_id', $this->device->tenant_id)->firstOrFail();
+    }
+
+    private function companyId(): int
+    {
+        return (int) Company::withoutGlobalScopes()->where('name', 'PROMOSEVEN')->value('id');
+    }
+
+    public function test_the_page_previews_applies_lists_and_undoes(): void
+    {
+        $this->actingAs($this->owner(), 'sanctum')
+            ->getJson('/api/attendance/personnel-ids/preview?company_id='.$this->companyId().'&from=2026-09-01')
+            ->assertOk()
+            ->assertJsonPath('data.changes', 2)
+            ->assertJsonPath('data.people.0.recorded_as', ['701']);
+        $this->assertSame([['701', null], ['701', null], ['701', null], ['921257970', null]], $this->ids());
+
+        $this->actingAs($this->owner(), 'sanctum')
+            ->postJson('/api/attendance/personnel-ids', ['company_id' => $this->companyId(), 'from' => '2026-09-01'])
+            ->assertOk()
+            ->assertJsonPath('data.changed', 2);
+        $this->assertSame([['701', null], ['921257970', '701'], ['921257970', '701'], ['921257970', null]], $this->ids());
+
+        $runs = $this->actingAs($this->owner(), 'sanctum')->getJson('/api/attendance/personnel-ids/runs')
+            ->assertOk()->assertJsonPath('data.0.punches', 2)->assertJsonPath('data.0.undone', false)->json('data');
+
+        $this->actingAs($this->owner(), 'sanctum')
+            ->postJson('/api/attendance/personnel-ids/runs/'.$runs[0]['id'].'/undo')
+            ->assertOk()->assertJsonPath('data.restored', 2);
+        $this->assertSame([['701', null], ['701', null], ['701', null], ['921257970', null]], $this->ids());
+
+        $this->actingAs($this->owner(), 'sanctum')->getJson('/api/attendance/personnel-ids/runs')->assertJsonPath('data.0.undone', true);
+        $this->actingAs($this->owner(), 'sanctum')->postJson('/api/attendance/personnel-ids/runs/'.$runs[0]['id'].'/undo')->assertStatus(409);
+    }
+
+    public function test_the_page_needs_permission_to_change_employees(): void
+    {
+        $viewer = $this->owner();
+        Tenancy::set($this->device->tenant_id); // roles are per tenant
+        $viewer->syncRoles(['operator']); // attendance.view, but not employees.update
+        Tenancy::clear();
+
+        $this->actingAs($viewer, 'sanctum')
+            ->getJson('/api/attendance/personnel-ids/preview?company_id='.$this->companyId().'&from=2026-09-01')
+            ->assertForbidden();
+        $this->actingAs($viewer, 'sanctum')
+            ->postJson('/api/attendance/personnel-ids', ['company_id' => $this->companyId(), 'from' => '2026-09-01'])
+            ->assertForbidden();
+        $this->assertSame([['701', null], ['701', null], ['701', null], ['921257970', null]], $this->ids());
+    }
+
+    public function test_a_department_of_another_company_is_refused(): void
+    {
+        Tenancy::set($this->device->tenant_id);
+        $other = Company::create(['name' => 'Camelot']);
+        $foreign = Department::create(['name' => 'Kitchen', 'company_id' => $other->id]);
+        Tenancy::clear();
+
+        $this->actingAs($this->owner(), 'sanctum')
+            ->getJson('/api/attendance/personnel-ids/preview?company_id='.$this->companyId().'&department_id='.$foreign->id.'&from=2026-09-01')
+            ->assertStatus(422)->assertJsonValidationErrors('department_id');
+    }
 }
 
 /** A terminal that hands over whatever the test put in it: the whole table, always. */

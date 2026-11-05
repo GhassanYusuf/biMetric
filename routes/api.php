@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AccessLevelController;
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\AttendancePersonnelIdController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\ClientErrorController;
@@ -307,6 +308,11 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
     // Attendance punch log + waivers
     Route::get('attendance', [AttendanceController::class, 'index']);
+    // The CPR on stored punches, the terminal's number kept (owner, 2026-11-05).
+    Route::get('attendance/personnel-ids/preview', [AttendancePersonnelIdController::class, 'preview']);
+    Route::post('attendance/personnel-ids', [AttendancePersonnelIdController::class, 'apply']);
+    Route::get('attendance/personnel-ids/runs', [AttendancePersonnelIdController::class, 'runs']);
+    Route::post('attendance/personnel-ids/runs/{run}/undo', [AttendancePersonnelIdController::class, 'undo']);
     Route::post('employees/{employee}/waivers', [WaiverController::class, 'toggle']);
 
     // Holidays (index/store/update/destroy — no individual show needed)

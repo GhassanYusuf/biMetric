@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-11-03**
+**Last updated: 2026-11-05**
 
 ---
 
@@ -79,10 +79,35 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 
 ## Where we stopped
 
-### Open at the end of 2026-11-03 (resume here)
+### Open at the end of 2026-11-05 (resume here)
 
-Everything below is committed; `7da1d96` (DC-040) was committed locally and may still need
-`git push origin main`. Owner owes the answers marked **(owner)**.
+Everything below is committed on `main` here, but **not pushed**: `7da1d96` … the
+Personnel-IDs-page commit of 2026-11-05 are ahead of `origin/main` (the owner runs
+`git push origin main`). Owner owes the answers marked **(owner)**.
+
+0. **CPR on punches (owner, 2026-11-05) — DONE for most companies, a page for the rest.**
+   The HR system reads `device_user_id`, and punches from before a person was moved to their
+   CPR carry the old terminal number. Punches from **2026-09-01** on now carry the CPR,
+   company by company, the terminal's number kept in `attendance_logs.original_device_user_id`
+   (sync, ZKAccess import and re-linking read it, so nothing re-imports twice). Tool: the
+   **Personnel IDs** button on the Attendance page (preview per employee → apply → "Changes
+   made" with Undo; needs `employees.update`), or `php artisan attendance:personnel-ids`.
+   Rules: `PersonnelIdReplacer`, `docs/attendance-sync-flow.md`. Backups in
+   `storage/app/private/personnel-ids/`; every run is an audit row.
+   - Done 2026-11-05 (12,385 punches): PROMOSEVEN (all 8 departments), Real Estate, OTR,
+     GoodWheels, Camelot, JJ'S; UM and PROMOSEVEN-no-department needed nothing.
+   - **Not run:** AVANA, CCT, EN INTERIOR DESIGN, GEMS, P7H. AVANA, CCT, EN INTERIOR DESIGN and
+     UM are to be HIDDEN from the HR system (owner), so they may not need it.
+   - **No CPR yet (owner/HR):** 21 at JJ'S (2,942 punches; "Security" is an account; Nikhil,
+     Dipak, Abhishek may be doubles), Chrystelle (PROMOSEVEN, 686), Hani/Manoj/Pearl (UM).
+     Enter the CPR as Personnel ID, then run their company again: it changes only what is left.
+   - Found: Asif (GoodWheels) was on the terminal under Wajid's CPR 770280340 from 2026-10-18 to
+     2026-10-21; his 6 punches were correctly his and now carry his own CPR.
+   - Camelot's punches after 2026-10-29 are still on the terminal (restart, then read: DC-036).
+0b. **HR system reading the database directly (owner):** it must not see AVANA, CCT, EN
+   INTERIOR DESIGN, UM. Proposed: a SQL login `hr_reader` with SELECT on `hr.*` views only, the
+   views on an ALLOW-list of companies and only the columns HR needs; or the API with a
+   company-limited token (not built). **Owner owes:** which companies, which fields.
 
 1. **DC-040, clocks (owner):** at 05:00 Bahrain on 2026-11-03, IT ROOM, On The Road,
    Entrance and Glass Door were all ~11 min 20 s slow (set by something on the LAN?). Is any
@@ -90,8 +115,8 @@ Everything below is committed; `7da1d96` (DC-040) was committed locally and may 
    2026-11-04 for the same offset.
 2. **City Center Hotel (owner):** device #20 at 192.168.21.254, added 2026-11-03, never
    answered (other subnet). How is it reached (VPN, other office)?
-3. **Duplicates to merge (owner's yes):** Ghassan (#1830 JJs record ↔ #1429) and Ragesh
-   (#1840 ↔ #1416), same cards.
+3. ~~Duplicates to merge~~ **gone by 2026-11-05:** #1830 and #1840 no longer exist; Ghassan
+   is #1429 and Ragesh #1416 only.
 4. **Merge leaves the folded record's users on the terminals (owner's yes):** the cause of
    DC-038; proposal: the merge removes them (fingerprints saved first).
 5. **PROMOSEVEN Personnel IDs:** 65 people still have a short terminal number as Personnel
@@ -110,8 +135,16 @@ Everything below is committed; `7da1d96` (DC-040) was committed locally and may 
    `draft/card-reading/ID-Card-Reader-Setup.zip` (git-ignored, iGA-licensed). Install.cmd:
    runs iGA's installer if needed, copies eRevealer's whole Extensions\BAH (the proven fix)
    and the 2025 ATR list, backs up first, starts the service, test-reads; Undo.cmd restores.
-   **Missing: iGA's SDK installer** (bahrain.bh) is not on this server; the owner adds it.
-   Not yet run on a Windows PC: first run on the Proxmox Windows VM.
+   **Self-contained since 2026-11-04** (owner: "put all in one file, I don't want to install
+   anything from the internet"): the zip carries iGA's installed service from the owner's VM
+   (`draft/card-reading/iga/GCC CardRead Server`, files unchanged, backups/logs left out) and
+   registers it with .NET's InstallUtil, as iGA's installer does. The service is named
+   **`SCardReadService`** (iGA's install log), not `SCardReadServer` as older notes said; the
+   scripts find it by its program file. **First real PC (2026-11-04):** a keyboard with a card
+   slot plus an Alcorlink reader. The service's own choice (`ReaderIndex -1`) and reader 0 said
+   "The smart card has been removed"; reader 1 (the keyboard) read the card. The Read ID card
+   button and both scripts now try each reader and remember the one that read (`525cc4f`).
+   Owner to confirm the button reads on that PC.
 
 ### Camelot reads only straight after a restart — DC-036 WORKAROUND (2026-10-29)
 
@@ -928,6 +961,18 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-11-04 / 2026-11-05 — ID card kit offline; CPR on old punches; photos on Attendance
+
+- **ID card kit** self-contained (no internet); service name corrected; multi-reader PCs
+  handled (the first PC's keyboard reader was reader 1).
+- **Attendance** shows each person's photo. **CPR on punches** from 2026-09-01: the
+  `original_device_user_id` column (migration run by the owner 2026-11-05), the
+  `attendance:personnel-ids` command, run company by company with the owner (12,385 punches),
+  then the Personnel IDs dialog on the Attendance page with preview, undo and audit; the 13
+  console runs were recorded in `audit_logs` so the dialog lists them.
+- **Open:** companies not yet run, people without a CPR, and how the HR system may read the
+  database without seeing four companies (item 0b above).
+
 ### 2026-11-02 / 2026-11-03 — Integration API polished; a real companies table; door-panel fixes
 
 - **API:** employees addressed by Personnel ID in every v1 URL; company/department as two

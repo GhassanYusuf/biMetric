@@ -12,7 +12,7 @@ const NO_FILTERS = { employee_id: '', device_id: '', org: '', search: '', from: 
 // Desktop attendance: filter bar + wide punch table + pager.
 export default function AttendanceDesktop({
     rows, devices, companies, departments, unassignedCount, departmentsLoaded,
-    filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems,
+    filters, onFilter, search, onSearch, loading, pagination, onPage, onSelect, exportItems, onPersonnelIds,
 }) {
     function set(key, value) {
         onFilter({ ...filters, [key]: value });
@@ -36,6 +36,8 @@ export default function AttendanceDesktop({
                 {/* These punches (everything matching the filters, not the visible page), or
                     every employee as a PDF or an Excel workbook. */}
                 <ActionMenu label="Export" className="min-h-[42px] px-4 text-sm" items={exportItems} />
+                {/* Rule 5: on both layouts. Hidden without employees.update. */}
+                {onPersonnelIds && <Button variant="secondary" className="min-h-[42px] px-4 text-sm" onClick={onPersonnelIds}>Personnel IDs</Button>}
             </PageHeader>
 
             {/* The same Company › Department tree as the Employees page (2026-10-11),

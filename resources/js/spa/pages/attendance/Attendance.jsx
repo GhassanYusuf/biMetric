@@ -10,6 +10,7 @@ import { fetchOrg, setOrgParams } from '../../shared/orgUnits';
 import AttendanceDesktop from './AttendanceDesktop';
 import AttendanceMobile from './AttendanceMobile';
 import PunchEmployeeModal from './PunchEmployeeModal';
+import PersonnelIdsModal from './PersonnelIdsModal';
 
 const PER_PAGE = 50;
 
@@ -48,6 +49,7 @@ export default function Attendance() {
     // renumber the page under it.
     const [selected, setSelected] = useState(null);
     const [exporting, setExporting] = useState(false);
+    const [personnelIdsOpen, setPersonnelIdsOpen] = useState(false);
 
     const load = useCallback(async (pageNum, active) => {
         setLoading(true);
@@ -169,6 +171,8 @@ export default function Attendance() {
         // inert rather than opening a dialog with nothing in it.
         onSelect: (log) => log.employee_id && setSelected(log),
         exportItems,
+        // Personnel IDs on punches (2026-11-05): the same permissions the server asks for.
+        onPersonnelIds: can('employees.update') ? () => setPersonnelIdsOpen(true) : null,
     };
 
     const Presentation = deviceClass === 'desktop' ? AttendanceDesktop : AttendanceMobile;
@@ -182,6 +186,7 @@ export default function Attendance() {
             <Presentation {...presentationProps} />
             {selected && <PunchEmployeeModal log={selected} onClose={() => setSelected(null)} />}
             {allEmployees.dialog}
+            {personnelIdsOpen && <PersonnelIdsModal companies={companies} departments={departments} onClose={() => setPersonnelIdsOpen(false)} />}
         </>
     );
 }
