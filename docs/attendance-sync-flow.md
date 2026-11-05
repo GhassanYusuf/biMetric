@@ -229,9 +229,42 @@ php artisan attendance:reattribute [device] [--dry-run]
 ```
 
 It only ever recomputes `employee_id` from the mappings; it never invents, moves or
-deletes a punch, and never alters the raw `device_user_id` it recomputes from. Safe to
+deletes a punch, and recomputes from the number the **terminal** recorded
+(`original_device_user_id` when set, below, otherwise `device_user_id`). Safe to
 re-run. Without it, claiming an existing terminal would only affect the future — and
 nearly all of such a terminal's attendance is in the past.
+
+## The CPR on old punches: `attendance:personnel-ids` (2026-11-05)
+
+Owner, 2026-11-05: "on punches from September onwards replace the values of the device user
+id to be the CPR, so it shows in the HR system". Many people were moved on their terminals
+from an old number (701, 119, …) to their CPR during October; their earlier punches were
+stored under the old number, and the HR integration reads `device_user_id`.
+
+```
+php artisan attendance:personnel-ids --company=PROMOSEVEN --department=Catering           # shows only
+php artisan attendance:personnel-ids --company=PROMOSEVEN --department=Catering --apply
+php artisan attendance:personnel-ids --undo=<the backup file it printed>
+```
+
+- Changes a punch only when it is **linked** to an employee whose Personnel ID is a CPR
+  (nine digits), from `--from` (default 2026-09-01, office time) onwards, and it was
+  recorded under another number. One company / department / employee per run.
+- **The terminal's number is kept** in `attendance_logs.original_device_user_id` (null on
+  every punch never changed). `--apply` saves every row it changes to
+  `storage/app/private/personnel-ids/` first, changes them in one transaction and reads each
+  back; one difference rolls the whole run back. `--undo` puts the numbers back.
+- **The sync de-duplicates on the original number too.** The terminal still holds those
+  punches under 701, so without this the unique key `(device_id, device_user_id,
+  punched_at, verify_method)` would let a full read import each one again
+  (`AttendanceSyncService::withoutReplacedPunches()`, the live-punch path, and the ZKAccess
+  import's `existingPunchKeys()`; the ZKAccess snapshot exports the terminal's number).
+- **Re-linking reads the original number** (`AttendanceLog::terminalUserId()`). If a
+  re-link moves a changed punch to someone else or to nobody, it gets its terminal number
+  back, so a CPR is never left on a punch that is not that person's.
+- A punch whose CPR key is already taken (the same punch stored under both numbers) is left
+  as it is and counted. Unlinked punches are never changed: there is no CPR to give them.
+- Terminals are not touched.
 
 ## Unattributed punches
 

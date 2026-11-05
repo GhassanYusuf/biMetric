@@ -75,6 +75,8 @@ final class PunchLogQuery
                         ->pluck('id');
                     $q->where(fn ($w) => $w
                         ->where('device_user_id', 'like', $term)
+                        // The number the terminal recorded, before the CPR replaced it.
+                        ->orWhere('original_device_user_id', 'like', $term)
                         ->orWhereIn('employee_id', $ids));
                 }
             })

@@ -15,6 +15,9 @@ class AttendanceLog extends Model
         'tenant_id',
         'device_id',
         'device_user_id',
+        // What the terminal recorded, when device_user_id was replaced by the CPR
+        // (attendance:personnel-ids, 2026-11-05). Null: device_user_id is the terminal's.
+        'original_device_user_id',
         'employee_id',
         'punched_at',
         'status',
@@ -26,6 +29,12 @@ class AttendanceLog extends Model
         return [
             'punched_at' => 'datetime',
         ];
+    }
+
+    /** The number the terminal recorded this punch under, whatever device_user_id says now. */
+    public function terminalUserId(): string
+    {
+        return (string) ($this->original_device_user_id ?? $this->device_user_id);
     }
 
     public function device(): BelongsTo

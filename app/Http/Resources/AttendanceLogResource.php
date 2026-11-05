@@ -28,6 +28,9 @@ class AttendanceLogResource extends JsonResource
              */
             'employee_code' => $this->whenLoaded('employee', fn () => $this->employee?->employee_code),
             'device_user_id' => $this->device_user_id,
+            // Set only when device_user_id was replaced by the CPR (2026-11-05): what the
+            // terminal actually recorded.
+            'original_device_user_id' => $this->original_device_user_id,
             'device_id' => $this->device_id,
             'device_name' => $this->whenLoaded('device', fn () => $this->device?->name),
             'punched_at' => $this->punched_at?->toIso8601String(),

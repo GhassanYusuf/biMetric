@@ -589,13 +589,18 @@ class ZkaccessImportService
         $keys = [];
         $rows = AttendanceLog::query()
             ->where('tenant_id', $this->tenantId)
-            ->get(['device_id', 'device_user_id', 'punched_at', 'verify_method']);
+            ->get(['device_id', 'device_user_id', 'original_device_user_id', 'punched_at', 'verify_method']);
 
         foreach ($rows as $row) {
             $utc = $row->punched_at instanceof Carbon
                 ? $row->punched_at->format('Y-m-d H:i:s')
                 : date('Y-m-d H:i:s', strtotime((string) $row->punched_at));
             $keys["{$row->device_id}|{$row->device_user_id}|{$utc}|{$row->verify_method}"] = true;
+            // Also under the number the terminal recorded, when device_user_id was since
+            // replaced by the CPR (attendance:personnel-ids): a snapshot replays that one.
+            if ($row->original_device_user_id !== null) {
+                $keys["{$row->device_id}|{$row->original_device_user_id}|{$utc}|{$row->verify_method}"] = true;
+            }
         }
 
         return $keys;

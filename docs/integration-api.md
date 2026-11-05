@@ -267,7 +267,7 @@ keep your old cursor).
 
 ```json
 { "id": 90211, "punched_at": "2026-10-08T05:02:11+00:00", "employee_id": 41,
-  "external_id": "HR-1042", "device_user_id": "17", "employee_code": "17",
+  "external_id": "HR-1042", "device_user_id": "17", "original_device_user_id": null, "employee_code": "17",
   "employee_name": "Sara Ali", "device_id": 3, "device_name": "IT Room",
   "verify_method": 1, "status": 0 }
 ```
@@ -275,6 +275,10 @@ keep your old cursor).
 A punch from a PIN nobody has claimed has `employee_id: null` but **still appears**, with
 `device_user_id` — it is never dropped. Terminals can be written to **after** a punch
 exists, so link by `employee_id`/`external_id` when present and keep the PIN otherwise.
+
+`original_device_user_id` is set only on punches whose `device_user_id` was replaced by the
+person's CPR (2026-11-05, punches from 2026-09-01 on, company by company): it is the number
+the terminal itself recorded. Otherwise it is null and `device_user_id` is the terminal's.
 
 Also: `GET /reports/attendance`, `GET /employees/{id}/attendance-summary` (same as the web
 app; per-day breakdown and payroll hours).

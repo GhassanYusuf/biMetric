@@ -24,7 +24,10 @@ use Illuminate\Support\Facades\DB;
  *
  * It is safe to re-run. It only ever recomputes employee_id from the mappings in
  * force at each punch's own timestamp; it never invents, moves or deletes a punch, and
- * the raw device_user_id it recomputes from is never altered.
+ * the number it recomputes from is the one the TERMINAL recorded: device_user_id, or
+ * original_device_user_id when the CPR has replaced it (attendance:personnel-ids,
+ * 2026-11-05). When a replaced punch changes hands here, it gets its terminal number
+ * back, so a CPR is never left on a punch that is no longer that person's.
  *
  * A punch that still resolves to nobody is LEFT UNATTRIBUTED rather than guessed at
  * (rule 10). Unmatched is a true statement about what we know; a plausible employee
@@ -51,7 +54,9 @@ class PunchAttribution
          */
         AttendanceLog::query()
             ->where('device_id', $device->id)
-            ->when($pin !== null, fn ($q) => $q->where('device_user_id', $pin))
+            ->when($pin !== null, fn ($q) => $q->where(fn ($w) => $w
+                ->where(fn ($raw) => $raw->whereNull('original_device_user_id')->where('device_user_id', $pin))
+                ->orWhere('original_device_user_id', $pin)))
             ->orderBy('id')
             ->chunkById(2000, function ($logs) use ($windows, $dryRun, &$counts) {
                 $updates = [];
@@ -59,7 +64,7 @@ class PunchAttribution
                 foreach ($logs as $log) {
                     $counts['total']++;
 
-                    $resolved = $this->employeeAt($windows, (string) $log->device_user_id, $log->punched_at);
+                    $resolved = $this->employeeAt($windows, $log->terminalUserId(), $log->punched_at);
                     /*
                      * Normalised to ?int before comparing. SQL Server returns ids as
                      * strings ("1413") where SQLite returned ints, so a strict compare
@@ -85,7 +90,7 @@ class PunchAttribution
                         $counts['attributed']++;
                     }
 
-                    $updates[$log->id] = $resolved;
+                    $updates[$log->id] = ['employee_id' => $resolved, 'original' => $log->original_device_user_id];
                 }
 
                 if (! $dryRun) {
@@ -93,8 +98,13 @@ class PunchAttribution
                     // Attendance screens show the new names without a reload (rule 18).
                     $now = now();
 
-                    foreach ($updates as $id => $employeeId) {
-                        DB::table('attendance_logs')->where('id', $id)->update(['employee_id' => $employeeId, 'updated_at' => $now]);
+                    foreach ($updates as $id => $u) {
+                        $set = ['employee_id' => $u['employee_id'], 'updated_at' => $now];
+                        if ($u['original'] !== null) {
+                            // The CPR was that of the previous holder: back to the terminal's number.
+                            $set += ['device_user_id' => $u['original'], 'original_device_user_id' => null];
+                        }
+                        DB::table('attendance_logs')->where('id', $id)->update($set);
                     }
                 }
             });

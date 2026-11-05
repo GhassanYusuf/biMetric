@@ -159,8 +159,9 @@ class ZkaccessSnapshotExportService
                         // PIN renumbered after a sync would otherwise rebuild a key
                         // the database never held and re-import would duplicate the
                         // old rows. Punches keep the identity they were written with.
-                        'pin' => (string) $log->device_user_id !== ''
-                            ? (string) $log->device_user_id
+                        // The terminal's own number even after the CPR replaced it (2026-11-05).
+                        'pin' => $log->terminalUserId() !== ''
+                            ? $log->terminalUserId()
                             : ($pinByEmployeeId[$employeeId] ?? ''),
                         'serial' => $serialByDevice[(string) ($log->device_id ?? '')] ?? '',
                         // Terminals whose serial is blank (rarely on record for the

@@ -107,6 +107,9 @@ class PunchWebhookRelay
             // The PIN the terminal recorded. Present even when employee_id is null
             // (an unclaimed person), so a punch is never silently dropped.
             'device_user_id' => $log->device_user_id,
+            // Set only when device_user_id was replaced by the person's CPR (owner,
+            // 2026-11-05): the number the terminal itself recorded. Null otherwise.
+            'original_device_user_id' => $log->original_device_user_id,
             'employee_code' => $log->employee?->employee_code,
             'employee_name' => $log->employee?->name,
             'device_id' => $log->device_id,

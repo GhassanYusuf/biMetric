@@ -315,7 +315,15 @@ class AttendanceSyncService
             ->utc()
             ->format('Y-m-d H:i:s');
 
-        $log = AttendanceLog::query()->firstOrCreate(
+        // A punch already stored under its original number, its device_user_id since
+        // replaced by the CPR (attendance:personnel-ids), is the same punch.
+        $log = AttendanceLog::query()
+            ->where('device_id', $device->id)
+            ->where('original_device_user_id', $deviceUserId)
+            ->where('punched_at', $punchedAtUtc)
+            ->where('verify_method', (int) ($record['verify_method'] ?? 0))
+            ->first()
+            ?? AttendanceLog::query()->firstOrCreate(
             [
                 'device_id' => $device->id,
                 'device_user_id' => $deviceUserId,
@@ -555,7 +563,7 @@ class AttendanceSyncService
             ];
             $rows[$row['device_user_id'].'|'.$row['punched_at'].'|'.$row['verify_method']] ??= $row;
         }
-        $rows = array_values($rows);
+        $rows = array_values($this->withoutReplacedPunches($device, $rows));
 
         // Counted after de-duplication, so the bar reaches 100% on the last chunk.
         $progress?->beginImport(count($rows));
@@ -639,6 +647,43 @@ class AttendanceSyncService
     private function employeeAt(array $mappingsByPin, string $devicePin, \DateTimeInterface $punchedAt): ?int
     {
         return $this->attribution->employeeAt($mappingsByPin, $devicePin, $punchedAt);
+    }
+
+    /**
+     * Drops punches this device already has under their ORIGINAL number.
+     *
+     * Since 2026-11-05 a stored punch's device_user_id may be the person's CPR, with the
+     * number the terminal recorded kept in original_device_user_id (attendance:personnel-ids).
+     * The terminal still holds that punch under the old number, so the unique index
+     * (device_id, device_user_id, punched_at, verify_method) no longer recognises it, and
+     * without this every full read would import it a second time.
+     *
+     * @param  array<int, array<string, mixed>>  $rows  keyed rows ready for the upsert
+     * @return array<int, array<string, mixed>>
+     */
+    private function withoutReplacedPunches(Device $device, array $rows): array
+    {
+        if ($rows === []) {
+            return $rows;
+        }
+
+        $replaced = [];
+        AttendanceLog::query()->toBase()
+            ->where('device_id', $device->id)
+            ->whereNotNull('original_device_user_id')
+            ->orderBy('id')
+            ->select(['id', 'original_device_user_id', 'punched_at', 'verify_method'])
+            ->chunkById(5000, function ($chunk) use (&$replaced) {
+                foreach ($chunk as $r) {
+                    $replaced[$r->original_device_user_id.'|'.substr((string) $r->punched_at, 0, 19).'|'.$r->verify_method] = true;
+                }
+            });
+
+        if ($replaced === []) {
+            return $rows;
+        }
+
+        return array_filter($rows, fn (array $row) => ! isset($replaced[$row['device_user_id'].'|'.$row['punched_at'].'|'.$row['verify_method']]));
     }
 
     /**
