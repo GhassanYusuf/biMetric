@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
+use App\Models\Concerns\LimitedToUserCompanies;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Company extends Model
 {
-    use BelongsToTenant, SoftDeletes;
+    use BelongsToTenant, SoftDeletes, LimitedToUserCompanies;
 
     protected $fillable = ['tenant_id', 'name', 'code', 'manager_id'];
 

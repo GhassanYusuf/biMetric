@@ -61,6 +61,9 @@ class UserController extends Controller
         if ($refusal = $this->cannotGrant($request->user(), $data['role'])) {
             return $refusal;
         }
+        if ($refusal = $this->cannotGrantAccess($request->user(), $data)) {
+            return $refusal;
+        }
 
         $user = DB::transaction(function () use ($data) {
             $user = User::create([
@@ -70,9 +73,11 @@ class UserController extends Controller
                 'password' => $data['password'],
                 'employee_id' => $data['employee_id'] ?? null,
                 'is_active' => $data['is_active'] ?? true,
+                'can_delete' => $data['can_delete'] ?? true,
                 'email_verified_at' => now(),
             ]);
             $user->syncRoles([$data['role']]);
+            $this->syncCompanies($user, $data['company_ids'] ?? null);
 
             return $user;
         });
@@ -100,12 +105,31 @@ class UserController extends Controller
         if ($newRole !== $currentRole && ($refusal = $this->cannotGrant($actor, $newRole))) {
             return $refusal;
         }
+        $accessChanged = (array_key_exists('can_delete', $data) && (bool) $data['can_delete'] !== ($user->can_delete !== false))
+            || (array_key_exists('company_ids', $data) && $this->normalisedCompanies($data['company_ids']) !== $user->companyIds());
+        if ($self && $accessChanged) {
+            return ApiResponse::error('You cannot change what you yourself may delete or see.', [], 422);
+        }
+        if ($accessChanged && ($refusal = $this->cannotGrantAccess($actor, $data))) {
+            return $refusal;
+        }
         if (($deactivating || $newRole !== $currentRole) && $this->isLastAdmin($user)) {
             return ApiResponse::error("{$user->name} is the only active Administrator. Make somebody else an Administrator first.", [], 409);
         }
 
-        DB::transaction(function () use ($user, $data, $newRole, $currentRole, $deactivating) {
-            $user->fill(array_intersect_key($data, array_flip(['name', 'email', 'employee_id', 'is_active'])))->save();
+        $beforeAccess = ['can_delete' => $user->can_delete !== false, 'company_ids' => $user->companyIds()];
+
+        DB::transaction(function () use ($user, $data, $newRole, $currentRole, $deactivating, $accessChanged, $beforeAccess) {
+            $user->fill(array_intersect_key($data, array_flip(['name', 'email', 'employee_id', 'is_active', 'can_delete'])))->save();
+            if (array_key_exists('company_ids', $data)) {
+                $this->syncCompanies($user, $data['company_ids']);
+            }
+            if ($accessChanged) {
+                $this->audit($user, 'user.access_changed', [
+                    'can_delete' => [$beforeAccess['can_delete'], $user->can_delete !== false],
+                    'company_ids' => [$beforeAccess['company_ids'], $user->companyIds()],
+                ]);
+            }
             if ($newRole !== $currentRole) {
                 $user->syncRoles([$newRole]);
                 $this->audit($user, 'user.level_changed', ['role' => [$currentRole, $newRole]]);
@@ -171,6 +195,51 @@ class UserController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * The same rule as levels (owner, 2026-11-05): nobody gives more than they have. A user who
+     * may not delete cannot let someone else delete; a user limited to some companies can
+     * give only those, and cannot give "every company".
+     */
+    private function cannotGrantAccess(User $actor, array $data): ?JsonResponse
+    {
+        if (($data['can_delete'] ?? true) && $actor->can_delete === false) {
+            return ApiResponse::error('You cannot let someone delete: you may not delete yourself.', ['can_delete' => ['You may not delete yourself, so you cannot give it.']], 403);
+        }
+
+        $mine = $actor->companyIds();
+        // A new user always gets companies; an edit only when it sends them.
+        $giving = array_key_exists('company_ids', $data) || request()->isMethod('post');
+        if ($mine !== null && $giving) {
+            $given = $this->normalisedCompanies($data['company_ids'] ?? null);
+            if ($given === null || array_diff($given, $mine) !== []) {
+                $message = 'You can only give the companies you can see yourself.';
+
+                return ApiResponse::error($message, ['company_ids' => [$message]], 403);
+            }
+        }
+
+        return null;
+    }
+
+    /** @return list<int>|null sorted ids, or null for every company */
+    private function normalisedCompanies(?array $ids): ?array
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids ?? [])));
+        sort($ids);
+
+        return $ids === [] ? null : $ids;
+    }
+
+    private function syncCompanies(User $user, ?array $ids): void
+    {
+        DB::table('user_companies')->where('user_id', $user->id)->delete();
+        $now = now();
+        foreach ($this->normalisedCompanies($ids) ?? [] as $id) {
+            DB::table('user_companies')->insert(['user_id' => $user->id, 'company_id' => $id, 'created_at' => $now, 'updated_at' => $now]);
+        }
+        \App\Support\CompanyAccess::forget($user->id);
     }
 
     /** True when $user is the only ACTIVE user holding the Administrator level. */

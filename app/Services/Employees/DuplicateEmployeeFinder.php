@@ -82,6 +82,8 @@ class DuplicateEmployeeFinder
         $maps = EmployeeDeviceMap::query()
             ->live()
             ->join('employees as e', 'e.id', '=', 'employee_device_maps.employee_id')
+            // A raw join skips CompanyScope: a user limited to some companies sees only theirs.
+            ->when(\App\Support\CompanyAccess::ids() !== null, fn ($q) => $q->whereIn('e.company_id', \App\Support\CompanyAccess::ids()))
             ->get([
                 'employee_device_maps.employee_id as employee_id',
                 'employee_device_maps.device_id as device_id',

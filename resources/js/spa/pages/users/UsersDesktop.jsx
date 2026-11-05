@@ -1,9 +1,9 @@
 import { ActionMenu, Button, Card, EmptyState, PageHeader, SkeletonCards, SkeletonTable, TableShell, Thead } from '../../shared/ui';
-import { LevelCard, StatusBadge, Tabs, lastActive, userActions } from './parts';
+import { LevelCard, StatusBadge, Tabs, accessSummary, lastActive, userActions } from './parts';
 
 // Desktop: users as a table, levels as cards side by side.
 export default function UsersDesktop(props) {
-    const { loaded, tab, onTab, showLevels, users, levels, can, onAddUser, onAddLevel } = props;
+    const { loaded, tab, onTab, showLevels, users, companies = [], levels, can, onAddUser, onAddLevel } = props;
 
     return (
         <div className="space-y-5">
@@ -51,7 +51,11 @@ function UserTable({ users, can, onAddUser, ...handlers }) {
                                 <div className="font-medium text-slate-900">{u.name}{u.is_self && <span className="ml-1.5 text-xs font-normal text-slate-500">(you)</span>}</div>
                                 <div className="text-xs text-slate-500">{u.email}</div>
                             </td>
-                            <td className="px-5 py-3 text-slate-700">{u.role_label ?? <span className="text-slate-500">None</span>}</td>
+                            <td className="px-5 py-3 text-slate-700">
+                                {u.role_label ?? <span className="text-slate-500">None</span>}
+                                {/* Per-user limits over the level (2026-11-05); rule 5: the same line on mobile. */}
+                                {accessSummary(u, companies) && <div className="text-xs text-amber-700">{accessSummary(u, companies)}</div>}
+                            </td>
                             <td className="px-5 py-3 text-slate-700">
                                 {u.employee ? <>{u.employee.name} <span className="text-xs text-slate-500">#{u.employee.employee_code}</span></> : <span className="text-slate-500">—</span>}
                             </td>

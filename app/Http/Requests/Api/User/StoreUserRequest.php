@@ -32,6 +32,11 @@ class StoreUserRequest extends FormRequest
                 Rule::unique('users', 'employee_id'),
             ],
             'is_active' => ['sometimes', 'boolean'],
+            // Owner, 2026-11-05: per-user delete switch, and the companies they may see
+            // (null or [] = every company). UserController refuses giving more than one has.
+            'can_delete' => ['sometimes', 'boolean'],
+            'company_ids' => ['sometimes', 'nullable', 'array'],
+            'company_ids.*' => ['integer', 'distinct', Rule::exists('companies', 'id')->where('tenant_id', Tenancy::id())->whereNull('deleted_at')],
         ];
     }
 

@@ -35,6 +35,10 @@ class ManagedUserResource extends JsonResource
             'last_active_at' => $this->last_active_at ? \Illuminate\Support\Carbon::parse($this->last_active_at)->toIso8601String() : null,
             'created_at' => $this->created_at?->toIso8601String(),
             'is_self' => $request->user()?->id === $this->id,
+            // Owner, 2026-11-05: may this user delete at all, and which companies they see
+            // (null = every company).
+            'can_delete' => $this->can_delete !== false,
+            'company_ids' => $this->companyIds(),
         ];
     }
 }

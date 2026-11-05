@@ -28,7 +28,11 @@ class UserResource extends JsonResource
             'employee_id' => $this->employee_id,
             // Roles + effective permissions so the SPA can gate UI without extra calls.
             'roles' => $this->getRoleNames(),
-            'permissions' => $this->getAllPermissions()->pluck('name'),
+            // Less delete when this user's "Can delete" is off (2026-11-05).
+            'permissions' => $this->effectivePermissionNames(),
+            'can_delete' => $this->can_delete !== false,
+            // The companies they may see; null = every company (CompanyAccess).
+            'company_ids' => $this->companyIds(),
         ];
     }
 }

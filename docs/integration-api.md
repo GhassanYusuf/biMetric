@@ -29,6 +29,14 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json
 curl -H "Authorization: Bearer $TOKEN" 'https://bridge.example/api/v1/attendance?after_id=0&limit=500'
 ```
 
+**A token sees what its user sees (2026-11-05).** Users → Edit → "Companies they see: Only
+these" limits that user, and every token of theirs, to those companies: `/employees`,
+`/attendance`, `/companies`, reports and webhooks-by-pull return nothing else; employees in no
+company and punches linked to nobody are left out too; another company's employee answers 404.
+For an HR system that must not see some companies, give its service user only the companies it
+may see. "Can delete: off" on the user refuses every delete (`DELETE /employees/{code}` → 403),
+whatever its level allows.
+
 Tokens can also be minted over HTTP by a **signed-in** user (`POST /api/v1/tokens`), but
 never by another integration token — a scoped token cannot mint itself a wider one.
 

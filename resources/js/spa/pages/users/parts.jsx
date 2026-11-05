@@ -163,13 +163,34 @@ function PasswordField({ value, onChange, error, label = 'Password' }) {
 }
 
 /** Add a user, or edit one. */
-export function UserFormModal({ user, levels, myPermissions, onSubmit, onClose }) {
+/**
+ * One line under the level: what this user's per-user switches take away (2026-11-05).
+ * Empty for a user who may delete and sees every company. Identical on both layouts (rule 5).
+ */
+export function accessSummary(user, companies) {
+    const parts = [];
+    if (user.can_delete === false) parts.push('Cannot delete');
+    if (Array.isArray(user.company_ids) && user.company_ids.length) {
+        const names = user.company_ids.map((id) => companies.find((c) => c.id === id)?.name).filter(Boolean);
+        parts.push(names.length && names.length <= 3 ? `Only ${names.join(', ')}` : `Only ${user.company_ids.length} companies`);
+    }
+    return parts.join(' · ');
+}
+
+export function UserFormModal({ user, levels, myPermissions, companies = [], me, onSubmit, onClose }) {
     const isEdit = !!user;
     const [name, setName] = useState(user?.name ?? '');
     const [email, setEmail] = useState(user?.email ?? '');
     const [password, setPassword] = useState('');
     const [role, setRole] = useState(user?.role ?? '');
     const [employee, setEmployee] = useState(user?.employee ? [user.employee] : []);
+    // Owner, 2026-11-05: per-user delete switch and the companies they see. Nobody gives
+    // more than they have (UserController::cannotGrantAccess), so a limited admin starts
+    // new users on their own companies and someone who may not delete cannot give it.
+    const meLimited = Array.isArray(me?.company_ids) && me.company_ids.length > 0;
+    const [canDelete, setCanDelete] = useState(user ? user.can_delete !== false : me?.can_delete !== false);
+    const [onlySome, setOnlySome] = useState(user ? Array.isArray(user.company_ids) && user.company_ids.length > 0 : meLimited);
+    const [companyIds, setCompanyIds] = useState(user?.company_ids ?? (meLimited ? me.company_ids : []));
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const ownLevel = user?.is_self;
@@ -181,6 +202,7 @@ export function UserFormModal({ user, levels, myPermissions, onSubmit, onClose }
         if (!email.trim()) found.email = ['Enter the e-mail they will sign in with.'];
         if (!isEdit && password.length < 8) found.password = ['At least 8 characters.'];
         if (!role) found.role = ['Choose a permission level.'];
+        if (onlySome && companyIds.length === 0) found.company_ids = ['Tick at least one company, or choose every company.'];
         if (Object.keys(found).length) {
             setErrors(found);
             return;
@@ -188,7 +210,11 @@ export function UserFormModal({ user, levels, myPermissions, onSubmit, onClose }
         setSubmitting(true);
         setErrors({});
         const payload = { name: name.trim(), email: email.trim(), employee_id: employee[0]?.id ?? null };
-        if (!ownLevel) payload.role = role;
+        if (!ownLevel) {
+            payload.role = role;
+            payload.can_delete = canDelete;
+            payload.company_ids = onlySome ? companyIds : [];
+        }
         if (!isEdit) payload.password = password;
         try {
             await onSubmit(payload);
@@ -231,6 +257,56 @@ export function UserFormModal({ user, levels, myPermissions, onSubmit, onClose }
                         error={errors.employee_id?.[0]}
                     />
                     <p className="-mt-1 text-xs text-slate-500">Needed for the Employee level: it is whose attendance they see.</p>
+
+                    <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-sm text-slate-700">
+                        <input
+                            type="checkbox"
+                            checked={canDelete}
+                            onChange={(e) => setCanDelete(e.target.checked)}
+                            disabled={ownLevel || me?.can_delete === false}
+                            className={`mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 ${FOCUS}`}
+                        />
+                        <span>
+                            Can delete
+                            <span className="block text-xs text-slate-500">
+                                {ownLevel ? 'You cannot change this for yourself.' : me?.can_delete === false ? 'You may not delete yourself, so you cannot give it.' : 'Off: they cannot delete employees, terminals or users, whatever their level allows.'}
+                            </span>
+                        </span>
+                    </label>
+                    {errors.can_delete?.[0] && <p className="-mt-1 text-xs text-rose-700">{errors.can_delete[0]}</p>}
+
+                    <fieldset className="space-y-2 pt-1" disabled={ownLevel}>
+                        <legend className="text-sm font-medium text-slate-700">Companies they see</legend>
+                        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+                            <input type="radio" name="companies-scope" checked={!onlySome} onChange={() => setOnlySome(false)} disabled={meLimited}
+                                className={`h-4 w-4 border-slate-300 text-violet-600 ${FOCUS}`} />
+                            Every company{meLimited ? ' — beyond your own rights' : ''}
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
+                            <input type="radio" name="companies-scope" checked={onlySome} onChange={() => setOnlySome(true)}
+                                className={`h-4 w-4 border-slate-300 text-violet-600 ${FOCUS}`} />
+                            Only these
+                        </label>
+                        {onlySome && (
+                            <div className="ml-6 grid gap-1.5 sm:grid-cols-2">
+                                {companies.map((c) => (
+                                    <label key={c.id} className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={companyIds.includes(c.id)}
+                                            onChange={(e) => setCompanyIds((ids) => (e.target.checked ? [...ids, c.id] : ids.filter((x) => x !== c.id)))}
+                                            className={`h-4 w-4 rounded border-slate-300 text-violet-600 ${FOCUS}`}
+                                        />
+                                        {c.name}
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                        <p className="text-xs text-slate-500">
+                            {ownLevel ? 'You cannot change this for yourself.' : 'Only these: they see those companies’ employees, departments and punches, nothing else. Employees in no company and punches linked to nobody are hidden too.'}
+                        </p>
+                        {errors.company_ids?.[0] && <p className="text-xs text-rose-700">{errors.company_ids[0]}</p>}
+                    </fieldset>
                 </div>
                 <div className="mt-5 flex justify-end gap-2">
                     <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>Cancel</Button>

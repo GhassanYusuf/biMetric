@@ -1,9 +1,9 @@
 import { ActionMenu, Button, Card, EmptyState, PageHeader, SkeletonCards } from '../../shared/ui';
-import { LevelCard, StatusBadge, Tabs, lastActive, userActions } from './parts';
+import { LevelCard, StatusBadge, Tabs, accessSummary, lastActive, userActions } from './parts';
 
 // Mobile: users as stacked cards, levels as stacked cards — the same actions as desktop.
 export default function UsersMobile(props) {
-    const { loaded, tab, onTab, showLevels, users, levels, can, onAddUser, onAddLevel } = props;
+    const { loaded, tab, onTab, showLevels, users, companies = [], levels, can, onAddUser, onAddLevel } = props;
 
     return (
         <div className="space-y-4">
@@ -49,6 +49,7 @@ function UserCards({ users, can, onAddUser, ...handlers }) {
                                 <span className="text-slate-700">{u.role_label ?? 'No level'}</span>
                                 <span className="text-xs text-slate-500">{lastActive(u.last_active_at)}</span>
                             </div>
+                            {accessSummary(u, companies) && <div className="mt-1.5 text-xs text-amber-700">{accessSummary(u, companies)}</div>}
                             {u.employee && <div className="mt-1.5 text-xs text-slate-600">Employee: {u.employee.name} #{u.employee.employee_code}</div>}
                         </Card>
                     </li>

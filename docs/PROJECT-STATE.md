@@ -104,10 +104,23 @@ Personnel-IDs-page commit of 2026-11-05 are ahead of `origin/main` (the owner ru
    - Found: Asif (GoodWheels) was on the terminal under Wajid's CPR 770280340 from 2026-10-18 to
      2026-10-21; his 6 punches were correctly his and now carry his own CPR.
    - Camelot's punches after 2026-10-29 are still on the terminal (restart, then read: DC-036).
-0b. **HR system reading the database directly (owner):** it must not see AVANA, CCT, EN
-   INTERIOR DESIGN, UM. Proposed: a SQL login `hr_reader` with SELECT on `hr.*` views only, the
-   views on an ALLOW-list of companies and only the columns HR needs; or the API with a
-   company-limited token (not built). **Owner owes:** which companies, which fields.
+0b. **HR system must not see AVANA, CCT, EN INTERIOR DESIGN, UM (owner).** Through the API this
+   is now just a user setting (item 0c): a service user limited to the other companies, and its
+   `/api/v1` token sees nothing else. **Reading SQL Server directly bypasses all of it**; then
+   the proposal stands: a SQL login `hr_reader` with SELECT on `hr.*` views only, on an
+   ALLOW-list of companies and only the columns HR needs. **Owner owes:** API or database;
+   which companies; which fields.
+0c. **Per-user limits on the Users screen (owner, 2026-11-05) — BUILT; needs the migration.**
+   Edit user → "Can delete" (off = no deleting employees, terminals or users, whatever the
+   level; `User::hasPermissionTo`) and "Companies they see" (every company, or only the ticked
+   ones; `user_companies`, `CompanyAccess`, `CompanyScope` on Company / Department / Employee /
+   AttendanceLog, so every screen, report, export and v1 call follows). Limited users do not
+   see employees in no company nor unlinked punches (owner's choice). Nobody gives more than
+   they have, nobody changes their own; changes are audited (`user.access_changed`). Run
+   `php artisan migrate --force` (2026_11_05_120000) — until then nobody is limited and the
+   Users form cannot save. **Not limited (yet):** the Terminals screens (rosters show the
+   terminal's own names) and the audit log; give a limited user no `devices.view` / `audit.view`
+   if that matters.
 
 1. **DC-040, clocks (owner):** at 05:00 Bahrain on 2026-11-03, IT ROOM, On The Road,
    Entrance and Glass Door were all ~11 min 20 s slow (set by something on the LAN?). Is any

@@ -24,17 +24,21 @@ export default function Users() {
     const [users, setUsers] = useState([]);
     const [levels, setLevels] = useState([]);
     const [groups, setGroups] = useState([]);
+    // For "Companies they see" (2026-11-05). A limited admin gets only their own here.
+    const [companies, setCompanies] = useState([]);
     const [loaded, setLoaded] = useState(false);
     // { kind: 'user'|'password'|'level', row?: … }
     const [editing, setEditing] = useState(null);
 
     const load = useCallback(async () => {
         try {
-            const [u, r] = await Promise.all([
+            const [u, r, c] = await Promise.all([
                 api.get('/users'),
                 can('roles.view') ? api.get('/roles') : Promise.resolve(null),
+                can('departments.view') ? api.get('/companies') : Promise.resolve(null),
             ]);
             setUsers(u.data ?? []);
+            if (c) setCompanies(c.data ?? []);
             if (r) {
                 setLevels(r.data ?? []);
                 setGroups(r.meta?.groups ?? []);
@@ -160,6 +164,7 @@ export default function Users() {
         onTab: setTab,
         showLevels: can('roles.view'),
         users,
+        companies,
         levels,
         groups,
         can,
@@ -179,7 +184,7 @@ export default function Users() {
         <>
             <Presentation {...props} />
             {editing?.kind === 'user' && (
-                <UserFormModal user={editing.row ?? null} levels={levels} myPermissions={me?.permissions} onSubmit={saveUser} onClose={() => setEditing(null)} />
+                <UserFormModal user={editing.row ?? null} levels={levels} myPermissions={me?.permissions} companies={companies} me={me} onSubmit={saveUser} onClose={() => setEditing(null)} />
             )}
             {editing?.kind === 'password' && (
                 <PasswordModal user={editing.row} onSubmit={setPassword} onClose={() => setEditing(null)} />
