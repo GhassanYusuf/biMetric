@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { FOCUS } from '../../shared/theme';
-import { ActionMenu, Badge, Button, Card, DateField, EmptyState, PageHeader, Pager, SelectField, Skeleton, TextField } from '../../shared/ui';
+import { ActionMenu, Avatar, Badge, Button, Card, DateField, EmptyState, PageHeader, Pager, SelectField, Skeleton, TextField } from '../../shared/ui';
 import UnmatchedName from './UnmatchedName';
 import DepartmentTree from '../employees/DepartmentTree';
 import { formatPunch, groupByDay, verifyLabel } from './parts';
@@ -85,6 +85,7 @@ export default function AttendanceMobile({
                 <div className="space-y-2" aria-busy="true" aria-label="Loading punches">
                     {Array.from({ length: 6 }, (_, i) => (
                         <Card key={i} className="flex items-center gap-3 p-3.5">
+                            <Skeleton className="h-8 w-8 shrink-0 !rounded-full" />
                             <div className="min-w-0 flex-1">
                                 <Skeleton className="h-3.5 w-32" />
                                 <Skeleton className="mt-2 h-2.5 w-40" />
@@ -153,6 +154,8 @@ function PunchCard({ log, onSelect }) {
             } : undefined}
             className={`flex items-center gap-3 p-3.5 ${openable ? `cursor-pointer active:bg-slate-50 ${FOCUS}` : ''}`}
         >
+            {/* Rule 5: the same photo as the desktop name cell. */}
+            <Avatar src={log.employee_photo_url} name={log.employee_name || log.terminal_user_name} />
             <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-slate-900">
                     {log.employee_name || <UnmatchedName log={log} />}

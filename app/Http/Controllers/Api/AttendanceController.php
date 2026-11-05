@@ -37,7 +37,7 @@ class AttendanceController extends Controller
         ]);
 
         $logs = PunchLogQuery::build($user, PunchLogQuery::selfOnly($user), $filters)
-            ->with(['employee:id,name,last_name,employee_code', 'device:id,name'])
+            ->with(['employee:id,name,last_name,employee_code,photo_path', 'device:id,name'])
             ->paginate($request->integer('per_page', 50));
 
         $this->attachTerminalNames($logs->getCollection());

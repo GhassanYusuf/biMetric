@@ -16,6 +16,8 @@ class AttendanceLogResource extends JsonResource
             'id' => $this->id,
             'employee_id' => $this->employee_id,
             'employee_name' => $this->whenLoaded('employee', fn () => $this->employee?->fullName()),
+            // The person's photo beside their name on the Attendance page (owner, 2026-11-05).
+            'employee_photo_url' => $this->whenLoaded('employee', fn () => $this->employee?->photo_url),
             /*
              * Two numbers, kept apart (2026-10-22). `employee_code` is the person's
              * Personnel ID — null for a punch matched to nobody. `device_user_id` is the

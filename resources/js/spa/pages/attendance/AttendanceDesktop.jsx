@@ -1,5 +1,5 @@
 import { FOCUS } from '../../shared/theme';
-import { ActionMenu, Button, Card, DateField, EmptyState, PageHeader, Pager, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
+import { ActionMenu, Avatar, Button, Card, DateField, EmptyState, PageHeader, Pager, SelectField, Spinner, TableShell, TextField, Thead } from '../../shared/ui';
 import UnmatchedName from './UnmatchedName';
 import DepartmentTree from '../employees/DepartmentTree';
 import { formatPunch, verifyLabel } from './parts';
@@ -131,7 +131,11 @@ export default function AttendanceDesktop({
                                 }`}
                             >
                                 <td className="px-5 py-3 font-medium text-slate-900">
-                                    {log.employee_name || <UnmatchedName log={log} />}
+                                    {/* The person's photo, or initials (owner, 2026-11-05). */}
+                                    <div className="flex items-center gap-3">
+                                        <Avatar src={log.employee_photo_url} name={log.employee_name || log.terminal_user_name} />
+                                        <span className="min-w-0">{log.employee_name || <UnmatchedName log={log} />}</span>
+                                    </div>
                                 </td>
                                 <td className="px-5 py-3 font-mono text-xs text-slate-600">{log.employee_code || '—'}</td>
                                 {/* The number the terminal recorded — amber when it is not their
