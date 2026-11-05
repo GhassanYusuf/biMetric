@@ -21,7 +21,7 @@ export default function UsersMobile(props) {
     );
 }
 
-function UserCards({ users, can, onAddUser, ...handlers }) {
+function UserCards({ users, companies = [], can, onAddUser, ...handlers }) {
     if (users.length === 0) {
         return (
             <Card>

@@ -21,7 +21,7 @@ export default function UsersDesktop(props) {
     );
 }
 
-function UserTable({ users, can, onAddUser, ...handlers }) {
+function UserTable({ users, companies = [], can, onAddUser, ...handlers }) {
     if (users.length === 0) {
         return (
             <Card>
