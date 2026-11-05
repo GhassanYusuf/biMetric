@@ -81,7 +81,8 @@ export default function Attendance() {
             .then((org) => {
                 setCompanies(org.companies);
                 setDepartments(org.departments);
-                setUnassignedCount(org.unassignedCount);
+                // Current staff, as the Employees tab counts them (owner, 2026-11-05).
+                setUnassignedCount(org.unassignedCurrentCount);
             })
             .finally(() => setDepartmentsLoaded(true));
     }, []);

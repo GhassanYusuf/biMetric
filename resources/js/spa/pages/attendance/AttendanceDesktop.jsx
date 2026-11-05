@@ -49,7 +49,7 @@ export default function AttendanceDesktop({
                     departments={departments}
                     unassignedCount={unassignedCount}
                     loaded={departmentsLoaded}
-                    counts={false}
+                    countKind="current"
                     allLabel="Everyone"
                     value={filters.org ?? ''}
                     onChange={(key) => set('org', key)}

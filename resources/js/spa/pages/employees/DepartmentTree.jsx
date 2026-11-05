@@ -18,8 +18,9 @@ import { buildOrg, companyKey, departmentKey } from '../../shared/orgUnits';
 | Shared by desktop (a panel on the left) and mobile (a collapsible card) so the two
 | behave identically (rule 5); only `variant` changes the frame around it.
 |
-| Also on the Attendance page (2026-10-11), with `counts={false}`: the numbers here
-| are employees, and beside a punch log they would read as punch counts.
+| Also on the Attendance page (2026-10-11). Counts were hidden there at first, so they
+| would not read as punch counts; since 2026-11-05 (owner) it shows the same current-staff
+| numbers as the Employees tab.
 |
 | "Unassigned" is a node of its own because nobody in it shows under any company,
 | and a group that no grouping shows is a group that gets forgotten.
