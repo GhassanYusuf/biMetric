@@ -152,4 +152,20 @@ class UserAccessLimitsTest extends TestCase
         $this->as($noDelete)->postJson('/api/users', ['email' => 'y@acme.test'] + $body + ['can_delete' => true])->assertForbidden();
         $this->as($noDelete)->putJson("/api/users/{$noDelete->id}", ['can_delete' => true])->assertStatus(422);
     }
+
+    /** Owner, 2026-11-05: HR sees the company tree on Attendance, not the Companies or Employees tab. */
+    public function test_attendance_only_level_reads_the_company_tree_but_nothing_else(): void
+    {
+        Tenancy::set($this->tenant->id);
+        $level = \Spatie\Permission\Models\Role::create(['name' => 'HR attendance', 'guard_name' => 'web']);
+        $level->givePermissionTo('attendance.view');
+        $hr = $this->user('hrview@acme.test', 'HR attendance');
+
+        $this->assertCount(2, $this->as($hr)->getJson('/api/companies')->assertOk()->json('data'));
+        $this->as($hr)->getJson('/api/departments')->assertOk();
+        $this->as($hr)->getJson('/api/attendance')->assertOk();
+        $this->as($hr)->getJson('/api/employees')->assertForbidden();
+        $this->as($hr)->postJson('/api/companies', ['name' => 'New'])->assertForbidden();
+        $this->as($hr)->getJson("/api/companies/{$this->promoseven->id}")->assertForbidden();
+    }
 }

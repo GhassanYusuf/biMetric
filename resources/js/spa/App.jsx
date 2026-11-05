@@ -27,6 +27,16 @@ import LegacyData from './pages/legacy/LegacyData';
 import Settings from './pages/settings/Settings';
 import Notifications from './pages/notifications/Notifications';
 
+/*
+| A screen hidden from the menu is also closed by address (owner, 2026-11-05: HR sees
+| Attendance with its company tree, but not the Companies or Employees tab). The server
+| refuses the data anyway; this keeps a typed or bookmarked URL from opening a broken page.
+*/
+function Guard({ permission, children }) {
+    const { can } = useAuth();
+    return can(permission) ? children : <Navigate to="/dashboard" replace />;
+}
+
 function Protected({ children }) {
     const { user, loading } = useAuth();
     if (loading) {
@@ -120,8 +130,8 @@ export default function App() {
                     >
                         <Route index element={<Navigate to="/dashboard" replace />} />
                         <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="/employees" element={<Employees />} />
-                        <Route path="/employees/:id/report" element={<EmployeeReport />} />
+                        <Route path="/employees" element={<Guard permission="employees.view"><Employees /></Guard>} />
+                        <Route path="/employees/:id/report" element={<Guard permission="employees.view"><EmployeeReport /></Guard>} />
                         <Route path="/devices" element={<Devices />} />
                         {/*
                           | Device sub-screens. `/devices/:id` must come after `/devices` but
@@ -137,7 +147,7 @@ export default function App() {
                         <Route path="/reports" element={<Reports />} />
                         <Route path="/holidays" element={<Holidays />} />
                         <Route path="/settings" element={<Settings />} />
-                        <Route path="/organisation" element={<Organisation />} />
+                        <Route path="/organisation" element={<Guard permission="departments.view"><Organisation /></Guard>} />
                         <Route path="/users" element={<Users />} />
                         <Route path="/cron-jobs" element={<CronJobs />} />
                         <Route path="/notifications" element={<Notifications />} />
