@@ -351,6 +351,15 @@ Template:
   `test_import_staff_with_nobody_new_queues_no_fingerprint_copy`). Why the earlier terminals
   never hit it: their rosters were read by hand from the command line during setup
   (27 Sep, 11 Oct, 25 Oct); JJs was the first an operator added and imported alone.
+  **2026-11-09 — the fix had missed the button.** Gems Main Office (#22, F18, 192.168.7.64)
+  answered the same "has not had its roster read yet" (owner: "I told you to fix this
+  before"). The fix lived in the QUEUED command (`IMPORT_EMPLOYEES` → `importStaff()`), but
+  the Devices screen's button posts to `POST /devices/{id}/import-employees`, which still
+  called `importFromDevice()` directly, with no roster read. Now that endpoint queues
+  `IMPORT_EMPLOYEES` and the page waits for it and shows its result (as Clear punches does);
+  a second press while one is under way returns the same command. Test
+  `ImportStaffButtonTest`. Lesson: a fix to an action must be checked from the button the
+  operator presses, not only from the code path the fix was written in.
 - **Verified:** on JJs, 2026-11-02 ~14:10 UTC: 255 templates stored for 149 people.
 - **Evidence:** commands 19373, 19374, 19375; `device:roster 19` output.
 - **Status:** FIXED — watch the nightly reads of JJs over the next days; if they come back

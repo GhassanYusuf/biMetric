@@ -221,6 +221,36 @@ export default function Devices() {
         }
     }
 
+    /**
+     * Import staff (2026-11-09): queued, so the roster is read first (DeviceCommandHandler::
+     * importStaff). Waits for the command and reports its own result, like Clear punches.
+     */
+    async function importStaff(device) {
+        const key = 'import-employees';
+        setBusy((b) => ({ ...b, [device.id]: key }));
+        try {
+            const res = await api.post(`/devices/${device.id}/import-employees`);
+            toast.info(res.message);
+
+            const done = await waitForCommand(res.data.id);
+            if (done === null) {
+                toast.info(`Still working on ${device.name} — the result will appear in its command history.`);
+            } else if (done.status === 'succeeded') {
+                toast.success(done.message);
+                settle(device.id, key, 'success');
+            } else {
+                toast.error(done.message ?? `Staff were not imported from ${device.name}.`);
+                settle(device.id, key, 'error');
+            }
+            await load();
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : `Could not reach ${device.name}.`);
+            settle(device.id, key, 'error');
+        } finally {
+            setBusy((b) => ({ ...b, [device.id]: undefined }));
+        }
+    }
+
     async function clearPunches(device) {
         if (!(await confirm(clearPunchesConfirm(device)))) return;
 
@@ -368,7 +398,7 @@ export default function Devices() {
         onFullResync: fullResync,
         onRangeSync: (d) => setRangeFor(d),
         onAdopt: adoptDevice,
-        onImport: (d) => runAction(d, 'import-employees'),
+        onImport: importStaff,
         onClearPunches: clearPunches,
         onRestart: restartDevice,
         onWipe: (d) => setWipeFor(d),

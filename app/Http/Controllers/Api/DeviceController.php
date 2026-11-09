@@ -318,17 +318,36 @@ class DeviceController extends Controller
         }
     }
 
+    /**
+     * Devices → Import staff. QUEUES the import command, whose handler reads the terminal's
+     * roster first, imports, then copies fingerprints and cards (DeviceCommandHandler::
+     * importStaff, casebook DC-037).
+     *
+     * Until 2026-11-09 this button imported straight from roster rows already stored, and so
+     * answered "has not had its roster read yet" for every new terminal — the DC-037 fix
+     * (2026-11-03) had reached the queued command but not this button (owner, 2026-11-09, on
+     * Gems Main Office: "I told you to fix this before"). The page waits for the command and
+     * shows its own result.
+     */
     public function importEmployees(Device $device): JsonResponse
     {
         $this->authorize('sync', $device);
 
-        try {
-            $result = $this->users->importFromDevice($device);
-
-            return ApiResponse::success($result['raw'], $result['message']);
-        } catch (\Throwable $e) {
-            return $this->deviceFailure($e, 'employee import', $device);
+        $pending = DeviceCommand::query()
+            ->where('device_id', $device->id)
+            ->where('command', DeviceCommand::IMPORT_EMPLOYEES)
+            ->whereIn('status', [DeviceCommand::STATUS_QUEUED, DeviceCommand::STATUS_RUNNING])
+            ->first();
+        if ($pending !== null) {
+            return ApiResponse::success(new DeviceCommandResource($pending), "Importing staff from {$device->name} is already under way.");
         }
+
+        $command = app(DeviceCommandBus::class)->dispatch($device, DeviceCommand::IMPORT_EMPLOYEES);
+
+        return ApiResponse::success(
+            new DeviceCommandResource($command),
+            "Queued: read who is on {$device->name}, then add them as employees.",
+        );
     }
 
     /**
