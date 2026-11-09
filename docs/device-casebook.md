@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | OPEN |
+| DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | FIXED |
 | DC-040 | 2026-11-03 | IT ROOM, On The Road, Entrance, Glass Door; City Center Hotel | Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers | OPEN |
 | DC-039 | 2026-11-03 | Entrance, Glass Door | Troy cannot be moved to his CPR: "Pin 685 is not on this panel", a link to a user removed outside the system | FIXED |
 | DC-038 | 2026-11-03 | Entrance, Glass Door | Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge | FIXED |
@@ -170,11 +170,17 @@ Template:
   is not changed — only the ceiling and the clean-up after a kill. Tests
   `KilledDeviceJobCleanupTest`; `docs/error-handling.md`. Needs `queue:restart` to reach the
   worker.
-- **Verified:** by tests; not yet on Gems Main Office (needs the worker restarted and a full
-  read to finish).
+- **Verified:** on Gems Main Office, 2026-11-09. `queue:restart` 14:24 UTC; the killed job's
+  pre-fix lock expired 14:39; owner pressed Full read once at 14:40:17 (command 33869, sync run
+  714). The terminal sent at ~8.5 KB/s this time; **read 64,258 in 7 min 54 s** (474 s — past
+  the old 300 s limit, within the new one), **63,761 imported**, 0 duplicates, 497 archived
+  as dated in the future (all **March 2029**, 2029-03-05 → 03-26: the terminal's clock was set
+  ahead for a few weeks at some point; raw rows kept in `attendance_raw_logs`, run 714, can be
+  re-dated). Punches 2020-06-13 → 2026-11-09 14:38 UTC. All 63,761 are unmatched (96 user ids;
+  the terminal's 20 users not imported yet). Lock released at the end; no lock left.
 - **Evidence:** command 33788, 33796, 33811; sync run 709; `laravel.log` 2026-11-09 13:00–13:50;
   `cache_locks` read 14:05:51 UTC.
-- **Status:** OPEN
+- **Status:** FIXED
 - **Keywords:** Gems Main Office, 192.168.7.64, IT-Test, full read, stuck, job processing this
   command was lost, TimeoutExceededException, has timed out, busy with another operation,
   device-session, cache_locks, stuck running, sync run 709
