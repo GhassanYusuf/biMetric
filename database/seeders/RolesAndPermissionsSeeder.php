@@ -26,7 +26,7 @@ class RolesAndPermissionsSeeder extends Seeder
         'reports.view',
         'settings.view', 'settings.manage',
         'notifications.view', 'notifications.view.self', 'notifications.manage',
-        'audit.view',
+        'audit.view', 'logs.view',
         'tenants.view', 'tenants.manage', // platform-only
     ];
 

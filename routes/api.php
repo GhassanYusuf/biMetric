@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AccessLevelController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AttendancePersonnelIdController;
 use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\ErrorLogController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\ClientErrorController;
 use App\Http\Controllers\Api\DashboardController;
@@ -347,6 +348,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
     // Audit trail
     Route::get('audit-logs', [AuditLogController::class, 'index']);
+    // Server, terminal and browser logs, read-only (2026-11-09).
+    Route::get('error-logs', [ErrorLogController::class, 'index']);
 
     /*
     |----------------------------------------------------------------------------

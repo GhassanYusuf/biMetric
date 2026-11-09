@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-11-05**
+**Last updated: 2026-11-09**
 
 ---
 
@@ -110,6 +110,18 @@ Personnel-IDs-page commit of 2026-11-05 are ahead of `origin/main` (the owner ru
    the proposal stands: a SQL login `hr_reader` with SELECT on `hr.*` views only, on an
    ALLOW-list of companies and only the columns HR needs. **Owner owes:** API or database;
    which companies; which fields.
+0d. **Audit log and Error logs screens (owner, 2026-11-09) — BUILT.** Company → Audit log
+   (`audit.view`): audit_logs with filters (who, action, dates, search), people's actions by
+   default (61,000 of 64,000 rows are the system's bookkeeping), names of what was changed,
+   before → after. Company → Error logs (new `logs.view`, Administrators): the server
+   (`laravel.log`, `production.*` only), terminal (`device-*.log`) and browser (`client-*.log`)
+   logs, repeats grouped, last 7 days by default (`ErrorLogReader`). Both refused to a user
+   limited to some companies. **Run `php artisan migrate --force`** (2026_11_09_090000 creates
+   `logs.view` for the Administrator level); until then nobody sees Error logs. Found: the test
+   suite writes `testing.*` entries into the live `laravel.log` (10 MB, never rotated: the
+   `single` channel) — housekeeping: run tests with their own log, or switch to `daily`.
+   On 2026-11-08 (owner on leave): Ali signed in 09:31–17:56 and read Entrance and IT ROOM;
+   Ghassan viewed his own report; an **Nmap scan from 192.168.1.177** at 16:34 (owner to ask IT).
 0c. **Per-user limits on the Users screen (owner, 2026-11-05) — BUILT; needs the migration.**
    Edit user → "Can delete" (off = no deleting employees, terminals or users, whatever the
    level; `User::hasPermissionTo`) and "Companies they see" (every company, or only the ticked

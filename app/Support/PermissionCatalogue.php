@@ -81,6 +81,7 @@ final class PermissionCatalogue
             'notifications.view.self' => 'See own alerts only',
             'notifications.manage' => 'Manage alerts',
             'audit.view' => 'See the audit log',
+            'logs.view' => 'See error logs (server, terminals, browsers)',
         ],
     ];
 

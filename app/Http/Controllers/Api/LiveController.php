@@ -62,6 +62,9 @@ class LiveController extends Controller
             // The Cron jobs screen (2026-10-20); a run stamps last_run_at, so it moves too.
             'schedules' => $this->stamp(ScheduledJob::query()),
             'notifications' => $this->stamp(Notification::query()->where('user_id', $user->id)),
+            // Audit log and Error logs screens (2026-11-09). The logs are files: their newest mtime.
+            'audit' => $user->can('audit.view') ? $this->stamp(\App\Models\AuditLog::query()) : null,
+            'errors' => $user->can('logs.view') ? md5(app(\App\Support\ErrorLogReader::class)->stamp()) : null,
         ], 'Live stamps.');
     }
 

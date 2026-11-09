@@ -26,6 +26,8 @@ import CronJobs from './pages/cronjobs/CronJobs';
 import LegacyData from './pages/legacy/LegacyData';
 import Settings from './pages/settings/Settings';
 import Notifications from './pages/notifications/Notifications';
+import AuditLog from './pages/audit/AuditLog';
+import ErrorLogs from './pages/errors/ErrorLogs';
 
 /*
 | A screen hidden from the menu is also closed by address (owner, 2026-11-05: HR sees
@@ -150,6 +152,8 @@ export default function App() {
                         <Route path="/organisation" element={<Guard permission="departments.view"><Organisation /></Guard>} />
                         <Route path="/users" element={<Users />} />
                         <Route path="/cron-jobs" element={<CronJobs />} />
+                        <Route path="/audit-log" element={<Guard permission="audit.view"><AuditLog /></Guard>} />
+                        <Route path="/error-logs" element={<Guard permission="logs.view"><ErrorLogs /></Guard>} />
                         <Route path="/notifications" element={<Notifications />} />
 
                         <Route path="/legacy" element={<LegacyData />} />

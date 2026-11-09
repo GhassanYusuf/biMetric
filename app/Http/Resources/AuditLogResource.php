@@ -18,6 +18,10 @@ class AuditLogResource extends JsonResource
             'actor' => $this->whenLoaded('user', fn () => $this->user?->name),
             'auditable_type' => class_basename((string) $this->auditable_type),
             'auditable_id' => $this->auditable_id,
+            // Its name when it is a person, terminal, user, company or department (2026-11-09).
+            'subject_name' => $this->getAttribute('subject_name'),
+            'actor_id' => $this->user_id,
+            'user_agent' => $this->user_agent,
             'changes' => $this->changes,
             'ip_address' => $this->ip_address,
             'created_at' => $this->created_at?->toIso8601String(),

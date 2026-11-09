@@ -42,6 +42,9 @@ export const NAV_SECTIONS = [
             { to: '/users', label: 'Users', icon: 'shield', permission: 'users.view' },
             // What runs on its own and when (2026-10-20); was two sections of Settings.
             { to: '/cron-jobs', label: 'Cron jobs', icon: 'timer', permission: 'settings.view' },
+            // Who changed what, and what went wrong (2026-11-09).
+            { to: '/audit-log', label: 'Audit log', icon: 'list', permission: 'audit.view' },
+            { to: '/error-logs', label: 'Error logs', icon: 'alert', permission: 'logs.view' },
             { to: '/legacy', label: 'Legacy data', icon: 'archive', permission: 'employees.update' },
         ],
     },
@@ -100,6 +103,8 @@ export function Icon({ name, className = 'h-[18px] w-[18px]' }) {
         building: 'M4 21V5a1 1 0 011-1h9a1 1 0 011 1v16M15 10h4a1 1 0 011 1v10M3 21h18M8 8h3M8 12h3M8 16h3',
         timer: 'M12 9v4l2.5 2M9 2h6M12 22a8 8 0 100-16 8 8 0 000 16z',
         shield: 'M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6l7-3zM9 12l2 2 4-4',
+        list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
+        alert: 'M12 4l9 16H3l9-16zM12 10v4M12 17h.01',
     };
     return (
         <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
