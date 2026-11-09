@@ -113,9 +113,17 @@ Push and Enroll ran inside the web request and skipped `ProcessDeviceCommand`'s
   queued command requeues with backoff instead of failing.
 - **Different terminals never wait for each other.** Re-entrant inside one process: a call
   made inside `run()` on the same terminal goes straight through.
-- **TTL 1800 s**, the worker's `--timeout`. A killed process leaves the terminal busy
-  until it expires; clear it with `DELETE FROM cache_locks WHERE [key] LIKE
-  '%device-session:{id}'`.
+- **TTL 1800 s**, the worker's `--timeout`. Since 2026-11-09 (casebook DC-041) a job the
+  queue gives up on — including one it kills at its own `$timeout` — releases this lock in
+  `ProcessDeviceCommand::failed()`, through `DeviceDriverManager::releaseIfHeldHere()`, which
+  touches the lock only when its own process holds it. A worker killed from outside (a
+  crash, `kill -9`) still leaves it until it expires; clear it with `DELETE FROM cache_locks
+  WHERE [key] LIKE '%device-session:{id}'`.
+- **The job limit is 1500 s** (`ProcessDeviceCommand::$timeout`, 300 until 2026-11-09). Gems
+  Main Office holds 64,253 punches and sends them at ~4.6 KB/s, about 10 minutes, and every
+  read was killed at 5. It must stay under the worker's `--timeout=1800` and this TTL.
+  `WithoutOverlapping` expires after 1800 s to match. One worker means other terminals wait
+  during such a read.
 - **`open()` is not locked**: the realtime listener holds that session for hours.
 
 Tests: `tests/Feature/DeviceSessionQueueTest.php`.
@@ -174,7 +182,8 @@ number on that terminal.
 
 `WithoutOverlapping` locks live in `cache_locks`. Killing a worker mid-command
 leaves the lock held, and every subsequent command for that device is released
-until it expires (600s).
+until it expires (1800 s since 2026-11-09; was 600 s). A job the queue itself kills at
+`$timeout` now releases it in `failed()` and closes its sync run (DC-041).
 
 If commands are stuck queued and no worker is running, that is the cause. The lock
 self-expires; `cache_locks` can also be cleared manually.

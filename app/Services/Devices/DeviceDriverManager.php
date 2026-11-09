@@ -125,6 +125,22 @@ class DeviceDriverManager implements BiometricDeviceDriver
         }
     }
 
+    /**
+     * Lets go of a terminal's lock when THIS process holds it and the work holding it was
+     * killed before its finally block ran (ProcessDeviceCommand::failed(), casebook DC-041).
+     * Does nothing when this process does not hold it: another job's lock is never touched.
+     */
+    public static function releaseIfHeldHere(int $deviceId): bool
+    {
+        if ((self::$held[$deviceId] ?? 0) <= 0) {
+            return false;
+        }
+        self::$held[$deviceId] = 0;
+        Cache::lock("device-session:{$deviceId}")->forceRelease();
+
+        return true;
+    }
+
     public function driverFor(Device $device): BiometricDeviceDriver
     {
         foreach ($this->drivers as $driver) {

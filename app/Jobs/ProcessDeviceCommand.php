@@ -2,13 +2,17 @@
 
 namespace App\Jobs;
 
+use App\Models\AttendanceSyncRun;
 use App\Models\DeviceCommand;
 use App\Services\Devices\DeviceCommandHandler;
+use App\Services\Devices\DeviceDriverManager;
 use App\Support\DeviceErrorReporter;
 use App\Support\Tenancy;
+use App\Support\Utf8;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Promoseven\Biometric\Exception\DeviceException;
 
@@ -55,8 +59,13 @@ class ProcessDeviceCommand implements ShouldQueue
      *
      * A fingerprint capture waits ~30s for a human, a full attendance read of a large
      * table plus retries can take minutes. This is a ceiling, not a target.
+     *
+     * 300 until 2026-11-09 (casebook DC-041): Gems Main Office holds 64,253 punches and
+     * sends them at ~4.6 KB/s, about 10 minutes for a read — every read of it was killed at
+     * 5 minutes. 1500 stays under the worker's --timeout=1800 and the terminal lock's 1800 s
+     * (DeviceDriverManager::LOCK_TTL_SECONDS), so a lock never expires under a live job.
      */
-    public int $timeout = 300;
+    public int $timeout = 1500;
 
     public function __construct(public readonly int $commandId) {}
 
@@ -80,7 +89,9 @@ class ProcessDeviceCommand implements ShouldQueue
         return [
             (new WithoutOverlapping("device:{$command->device_id}"))
                 ->releaseAfter(15)
-                ->expireAfter(600),
+                // At least the job's own $timeout (DC-041), or a second command for the
+                // same terminal could start while a long read is still running.
+                ->expireAfter(1800),
         ];
     }
 
@@ -173,7 +184,13 @@ class ProcessDeviceCommand implements ShouldQueue
         self::dispatch($command->id)->delay(now()->addSeconds(max($delay, 5)));
     }
 
-    /** Called when the queue itself gives up on the job. */
+    /**
+     * Called when the queue itself gives up on the job — including when it kills it at
+     * $timeout. A killed job never reaches its own finally blocks, so before 2026-11-09 it
+     * left the terminal locked for 30 minutes and its read "running" for ever (casebook
+     * DC-041, twice on Gems Main Office). Now it lets go of both, here, in the same process
+     * that held them; a lock some other job holds is never touched.
+     */
     public function failed(\Throwable $e): void
     {
         $command = DeviceCommand::withoutGlobalScopes()->find($this->commandId);
@@ -184,5 +201,24 @@ class ProcessDeviceCommand implements ShouldQueue
                 ['exception' => $e::class, 'message' => $e->getMessage()],
             );
         }
+
+        if ($command === null) {
+            return;
+        }
+
+        DeviceDriverManager::releaseIfHeldHere((int) $command->device_id);
+        Cache::lock((new WithoutOverlapping("device:{$command->device_id}"))->getLockKey($this))->forceRelease();
+
+        AttendanceSyncRun::withoutGlobalScopes()
+            ->where('device_command_id', $command->id)
+            ->where('status', 'running')
+            ->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+                'progress_phase' => null,
+                'message' => 'This read was stopped before it finished ('.class_basename($e).'). Nothing it had not stored yet was kept; try again.',
+                'error' => Utf8::scrub(mb_substr($e->getMessage(), 0, 1000)),
+                'updated_at' => now(),
+            ]);
     }
 }

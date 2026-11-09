@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-11-03**
+**Last updated: 2026-11-09**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | OPEN |
 | DC-040 | 2026-11-03 | IT ROOM, On The Road, Entrance, Glass Door; City Center Hotel | Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers | OPEN |
 | DC-039 | 2026-11-03 | Entrance, Glass Door | Troy cannot be moved to his CPR: "Pin 685 is not on this panel", a link to a user removed outside the system | FIXED |
 | DC-038 | 2026-11-03 | Entrance, Glass Door | Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge | FIXED |
@@ -115,6 +116,68 @@ Template:
 ---
 
 ## Entries
+
+### DC-041 — Gems Main Office: the first full read reads nothing in 5 minutes; the killed job leaves the terminal locked and its run "running"
+
+- **Date:** 2026-11-09
+- **Devices:** Gems Main Office (#22, model recorded as F18, 192.168.7.64:4370, LAN); before it,
+  #21 "IT-Test" on the same address (no longer in the system)
+- **Direction:** device → software
+- **Symptom:** Owner, 2026-11-09 ~14:05 UTC: "I am doing a full read on the Gems device main
+  office, check if it is stuck".
+- **What was done:** reads of the database and logs only; nothing sent to the terminal, nothing
+  changed (so far).
+  - #21 "IT-Test" at 192.168.7.64 timed out every 5 minutes from at least 13:00 to 13:40 UTC
+    (`laravel.log`, command 1000 = connect). It is not in `devices` any more; #22 "Gems Main
+    Office" was added on the same address at 13:50:46. **Not a two-records clash:** #21 sent
+    nothing after 13:40 (first suspicion, ruled out).
+  - #22: connect timed out at 13:50:59; seen at 13:52:54 (it answered). Command 33788,
+    `sync_attendance` `{"full":true}`, started 13:53:05. **Sync run 709 never reported any
+    progress** (0 read, no total: the terminal never answered with its record count). At
+    13:58:05 the queue's 300 s job timeout killed the job (`TimeoutExceededException`):
+    command "failed / job lost".
+  - **The kill skipped the clean-up DC-036 added** (close the run on any Throwable, release the
+    session lock): run 709 stays `running`; `cache_locks` `device-session:22` held until
+    14:23:05 UTC (30 min TTL from 13:53:05) and the overlap lock until 14:15:16. Health check
+    33796 (14:03) therefore answered "busy with another operation"; 33811 (14:05) waiting.
+  - 192.168.7.64 answers ping (0.2 ms).
+  - **2026-11-09 ~14:10 UTC, production data (owner ran it, `/tmp/dc041-release.php`):** sync
+    run 709 set to `failed` (finished_at 13:58:05, message "stopped by the 5-minute job limit
+    and never closed; closed by hand … DC-041") and the dead job's `device-session:22` lock
+    deleted (1 row), after checking no job was queued. Saved first:
+    `storage/app/dc-041-before-2026-11-09.json`. To undo, write those rows back. Nothing was
+    sent to the terminal. Next: the owner starts the full read again from Devices.
+  - **Second full read, 14:09 UTC (owner, command 33812; a duplicate 33813 queued behind it):**
+    the same picture on screen. Watched on the wire (headers and sizes only, nothing saved):
+    the terminal **was** sending — 1,032-byte datagrams every ~0.15 s in windowed chunks, a
+    measured **4.6 KB/s**. Killed again at 14:14:02 (`TimeoutExceededException`), lock held to
+    14:39, run 710 `running`. The progress bar never moves because this read reports no total.
+  - **Read-only probe, 14:16 UTC** (`tools/zkprobe/free-sizes.php gems-size 22 15`, control IT
+    ROOM): Gems Main Office **64,253 records** (cap 100,000), 20 users, 5 fingers; IT ROOM
+    11,787 records. 64,253 × 40 bytes at 4.6 KB/s ≈ **10 minutes**; IT ROOM's ≈ 2 minutes.
+    Traces `tools/zkprobe/traces-2026-11-09/gems-size-22-01.json`, `gems-size-15-01.json`.
+  - Dead ends: two records on one address (#21 IT-Test) — ruled out; "the terminal does not
+    answer" — it answers and sends, only slowly; a one-time console read outside the queue was
+    written and then withdrawn at the owner's word ("do only 1 and 2"), never run.
+- **Root cause:** the job limit, not the terminal. `ProcessDeviceCommand::$timeout` was 300 s;
+  this terminal's table takes ~10 minutes, and every read of it was killed. A killed job never
+  ran its own `finally`, so it left the terminal locked (30 min) and its run `running`.
+- **Fix:** (owner, 2026-11-09, "do only 1 and 2") `ProcessDeviceCommand::$timeout` 300 → 1500
+  and `WithoutOverlapping` expiry 600 → 1800 (under the worker's `--timeout=1800` and the
+  terminal lock's 1800 s); `ProcessDeviceCommand::failed()` releases the terminal lock
+  (`DeviceDriverManager::releaseIfHeldHere()`, only a lock its own process holds), the overlap
+  lock, and closes the command's sync run. Shared code, no model branch; the F18 path (IT ROOM)
+  is not changed — only the ceiling and the clean-up after a kill. Tests
+  `KilledDeviceJobCleanupTest`; `docs/error-handling.md`. Needs `queue:restart` to reach the
+  worker.
+- **Verified:** by tests; not yet on Gems Main Office (needs the worker restarted and a full
+  read to finish).
+- **Evidence:** command 33788, 33796, 33811; sync run 709; `laravel.log` 2026-11-09 13:00–13:50;
+  `cache_locks` read 14:05:51 UTC.
+- **Status:** OPEN
+- **Keywords:** Gems Main Office, 192.168.7.64, IT-Test, full read, stuck, job processing this
+  command was lost, TimeoutExceededException, has timed out, busy with another operation,
+  device-session, cache_locks, stuck running, sync run 709
 
 ### DC-040 — Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers
 
