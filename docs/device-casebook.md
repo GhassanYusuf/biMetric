@@ -129,7 +129,7 @@ Template:
   (CMD_CLEAR_ATTLOG); it cannot remove some. The owner accepted clearing all 64,270, every one
   stored in the system first (rule 19), with a benefit: GEMS is at 64,270 of its 100,000 capacity
   and each read takes ~8 minutes.
-- **What was done:**
+- **What was done:** saved first, a temporary guard change, then the clear (owner's go-ahead).
   - State saved first: all of GEMS's punches are in `attendance_logs` (64,269 on 2026-11-10 08:40
     UTC; read 714 + later reads), the 497 "March 2029" records in `attendance_raw_logs` (run 714)
     and imported re-dated (DC-042). The clear itself re-reads everything and refuses unless every
@@ -141,10 +141,11 @@ Template:
     `AttendanceClearTest` (clears when archived before; still refuses when not). `queue:restart`.
   - `attendance.clear` on the F18 is `implemented`, never run on hardware: this is its first run,
     with the owner's go-ahead and the data saved (rule 16).
-- **Root cause:** —
-- **Fix:** —
-- **Verified:** —
-- **Evidence:** —
+- **Root cause:** not a fault: the owner's decision to empty the terminal's log; the guard's refusal of
+  future-dated records is the one obstacle.
+- **Fix:** pending — the owner presses Clear punches on Gems Main Office.
+- **Verified:** pending.
+- **Evidence:** commit `2621116` (temporary allowance); state 2026-11-10 08:40 UTC (64,269 stored).
 - **Status:** OPEN — then remove the allowance (owner's condition).
 - **Keywords:** Gems Main Office, clear punches, CMD_CLEAR_ATTLOG, clear_attendance, first clear,
   future_timestamp, temporary, 2029, capacity, 100,000
