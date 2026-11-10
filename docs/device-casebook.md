@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | OPEN |
 | DC-042 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | 497 punches dated March 2029: the clock ran exactly 5 years ahead, 5–26 March 2024 | FIXED |
 | DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | FIXED |
 | DC-040 | 2026-11-03 | IT ROOM, On The Road, Entrance, Glass Door; City Center Hotel | Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers | OPEN |
@@ -117,6 +118,36 @@ Template:
 ---
 
 ## Entries
+
+### DC-043 — Clear every punch from Gems Main Office, keeping them in the system (first clear on real hardware)
+
+- **Date:** 2026-11-10
+- **Devices:** Gems Main Office (#22, F18, 192.168.7.64)
+- **Direction:** software → device (destructive: the terminal's attendance log)
+- **Symptom:** owner, 2026-11-10: "delete the 39,852 [unlinked] punches from the GEMS terminal and
+  keep them in the system just in case". The protocol has one command, clear ALL punches
+  (CMD_CLEAR_ATTLOG); it cannot remove some. The owner accepted clearing all 64,270, every one
+  stored in the system first (rule 19), with a benefit: GEMS is at 64,270 of its 100,000 capacity
+  and each read takes ~8 minutes.
+- **What was done:**
+  - State saved first: all of GEMS's punches are in `attendance_logs` (64,269 on 2026-11-10 08:40
+    UTC; read 714 + later reads), the 497 "March 2029" records in `attendance_raw_logs` (run 714)
+    and imported re-dated (DC-042). The clear itself re-reads everything and refuses unless every
+    record is stored (`AttendanceClearService`).
+  - The guard refuses any future-dated record, so GEMS could never be cleared while it holds the
+    497. **Temporary allowance** (owner: "go ahead, but after you finish with GEMS return the check
+    to the old way"): a future-dated record counts as saved only if an EARLIER read archived that
+    exact record (user, time, verify method). Tests: the two `test_temporary_dc043_*` in
+    `AttendanceClearTest` (clears when archived before; still refuses when not). `queue:restart`.
+  - `attendance.clear` on the F18 is `implemented`, never run on hardware: this is its first run,
+    with the owner's go-ahead and the data saved (rule 16).
+- **Root cause:** —
+- **Fix:** —
+- **Verified:** —
+- **Evidence:** —
+- **Status:** OPEN — then remove the allowance (owner's condition).
+- **Keywords:** Gems Main Office, clear punches, CMD_CLEAR_ATTLOG, clear_attendance, first clear,
+  future_timestamp, temporary, 2029, capacity, 100,000
 
 ### DC-042 — Gems Main Office: 497 punches dated March 2029 are really 5–26 March 2024 (clock 5 years ahead)
 
