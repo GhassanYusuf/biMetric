@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-11-09**
+**Last updated: 2026-11-10**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-042 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | 497 punches dated March 2029: the clock ran exactly 5 years ahead, 5–26 March 2024 | FIXED |
 | DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | FIXED |
 | DC-040 | 2026-11-03 | IT ROOM, On The Road, Entrance, Glass Door; City Center Hotel | Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers | OPEN |
 | DC-039 | 2026-11-03 | Entrance, Glass Door | Troy cannot be moved to his CPR: "Pin 685 is not on this panel", a link to a user removed outside the system | FIXED |
@@ -116,6 +117,44 @@ Template:
 ---
 
 ## Entries
+
+### DC-042 — Gems Main Office: 497 punches dated March 2029 are really 5–26 March 2024 (clock 5 years ahead)
+
+- **Date:** 2026-11-10
+- **Devices:** Gems Main Office (#22, F18, 192.168.7.64)
+- **Direction:** device → software
+- **Symptom:** the first full read (DC-041, sync run 714) archived 497 records dated
+  2029-03-05 12:11 → 2029-03-26 11:15 UTC as `future_timestamp` instead of importing them.
+  Owner, 2026-11-10: "are these linked to any of our employees?"
+- **What was done:** reads only, then one data import (below, when run).
+  - The 497 are under 12 terminal IDs: 17 (Arun Kumar's old ID) 47, 55 (Swathi's old ID) 36,
+    30 (Romy) 36, 4 (Megha's old ID) 35, 59 (Maryam) 33 = **187 ours**; 49, 3, 58, 68, 69, 40, 60
+    (former staff, linked to nobody) = 310.
+  - The archive does not keep the terminal's order (archived in a separate pass), so dated by
+    who was working: the 12 IDs' real punches overlap on exactly one day, **2024-03-05** (ID
+    60's last, ID 69's first). GEMS's stored punches stop at **2024-03-05 11:33 UTC** and resume
+    at **2024-03-26 11:29 UTC**; the "2029" block runs 03-05 12:11 → 03-26 11:15. Same days,
+    same times, **exactly 5 years ahead**: someone set the year to 2029 around midday on
+    5 March 2024 and corrected it on 26 March. 6–25 March 2024 has no other GEMS punch.
+  - Dry run of attribution (PunchAttribution, the windows in force at the corrected times):
+    Arun 47, Swathi 36, Romy 36, Megha 35, Maryam 33, nobody 310.
+- **Root cause:** a wrong year set on the terminal in March 2024 (before this system); the
+  system correctly refused to import punches more than a day in the future (rule 10).
+- **Fix:** (owner: "fix it") `/tmp/gems-redate-2029.php`, run by the owner: inserts the 497
+  into `attendance_logs` moved back exactly 5 years, each attributed by PunchAttribution;
+  refuses unless exactly 497 and none already stored; raw originals untouched; inserted ids
+  saved to `storage/app/dc-042-redated-2026-11-10.json` (undo: delete those ids). Nothing sent
+  to the terminal. The terminal still holds them dated 2029, so later reads archive them again
+  as future (no duplicates).
+- **Verified:** run by the owner 2026-11-10: 497 imported, dated 2024-03-05 → 2024-03-26
+  (nobody 310, Arun 47, Romy 36, Swathi 36, Megha 35, Maryam 33), matching the dry run; read
+  back afterwards — 6–25 March 2024 now has punches on GEMS, nothing stored is dated in the
+  future. Ids in `storage/app/dc-042-redated-2026-11-10.json`.
+- **Evidence:** sync run 714; `attendance_raw_logs` run 714 `future_timestamp`; GEMS punches
+  2024-02-28 → 2024-04-01 by day.
+- **Status:** FIXED
+- **Keywords:** Gems Main Office, 2029, future_timestamp, dated in the future, wrong year,
+  clock ahead, five years, March 2024, re-date, archived not imported
 
 ### DC-041 — Gems Main Office: the first full read reads nothing in 5 minutes; the killed job leaves the terminal locked and its run "running"
 
