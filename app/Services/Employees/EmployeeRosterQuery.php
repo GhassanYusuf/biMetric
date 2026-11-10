@@ -31,6 +31,10 @@ class EmployeeRosterQuery
         'resigned' => ['nullable', 'boolean'],
         'device_id' => ['nullable', 'integer'],
         'unenrolled' => ['nullable', 'boolean'],
+        // Their role on the terminals (owner, 2026-11-10: "who is admin and where"): admin =
+        // administrator on at least one terminal (on device_id when one is chosen); user = on
+        // a terminal and administrator on none of them (or not on that one).
+        'terminal_role' => ['nullable', 'in:admin,user'],
     ];
 
     public static function build(Request $request): Builder
@@ -76,6 +80,18 @@ class EmployeeRosterQuery
                 'deviceMaps',
                 fn ($m) => $m->where('device_id', $request->integer('device_id'))->whereNull('valid_to'),
             ))
+            // Administrator / normal user, by the live links' device_privilege, as of each
+            // terminal's last roster or enrollment read (the role a terminal last reported).
+            ->when($request->query('terminal_role') === 'admin', fn ($q) => $q->whereHas(
+                'deviceMaps',
+                fn ($m) => $m->whereNull('valid_to')->where('device_privilege', '>', 0)
+                    ->when($request->filled('device_id'), fn ($d) => $d->where('device_id', $request->integer('device_id'))),
+            ))
+            ->when($request->query('terminal_role') === 'user', fn ($q) => $q
+                ->whereHas('deviceMaps', fn ($m) => $m->whereNull('valid_to')
+                    ->when($request->filled('device_id'), fn ($d) => $d->where('device_id', $request->integer('device_id'))))
+                ->whereDoesntHave('deviceMaps', fn ($m) => $m->whereNull('valid_to')->where('device_privilege', '>', 0)
+                    ->when($request->filled('device_id'), fn ($d) => $d->where('device_id', $request->integer('device_id')))))
             // On no terminal at all: they cannot clock in anywhere.
             ->when($request->boolean('unenrolled'), fn ($q) => $q->whereDoesntHave(
                 'deviceMaps',

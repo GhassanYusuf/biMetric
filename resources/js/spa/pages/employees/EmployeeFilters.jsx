@@ -55,6 +55,24 @@ export default function EmployeeFilters({
                     </SelectField>
                 )}
 
+                {/* Who is administrator, and where (owner, 2026-11-10). With a terminal chosen
+                    it means "on that terminal"; otherwise on any. The badge in the Terminals
+                    column marks each terminal where they are administrator. */}
+                {devices.length > 0 && (
+                    <SelectField
+                        label="Terminal role"
+                        aria-label="Filter by terminal role"
+                        value={filters.role ?? ''}
+                        onChange={(e) => set('role', e.target.value)}
+                        disabled={filters.device === 'none'}
+                        className={stacked ? '' : 'w-44'}
+                    >
+                        <option value="">Any</option>
+                        <option value="admin">Administrator</option>
+                        <option value="user">Normal user</option>
+                    </SelectField>
+                )}
+
                 {/* Resigned people are hidden until asked for (2026-10-12): they are off
                     the terminals and no longer part of the roster anyone works from. */}
                 <SelectField

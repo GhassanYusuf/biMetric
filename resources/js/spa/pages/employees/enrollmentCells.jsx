@@ -97,7 +97,7 @@ function describeRow(row) {
         ? 'fingerprints unknown'
         : `${row.fingerprint_slots.length} fingerprint${row.fingerprint_slots.length === 1 ? '' : 's'}`;
 
-    return `${fingers}, ${row.card_number ? `card #${row.card_number}` : 'no card'}`;
+    return `${row.device_privilege > 0 ? 'administrator, ' : ''}${fingers}, ${row.card_number ? `card #${row.card_number}` : 'no card'}`;
 }
 
 /*
@@ -144,6 +144,8 @@ export function TerminalsCell({ employee }) {
                         <span>{row.device_name ?? `Device ${row.device_id}`}</span>
                         <span className="font-semibold tabular-nums">{unknown ? '?' : fingers}</span>
                         {row.card_number ? <CardIcon className="h-3 w-3" /> : null}
+                        {/* Administrator on this terminal (2026-11-10): can open its Menu. */}
+                        {row.device_privilege > 0 ? <span className="rounded bg-violet-600 px-1 text-[10px] font-bold uppercase leading-4 text-white">Admin</span> : null}
                     </Badge>
                 );
             })}

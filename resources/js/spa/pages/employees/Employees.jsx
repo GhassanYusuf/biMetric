@@ -40,6 +40,8 @@ function rosterParams(term, active) {
     // separate parameter rather than a magic device id.
     if (active.device === 'none') params.set('unenrolled', '1');
     else if (active.device) params.set('device_id', active.device);
+    // Administrator or normal user on the terminals (2026-11-10), on the chosen terminal if any.
+    if (active.role) params.set('terminal_role', active.role);
     return params;
 }
 
