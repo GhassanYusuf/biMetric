@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | OPEN |
 | DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | FIXED |
 | DC-042 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | 497 punches dated March 2029: the clock ran exactly 5 years ahead, 5–26 March 2024 | FIXED |
 | DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | FIXED |
@@ -118,6 +119,37 @@ Template:
 ---
 
 ## Entries
+
+### DC-044 — Write the GEMS staff's punches back onto Gems Main Office, under each person's current ID
+
+- **Date:** 2026-11-10
+- **Devices:** Gems Main Office (#22, F18, 192.168.7.64)
+- **Direction:** software → device (writes attendance records; no user, card or fingerprint)
+- **Symptom:** owner, after the clear (DC-043): "put the 24,409 back" — the staff's punches, not the
+  39,852 former-staff ones — and, asked which ID: "under each person's current ID".
+- **What was done:** a dead end first, then two prepared steps, run by the owner.
+  - Dead end: IT-Office (the test F18 that held 42,415 copied Camelot punches on 2026-10-22) had
+    the same address, 192.168.7.64. Checked whether GEMS's unlinked punches were that copy: 0 of
+    them match a Camelot punch (user id and time). They are GEMS's own former staff.
+  - Step 1 (`/tmp/gems-step1-prepare.php`, system only): each linked GEMS punch recorded under an
+    older ID gets the person's current terminal ID in `device_user_id`, the recorded one kept in
+    `original_device_user_id` (as `attendance:personnel-ids`), so the next read recognises the
+    written-back punches as already stored and re-linking still reads the original. Dry run:
+    24,420 punches for 12 people, 14,742 relabelled (Megha, Arun, Swathi, S. Ahmed, Ali Ahmed,
+    Mahmoud, Nour); Maryam and Sheena (not on the terminal) go back as recorded (59, 7). Refuses on
+    any key clash; changed rows saved first to `storage/app/dc-044-relabel-2026-11-10.json`.
+  - Step 2 (`tools/zkprobe/attlog-copy.php 22 storage/app/dc-044-gems-writeback.json`): the punch
+    write proven on 2026-10-22 (CMD_SET_DATA 3001, ATT_LOG), extended to choose the terminal by NAME
+    (GEMS has IT-Office's old address) and to write under the system's terminal lock. Resumable,
+    never double-writes. ~50 minutes at the 2026-10-22 rate.
+- **Root cause:** not a fault: the owner wants the staff's punches on the terminal again.
+- **Fix:** pending.
+- **Verified:** pending — the terminal's count must equal what was written, and the next read must
+  import 0 new.
+- **Evidence:** dry run 2026-11-10; DC-043.
+- **Status:** OPEN
+- **Keywords:** Gems Main Office, write punches back, ATT_LOG, CMD_SET_DATA, attlog-copy, current ID,
+  original_device_user_id, IT-Office, 192.168.7.64
 
 ### DC-043 — Clear every punch from Gems Main Office, keeping them in the system (first clear on real hardware)
 

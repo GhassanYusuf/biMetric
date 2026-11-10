@@ -1,14 +1,21 @@
 <?php
 
 /*
- * Copies a prepared list of punches onto the TEST terminal IT-Office (DC-028).
+ * Copies a prepared list of punches onto a terminal: the TEST terminal IT-Office (DC-028), or
+ * Gems Main Office (DC-044).
  *
- * BLAST RADIUS: WRITES TO THE DEVICE — adds attendance records to IT-Office
- * (192.168.7.64) ONLY; refuses any other address. No user, card or fingerprint is
- * written; nothing is deleted. TO UNDO: Devices → Clear punches / Wipe terminal on
- * IT-Office. Owner's go-ahead, 2026-10-22: "copy all … to IT-Office" — Camelot's
- * attendance as it was before its 2026-10-21 wipe (the system's copy plus the punches
- * rebuilt from the raw archive), to look at in the old software.
+ * BLAST RADIUS: WRITES TO THE DEVICE — adds attendance records only. No user, card or
+ * fingerprint is written; nothing is deleted. TO UNDO: Devices → Clear punches on that terminal
+ * (every punch is in the system first).
+ *   - IT-Office: owner's go-ahead 2026-10-22, "copy all … to IT-Office" — Camelot's attendance
+ *     before its 2026-10-21 wipe, to look at in the old software.
+ *   - Gems Main Office (#22, 192.168.7.64 — the address IT-Office used to have): owner's
+ *     go-ahead 2026-11-10, "put the 24,409 back … under each person's current ID", after the
+ *     terminal's log was cleared with every punch kept (DC-043). The list is built by the
+ *     system (DC-044 step 1) and every punch in it is already stored, under the same ID.
+ * Since 2026-11-10 the device is chosen by its NAME, not its address (GEMS took IT-Office's
+ * address), and the writes run under the system's terminal lock (DeviceDriverManager::run), so
+ * a scheduled read waits instead of interleaving with them (rule 11).
  *
  * METHOD: CMD_SET_DATA (3001) with an ATT_LOG text record per punch, then REFRESH_DATA,
  * exactly as tools/zkprobe/attlog-write.php proved twice on this terminal
@@ -38,11 +45,12 @@ use Promoseven\Biometric\Protocol\Command;
 
 Tenancy::spanAllTenants();
 
-$device = Device::query()->findOrFail((int) ($argv[1] ?? 0));
-if ($device->ip_address !== '192.168.7.64') {
-    fwrite(STDERR, "Refusing: this writes, and runs only against the test terminal IT-Office (192.168.7.64).\n");
+$device = Device::withoutGlobalScopes()->findOrFail((int) ($argv[1] ?? 0));
+if (! in_array($device->name, ['IT-Office', 'Gems Main Office'], true)) {
+    fwrite(STDERR, "Refusing: this writes, and runs only against IT-Office or Gems Main Office (by name, not address).\n");
     exit(1);
 }
+Tenancy::set($device->tenant_id);
 $listPath = $argv[2] ?? '';
 $list = json_decode((string) file_get_contents($listPath), true, 512, JSON_THROW_ON_ERROR);
 $progressPath = $listPath.'.progress';
@@ -51,7 +59,8 @@ $verify = ($argv[3] ?? '') === '--verify';
 $max = $verify ? 0 : (int) ($argv[3] ?? count($list));
 $batch = (int) ($argv[4] ?? 1000);
 
-$driver = app(App\Contracts\BiometricDeviceDriver::class);
+// Under the system's terminal lock: one conversation with the terminal at a time (rule 11).
+$driver = app(App\Services\Devices\DeviceDriverManager::class);
 $local = new DateTimeZone('+03:00');
 $trace = ['label' => 'attlog-copy', 'host' => $device->ip_address, 'started_at' => now()->toIso8601String(),
     'list_size' => count($list), 'start_index' => $next, 'batches' => []];
