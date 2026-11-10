@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-11-09**
+**Last updated: 2026-11-10**
 
 ---
 
@@ -79,11 +79,45 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 
 ## Where we stopped
 
-### Open at the end of 2026-11-05 (resume here)
+### Open at the end of 2026-11-10 (resume here)
 
-Everything below is committed on `main` here, but **not pushed**: `7da1d96` … the
-Personnel-IDs-page commit of 2026-11-05 are ahead of `origin/main` (the owner runs
-`git push origin main`). Owner owes the answers marked **(owner)**.
+Committed on `main` here but **not pushed**: everything since `7da1d96` (owner runs
+`git push origin main`). **NOT committed (owner stopped the commit on 2026-11-09, then moved
+on):** the audit log's before → after change — `app/Observers/AuditObserver.php`,
+`AuditLogController.php`, `AuditLogResource.php`, `resources/js/spa/pages/audit/*`,
+`tests/Feature/Api/AuditAndErrorLogsTest.php`. It is LIVE (the working tree is production) and
+tested (836 passed then); ask the owner before committing. Owner owes the answers marked **(owner)**.
+
+00. **Waiting for Good Wheels to come back online (owner: "keep it for a future task", 2026-11-10).**
+   Good Wheels (#5, F18/ID, 46.184.163.106, over the internet) dropped 10:12–11:15 and again from
+   11:29 Bahrain on 2026-11-10; its router answers ping but nothing answers UDP 4370 (tested from
+   the server and the owner's PC — test UDP, never TCP: a TCP check always says "closed"). Site to
+   check the terminal's power/cable and the router's UDP 4370 forward to its current IP. When it
+   answers again:
+   - **Sheikh Rubel Mia** (#1744, 850872073, painter): moved 12 → CPR at 11:28 on 2026-11-10,
+     one minute before Good Wheels dropped; his new user shows no finger. His fingerprint is in
+     the system (slot 6, saved 2026-10-11). **Push fingerprints to Good Wheels**, confirm on
+     read-back. Also: no punch since 2026-10-07 (fingerprint only, no card) — **(owner)** ask
+     Good Wheels whether he still works there / whether his finger reads.
+   - **Angelito Perez** (#1755, 721238912): his push failed on the timeout; push again.
+0e. **Error logs follow-ups (owner, 2026-11-10).** Done: dashboard survives a failed load,
+   repeats group past random ids, tests log to `storage/logs/testing/` (`6517aab`). Offered,
+   not decided **(owner)**: daily rotation of `laravel.log` (14 days), a "Mark as resolved" per
+   group, a one-time compress-and-restart of today's laravel.log; install `mosquitto` or switch
+   MQTT off (nothing listens on 127.0.0.1:1883, every publish fails, pages fall back to polling);
+   stagger the 05:00 reads (JJs fails its first try nightly, the retry succeeds); GEMS
+   "accepted the clock but reads back 74 s later" (2026-11-10 05:02) to look at with DC-040.
+   **City Center Hotel: leave alone** (owner, 2026-11-10: "still not connected correctly").
+0f. **Door events shown as "unmatched" punches (offered, owner to decide).** Entrance (C3 TF1700)
+   stores exit-button / unknown-card / door events as punches with no user: 16,275 on Entrance
+   (EventType 202 exit button, 27 unregistered card, 200 door opened…; codes per
+   vwout/zkaccess-c3-py). Proposal: label them as door events behind a switch, keep them out of
+   attendance and the HR system, keep them all. C3-only code (rule 15).
+0g. **GEMS (#22, owner, 2026-11-09/10).** Full read done (DC-041), staff imported (20), March-2029
+   punches re-dated (DC-042). 39,542 punches under 84 former-staff IDs (2020–2026) are linked to
+   nobody — offered an Excel list for GEMS HR to name them. Romy, Mohsen, Vyshnavi, Nour still on
+   short numbers (30, 86, 88, 96); 6 of the 10 GEMS staff on the terminal have no fingerprint
+   (they use cards). Ali Mohamed Jaafar and Ragesh (PROMOSEVEN) are on the GEMS terminal too.
 
 0. **CPR on punches (owner, 2026-11-05) — DONE for most companies, a page for the rest.**
    The HR system reads `device_user_id`, and punches from before a person was moved to their
