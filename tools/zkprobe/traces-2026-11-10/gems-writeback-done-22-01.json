@@ -1,0 +1,48 @@
+{
+    "label": "gems-writeback-done",
+    "host": "192.168.7.64",
+    "started_at": "2026-11-10T12:31:32+00:00",
+    "device": {
+        "id": 22,
+        "name": "Gems Main Office",
+        "model": "F18"
+    },
+    "question": "GET_FREE_SIZES layout: which int32 is the attendance record count?",
+    "reply_bytes": 92,
+    "reply_hex": "000000000000000000000000000000000c000000000000000900000000000000645f00000000000088030000000000000100000002000000b80b000088130000a0860100af0b00007c1300003c270100000000000000000000000000",
+    "int32": [
+        0,
+        0,
+        0,
+        0,
+        12,
+        0,
+        9,
+        0,
+        24420,
+        0,
+        904,
+        0,
+        1,
+        2,
+        3000,
+        5000,
+        100000,
+        2991,
+        4988,
+        75580,
+        0,
+        0,
+        0
+    ],
+    "pyzk_reading": {
+        "users": 12,
+        "fingers": 9,
+        "records": 24420,
+        "cards": 1,
+        "fingers_cap": 3000,
+        "users_cap": 5000,
+        "rec_cap": 100000
+    },
+    "finished_at": "2026-11-10T12:31:32+00:00"
+}

@@ -1,0 +1,21 @@
+{
+    "label": "attlog-copy",
+    "host": "192.168.7.64",
+    "started_at": "2026-11-10T12:29:54+00:00",
+    "list_size": 24420,
+    "start_index": 22487,
+    "batches": [
+        {
+            "sent": 1000,
+            "refresh_reply": 2000,
+            "seconds": 51.2,
+            "next_index": 23487
+        },
+        {
+            "sent": 933,
+            "refresh_reply": 2000,
+            "seconds": 44,
+            "next_index": 24420
+        }
+    ]
+}

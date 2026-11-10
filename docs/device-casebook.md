@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | OPEN |
+| DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | FIXED |
 | DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | FIXED |
 | DC-042 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | 497 punches dated March 2029: the clock ran exactly 5 years ahead, 5–26 March 2024 | FIXED |
 | DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | FIXED |
@@ -143,11 +143,21 @@ Template:
     (GEMS has IT-Office's old address) and to write under the system's terminal lock. Resumable,
     never double-writes. ~50 minutes at the 2026-10-22 rate.
 - **Root cause:** not a fault: the owner wants the staff's punches on the terminal again.
-- **Fix:** pending.
-- **Verified:** pending — the terminal's count must equal what was written, and the next read must
-  import 0 new.
-- **Evidence:** dry run 2026-11-10; DC-043.
-- **Status:** OPEN
+- **Fix:** step 1 run by the owner: 14,742 relabelled (originals kept), list of 24,420; checked after:
+  0 linked punches off their person's current ID, a re-link dry run changed nothing. Step 2 run by
+  the owner ~12:03 UTC, ~20 punches/s, every batch ACK_OK; **stopped at 22,000+ by one
+  TimeoutException** (no refusal). Not resumed blind (the progress file is saved every 100, so it
+  can lag): `--verify` read the terminal — 22,487 records, all of them list punches, 22,487 of the
+  list present, 1,933 missing: exactly the first 22,487 written, none twice, no staff punch since
+  the clear. Progress set to 22,487 and resumed: 1,933 written, all ACK_OK. Lesson: on a timeout
+  the copy tool can stop between progress saves — verify before resuming, never trust the file.
+- **Verified:** read-only, 2026-11-10 ~12:35 UTC: the terminal holds **24,420** records (12 users,
+  9 fingerprints unchanged); every one of them is already stored under the same key (user id,
+  time, verify) — **the next read imports 0 new**, all 12 people's.
+- **Evidence:** `tools/zkprobe/traces-2026-11-10/attlog-copy-01.json` (verify), `-02.json`,
+  `gems-writeback-check-22-01.json`, `gems-writeback-done-22-01.json`;
+  `storage/logs/dc-044-writeback.log`, `-2.log`; `storage/app/dc-044-relabel-2026-11-10.json`.
+- **Status:** FIXED
 - **Keywords:** Gems Main Office, write punches back, ATT_LOG, CMD_SET_DATA, attlog-copy, current ID,
   original_device_user_id, IT-Office, 192.168.7.64
 

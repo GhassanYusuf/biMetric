@@ -1,0 +1,14 @@
+{
+    "label": "attlog-copy",
+    "host": "192.168.7.64",
+    "started_at": "2026-11-10T12:28:27+00:00",
+    "list_size": 24420,
+    "start_index": 22400,
+    "batches": [],
+    "verify": {
+        "records_on_terminal": 22487,
+        "decoded": 22487,
+        "list_size": 24420,
+        "list_missing_on_terminal": 1933
+    }
+}
