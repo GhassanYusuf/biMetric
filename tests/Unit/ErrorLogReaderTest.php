@@ -73,4 +73,18 @@ class ErrorLogReaderTest extends TestCase
         $this->assertSame('2026-11-08T07:05:00+00:00', $device['last_at']);
         $this->assertCount(2, $groups);
     }
+
+    public function test_a_random_client_id_does_not_split_a_group(): void
+    {
+        file_put_contents($this->dir.'/laravel.log', implode("\n", [
+            '[2026-11-09 17:15:00] production.ERROR: MQTT [127.0.0.1:1883] [ac81f7e4e62666a3a3b2] Establishing a connection with the broker failed: Connection refused ',
+            '[2026-11-09 17:20:00] production.ERROR: MQTT [127.0.0.1:1883] [025534a4384498388103] Establishing a connection with the broker failed: Connection refused ',
+            '',
+        ]));
+        $r = $this->reader();
+        $groups = $r->grouped($r->entries(['from' => '2026-11-09', 'to' => '2026-11-09', 'source' => 'server']));
+
+        $this->assertCount(1, $groups);
+        $this->assertSame(2, $groups[0]['count']);
+    }
 }

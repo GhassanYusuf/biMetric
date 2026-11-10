@@ -118,9 +118,14 @@ final class ErrorLogReader
         return (string) $latest;
     }
 
+    /**
+     * The message with what varies made generic: quoted values, numbers, and long hex ids —
+     * the MQTT client's random id ("[054d2b7ba22e832d9c33]") made every connection failure a
+     * group of its own (2026-11-10: 55 rows for one cause).
+     */
     private static function signature(string $message): string
     {
-        return preg_replace(['/"[^"]*"/', "/'[^']*'/", '/\d+/'], ['""', "''", '#'], mb_substr($message, 0, 300));
+        return preg_replace(['/\b[0-9a-f]{12,}\b/i', '/"[^"]*"/', "/'[^']*'/", '/\d+/'], ['<id>', '""', "''", '#'], mb_substr($message, 0, 300));
     }
 
     /** @return list<string> */

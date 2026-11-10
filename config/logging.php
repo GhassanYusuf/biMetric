@@ -5,6 +5,14 @@ use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
 use Monolog\Processor\PsrLogMessageProcessor;
 
+/*
+ | Where every log file goes. The test suite sets LOG_SUBDIR=testing (phpunit.xml), so a run
+ | on this server writes to storage/logs/testing/ and never into the live laravel.log or the
+ | device / client logs the Error logs screen reads (2026-11-10: ~10,000 `testing.*` entries
+ | had piled into the live laravel.log, and some into device-*.log).
+ */
+$logDir = 'logs'.(env('LOG_SUBDIR') ? '/'.trim((string) env('LOG_SUBDIR'), '/') : '');
+
 return [
 
     /*
@@ -60,14 +68,14 @@ return [
 
         'single' => [
             'driver' => 'single',
-            'path' => storage_path('logs/laravel.log'),
+            'path' => storage_path($logDir.'/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
         ],
 
         'daily' => [
             'driver' => 'daily',
-            'path' => storage_path('logs/laravel.log'),
+            'path' => storage_path($logDir.'/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
@@ -90,7 +98,7 @@ return [
         */
         'device' => [
             'driver' => 'daily',
-            'path' => storage_path('logs/device.log'),
+            'path' => storage_path($logDir.'/device.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DEVICE_DAYS', 30),
             'replace_placeholders' => true,
@@ -109,7 +117,7 @@ return [
         */
         'client' => [
             'driver' => 'daily',
-            'path' => storage_path('logs/client.log'),
+            'path' => storage_path($logDir.'/client.log'),
             'level' => 'debug',
             'days' => env('LOG_CLIENT_DAYS', 14),
             'replace_placeholders' => true,
@@ -166,7 +174,7 @@ return [
         ],
 
         'emergency' => [
-            'path' => storage_path('logs/laravel.log'),
+            'path' => storage_path($logDir.'/laravel.log'),
         ],
 
     ],
