@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | OPEN |
+| DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | FIXED |
 | DC-042 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | 497 punches dated March 2029: the clock ran exactly 5 years ahead, 5–26 March 2024 | FIXED |
 | DC-041 | 2026-11-09 | Gems Main Office (F18, 192.168.7.64) | First full read of a new terminal reads nothing for 5 min; the killed job leaves the terminal locked and the run "running" | FIXED |
 | DC-040 | 2026-11-03 | IT ROOM, On The Road, Entrance, Glass Door; City Center Hotel | Four LAN terminals 11 min 20 s slow at 05:00 (set by something on the LAN?); City Center Hotel never answers | OPEN |
@@ -143,10 +143,20 @@ Template:
     with the owner's go-ahead and the data saved (rule 16).
 - **Root cause:** not a fault: the owner's decision to empty the terminal's log; the guard's refusal of
   future-dated records is the one obstacle.
-- **Fix:** pending — the owner presses Clear punches on Gems Main Office.
-- **Verified:** pending.
-- **Evidence:** commit `2621116` (temporary allowance); state 2026-11-10 08:40 UTC (64,269 stored).
-- **Status:** OPEN — then remove the allowance (owner's condition).
+- **Fix:** the owner pressed Clear punches, 2026-11-10 11:39 UTC (command 35928). The clear read
+  64,272 = the terminal's count; 63,772 already stored, 3 new stored, 497 future-dated accepted
+  as archived before; cleared 64,272 at 11:48:21; the driver read back 0 in the same session;
+  watermark reset. **Then the allowance was removed** as the owner asked: `git revert` of
+  `2621116`; `AttendanceClearService` and `AttendanceClearTest` are identical to before it (0
+  lines differ); 841 tests passed; `queue:restart`. The guard refuses future-dated records again.
+- **Verified:** on the terminal, read-only (`tools/zkprobe/free-sizes.php gems-after-clear 22`,
+  11:49 UTC): **records 0**, users 12, fingers 9 (unchanged: Ali Mohamed Jaafar 2, Ragesh 3,
+  Arun, Megha, Romy, Swathi 1 each). System: 64,272 GEMS punches stored. **First clear ever run on
+  hardware: `attendance.clear` proven on an F18** (it stays `implemented` in the library until the
+  owner asks for the level to be raised — a library release, rule 8).
+- **Evidence:** command 35928; `tools/zkprobe/traces-2026-11-10/gems-after-clear-22-01.json`;
+  commits `2621116` (temporary) and its revert.
+- **Status:** FIXED
 - **Keywords:** Gems Main Office, clear punches, CMD_CLEAR_ATTLOG, clear_attendance, first clear,
   future_timestamp, temporary, 2029, capacity, 100,000
 

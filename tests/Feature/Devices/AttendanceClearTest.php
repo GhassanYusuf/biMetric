@@ -197,32 +197,6 @@ class AttendanceClearTest extends TestCase
         $this->assertFalse((bool) $archived->imported);
     }
 
-    /** TEMPORARY — DC-043 (GEMS); remove with the allowance in AttendanceClearService. */
-    public function test_temporary_dc043_a_future_punch_archived_by_an_earlier_read_counts_as_saved(): void
-    {
-        $this->driver->punchLog = [$this->punch('2026-10-17 08:00:00'), $this->punch('2029-03-05 15:11:57', '17')];
-        app(AttendanceSyncService::class)->sync($this->device, full: true); // the earlier read archives it
-
-        $result = $this->clear();
-
-        $this->assertSame(1, $this->driver->clears);
-        $this->assertSame(2, $result['raw']['cleared'] ?? null);
-    }
-
-    /** TEMPORARY — DC-043; the allowance must not admit a future punch nobody archived before. */
-    public function test_temporary_dc043_a_future_punch_never_archived_before_still_refuses(): void
-    {
-        $this->driver->punchLog = [$this->punch('2026-10-17 08:00:00'), $this->punch('2029-03-05 15:11:57', '17')];
-
-        try {
-            $this->clear();
-            $this->fail('A clear went ahead with a future punch no earlier read had archived.');
-        } catch (ProtocolException $e) {
-            $this->assertStringContainsString('Nothing was cleared', $e->getMessage());
-        }
-        $this->assertSame(0, $this->driver->clears);
-    }
-
     public function test_an_employee_is_made_an_administrator_and_it_is_read_back(): void
     {
         $employee = Employee::create(['tenant_id' => $this->tenant->id, 'name' => 'Ali', 'employee_code' => '205', 'is_active' => true]);

@@ -665,6 +665,12 @@ Confirmed preconditions on 2026-10-18 (read-only): IT ROOM (F18) read 11,332 = i
 0 undecodable, 0 future; On The Road (F22) 8,430 = its count. The clear itself has never
 been run. Covered by `tests/Feature/Devices/AttendanceClearTest.php`.
 
+**First run on hardware, 2026-11-10 (casebook DC-043):** Gems Main Office (F18, 192.168.7.64),
+64,272 punches read, checked against the system and cleared in 8.5 minutes; the terminal read
+back 0 (and 0 again in an independent count); users, cards and fingerprints untouched. Its 497
+punches dated "March 2029" (DC-042) needed a one-off allowance in the guard, removed again
+straight after at the owner's request — the guard still refuses any future-dated record.
+
 ## Clearing history
 
 `DELETE /api/device-sync-runs` erases run history for the same `device_id` /

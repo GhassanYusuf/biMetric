@@ -85,13 +85,7 @@ class AttendanceClearService
                 continue;
             }
 
-            // TEMPORARY — casebook DC-043 (owner, 2026-11-10: "go ahead, but after you finish
-            // with GEMS return the check to the old way"). A future-dated punch counts as saved
-            // only when an EARLIER read already archived that exact record (user, time, verify),
-            // as Gems Main Office's 497 "March 2029" punches were (run 714; imported re-dated,
-            // DC-042). REMOVE this block and $knownFuture below once GEMS is cleared.
-            $knownFuture = $this->futureAlreadyArchived($device, (int) ($sync['raw']['run_id'] ?? 0));
-            $unusable = $counts['undecodable'] + $counts['future'] - $knownFuture;
+            $unusable = $counts['undecodable'] + $counts['future'];
             if ($unusable > 0) {
                 throw new ProtocolException(sprintf(
                     '%s holds %s punches but %s of them could not be read correctly, so they are not all saved. Nothing was cleared. '
@@ -102,7 +96,7 @@ class AttendanceClearService
                 ));
             }
 
-            if ($counts['imported'] + $counts['duplicate'] + $knownFuture !== $held) {
+            if ($counts['imported'] + $counts['duplicate'] !== $held) {
                 throw new ProtocolException(sprintf(
                     '%s holds %s punches but only %s are stored in the system. Nothing was cleared.',
                     $device->name,
@@ -144,27 +138,5 @@ class AttendanceClearService
         throw new ProtocolException(
             "{$device->name} kept receiving punches while it was being read, so the count never settled. Nothing was cleared; try again at a quieter time."
         );
-    }
-
-    /**
-     * TEMPORARY — casebook DC-043; remove with the block in clear(). How many of this read's
-     * future-dated records an earlier read had already archived, record for record.
-     */
-    private function futureAlreadyArchived(Device $device, int $runId): int
-    {
-        if ($runId === 0) {
-            return 0;
-        }
-        $earlier = \Illuminate\Support\Facades\DB::table('attendance_raw_logs')
-            ->where('device_id', $device->id)->where('skip_reason', 'future_timestamp')->where('attendance_sync_run_id', '<', $runId)
-            ->get(['device_user_id', 'punched_at', 'verify_method'])
-            ->map(fn ($r) => $r->device_user_id.'|'.substr((string) $r->punched_at, 0, 19).'|'.(int) $r->verify_method)->flip();
-
-        return \Illuminate\Support\Facades\DB::table('attendance_raw_logs')
-            ->where('attendance_sync_run_id', $runId)->where('skip_reason', 'future_timestamp')
-            ->get(['device_user_id', 'punched_at', 'verify_method'])
-            ->filter(fn ($r) => isset($earlier[$r->device_user_id.'|'.substr((string) $r->punched_at, 0, 19).'|'.(int) $r->verify_method]))
-            ->unique(fn ($r) => $r->device_user_id.'|'.$r->punched_at.'|'.$r->verify_method)
-            ->count();
     }
 }
