@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../shared/api';
 import { useToast } from '../../shared/toast';
 import { Button, Card, SelectField, Spinner, TextField } from '../../shared/ui';
@@ -90,6 +90,7 @@ export default function DeviceFormModal({ device, onSubmit, onClose }) {
         protocol: device?.protocol ?? 'binary',
         model: device?.model ?? '',
         location: device?.location ?? '',
+        company_id: device?.company_id ? String(device.company_id) : '',
         comm_key: '',
         web_username: device?.web_username ?? '',
         web_password: '',
@@ -97,6 +98,11 @@ export default function DeviceFormModal({ device, onSubmit, onClose }) {
     });
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
+    // For "Company" (2026-11-11): the Devices page groups terminals under it.
+    const [companies, setCompanies] = useState([]);
+    useEffect(() => {
+        api.get('/companies').then((res) => setCompanies(res.data ?? [])).catch(() => setCompanies([]));
+    }, []);
 
     function set(key, value) {
         setForm((f) => ({ ...f, [key]: value }));
@@ -148,6 +154,8 @@ export default function DeviceFormModal({ device, onSubmit, onClose }) {
                 protocol: form.protocol,
                 model: form.model || null,
                 location: form.location || null,
+                // The company it belongs to; '' = none (2026-11-11).
+                company_id: form.company_id ? Number(form.company_id) : null,
                 comm_key: form.comm_key,
                 web_username: form.web_username || null,
                 web_password: form.web_password,
@@ -232,6 +240,10 @@ export default function DeviceFormModal({ device, onSubmit, onClose }) {
                             </SelectField>
                         </div>
 
+                        <SelectField label="Company" value={form.company_id} onChange={(e) => set('company_id', e.target.value)} error={errors.company_id?.[0]}>
+                            <option value="">No company (shared or not yet decided)</option>
+                            {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </SelectField>
                         <TextField label="Location (optional)" value={form.location} onChange={(e) => set('location', e.target.value)} error={errors.location?.[0]} />
 
                         <TextField

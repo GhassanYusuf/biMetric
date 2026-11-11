@@ -67,6 +67,8 @@ class Device extends Model
         'web_username',
         'web_password',
         'location',
+        // The company the terminal belongs to; null = "No company" (2026-11-11).
+        'company_id',
         'is_active',
         'adoption_status',
         'roster_read_at',
@@ -397,5 +399,11 @@ class Device extends Model
     public function attendanceLogs(): HasMany
     {
         return $this->hasMany(AttendanceLog::class);
+    }
+
+    /** The company this terminal belongs to (2026-11-11), or null. */
+    public function company(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Company::class);
     }
 }

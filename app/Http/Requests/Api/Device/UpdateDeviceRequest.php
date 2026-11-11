@@ -26,6 +26,8 @@ class UpdateDeviceRequest extends FormRequest
             'web_username' => ['nullable', 'string', 'max:255'],
             'web_password' => ['nullable', 'string', 'max:255'],
             'location' => ['nullable', 'string', 'max:255'],
+            // The company the terminal belongs to; null = none (2026-11-11).
+            'company_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('companies', 'id')->where('tenant_id', \App\Support\Tenancy::id())->whereNull('deleted_at')],
             /*
              | This terminal's OWN time zone, for a machine in another country (2026-10-05).
              | null = inherit system.timezone, which is what almost every terminal should

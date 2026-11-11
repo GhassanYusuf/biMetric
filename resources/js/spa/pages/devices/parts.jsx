@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Badge } from '../../shared/ui';
 import { formatDate } from '../../shared/dates';
 
@@ -196,4 +197,40 @@ export function clearPunchesConfirm(device) {
         confirmLabel: 'Save and clear punches',
         danger: true,
     };
+}
+
+
+/*
+| Terminals grouped under their company (owner, 2026-11-11: "put the devices under a company
+| name dropdown — when I click GEMS I see its devices"). One header per company, A–Z, then
+| "No company" (shared door panels, test units). Closed until clicked; which ones are open is
+| remembered in this browser. Shared by the desktop and mobile layouts (rule 5).
+*/
+const OPEN_KEY = 'devices.openCompanies';
+
+export function useCompanyGroups(rows) {
+    const [open, setOpen] = useState(() => {
+        try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]')); } catch { return new Set(); }
+    });
+    const byKey = new Map();
+    for (const d of rows) {
+        const key = d.company_id ? `c:${d.company_id}` : 'none';
+        if (!byKey.has(key)) byKey.set(key, { key, name: d.company_name ?? (d.company_id ? 'Company' : 'No company'), devices: [] });
+        byKey.get(key).devices.push(d);
+    }
+    const groups = [...byKey.values()].sort((a, b) => (a.key === 'none') - (b.key === 'none') || a.name.localeCompare(b.name));
+    for (const g of groups) g.devices.sort((a, b) => a.name.localeCompare(b.name));
+    const toggle = (key) => setOpen((s) => {
+        const next = new Set(s);
+        next.has(key) ? next.delete(key) : next.add(key);
+        try { localStorage.setItem(OPEN_KEY, JSON.stringify([...next])); } catch { /* private window: forget on reload */ }
+        return next;
+    });
+    return { groups, isOpen: (key) => open.has(key), toggle };
+}
+
+/** One line for a company header: how many terminals, and how many are failing. */
+export function groupSummary(devices) {
+    const failing = devices.filter((d) => d.last_sync_status === 'error').length;
+    return `${devices.length} terminal${devices.length === 1 ? '' : 's'}${failing ? ` · ${failing} reporting errors` : ''}`;
 }

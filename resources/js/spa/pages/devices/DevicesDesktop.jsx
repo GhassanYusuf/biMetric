@@ -1,7 +1,8 @@
 import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { ActionMenu, Badge, Button, EmptyState, PageHeader, ProgressBar, TableShell, Thead } from '../../shared/ui';
-import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, devicePunches, relativeTime } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, devicePunches, groupSummary, relativeTime, useCompanyGroups } from './parts';
+import { FOCUS } from '../../shared/theme';
 import { describeProgress } from '../../shared/useSyncProgress';
 import { can } from './parts';
 
@@ -12,6 +13,7 @@ export default function DevicesDesktop({
     onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe, onRestart,
 }) {
     const showActions = canSync || canUpdate || canDelete;
+    const { groups, isOpen, toggle } = useCompanyGroups(rows);
     const failing = rows.filter((d) => d.last_sync_status === 'error').length;
 
     return (
@@ -52,7 +54,24 @@ export default function DevicesDesktop({
                             </td>
                         </tr>
                     )}
-                    {rows.map((d) => {
+                    {groups.map((g) => (
+                    <Fragment key={g.key}>
+                    {/* The company's header: click to show or hide its terminals (2026-11-11). */}
+                    <tr className="bg-slate-50/80">
+                        <td colSpan={showActions ? 8 : 7} className="p-0">
+                            <button
+                                type="button"
+                                onClick={() => toggle(g.key)}
+                                aria-expanded={isOpen(g.key)}
+                                className={`flex w-full items-center gap-2 px-5 py-2.5 text-left text-sm ${FOCUS}`}
+                            >
+                                <svg className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen(g.key) ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 5l6 5-6 5V5z" /></svg>
+                                <span className={`font-semibold ${g.key === 'none' ? 'text-slate-600' : 'text-slate-900'}`}>{g.name}</span>
+                                <span className="text-xs text-slate-500">{groupSummary(g.devices)}</span>
+                            </button>
+                        </td>
+                    </tr>
+                    {isOpen(g.key) && g.devices.map((d) => {
                         const running = busy[d.id];
                         const syncing = syncingId === d.id;
                         return (
@@ -254,6 +273,8 @@ export default function DevicesDesktop({
                             </Fragment>
                         );
                     })}
+                    </Fragment>
+                    ))}
                 </tbody>
             </TableShell>
 

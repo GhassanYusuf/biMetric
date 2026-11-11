@@ -23,6 +23,9 @@ class DeviceResource extends JsonResource
             'port' => $this->port,
             'protocol' => $this->protocol,
             'location' => $this->location,
+            // Grouping on the Devices page (2026-11-11). Null = "No company".
+            'company_id' => $this->company_id === null ? null : (int) $this->company_id,
+            'company_name' => $this->company_id === null ? null : $this->company?->name,
             // Exposed so the edit form can round-trip it. Not a secret; the
             // matching web_password is never sent back.
             'web_username' => $this->web_username,

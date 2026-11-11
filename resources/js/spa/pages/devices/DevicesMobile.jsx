@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader } from '../../shared/ui';
-import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, can, devicePunches, relativeTime } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, can, devicePunches, groupSummary, relativeTime, useCompanyGroups } from './parts';
+import { FOCUS } from '../../shared/theme';
+import { Fragment } from 'react';
 import { SyncProgressRow } from './DevicesDesktop';
 
 // Mobile devices: stacked cards, actions as a full-width row of large tap
@@ -10,6 +12,7 @@ export default function DevicesMobile({
     canCreate, canUpdate, canDelete, canSync,
     onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe, onRestart,
 }) {
+    const { groups, isOpen, toggle } = useCompanyGroups(rows);
     return (
         <div className="space-y-4">
             <PageHeader title="Devices" compact>
@@ -26,7 +29,20 @@ export default function DevicesMobile({
                 </Card>
             ) : (
                 <div className="space-y-3">
-                    {rows.map((d) => {
+                    {groups.map((g) => (
+                    <Fragment key={g.key}>
+                    {/* Rule 5: the same company headers as the desktop table. */}
+                    <button
+                        type="button"
+                        onClick={() => toggle(g.key)}
+                        aria-expanded={isOpen(g.key)}
+                        className={`flex min-h-[44px] w-full items-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-left text-sm ${FOCUS}`}
+                    >
+                        <svg className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isOpen(g.key) ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 5l6 5-6 5V5z" /></svg>
+                        <span className={`font-semibold ${g.key === 'none' ? 'text-slate-600' : 'text-slate-900'}`}>{g.name}</span>
+                        <span className="ml-auto text-xs text-slate-500">{groupSummary(g.devices)}</span>
+                    </button>
+                    {isOpen(g.key) && g.devices.map((d) => {
                         const running = busy[d.id];
                         return (
                             <Card key={d.id} className="p-4">
@@ -146,6 +162,8 @@ export default function DevicesMobile({
                             </Card>
                         );
                     })}
+                    </Fragment>
+                    ))}
                 </div>
             )}
         </div>

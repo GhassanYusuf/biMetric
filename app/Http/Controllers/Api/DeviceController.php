@@ -48,6 +48,7 @@ class DeviceController extends Controller
         // row: the list shows whether each terminal can be written to, and asking
         // once per device is the N+1 this codebase keeps having to remove.
         $devices = Device::query()
+            ->with('company:id,name') // the Devices page groups by it (2026-11-11)
             ->withCount(['attendanceLogs', 'unclaimedRosterEntries'])
             ->latest()
             ->get();
