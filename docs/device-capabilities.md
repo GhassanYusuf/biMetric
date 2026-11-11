@@ -68,7 +68,7 @@ fingerprint (read back byte-identical), deleted and verified gone; everyone else
 IMPLEMENTED. The "unexplained case" given for that (Riza: record kept, finger and card
 gone) was a misreading of her still-open link in the app; she had been deleted from the
 terminal (DC-032). 2.18.1 sets `user.delete` CONFIRMED; card and fingerprint stay
-IMPLEMENTED until a system-written finger has matched at the terminal. Clock, password, privilege, move in
+IMPLEMENTED until a system-written finger has matched at the terminal. **2.23.0 (2026-11-11, DC-045): `user.privilege` CONFIRMED** — a test user made administrator then normal user on Catering, read back with name and password kept, every other user unchanged, twice. Clock, password, move in
 place, clear and wipe: UNKNOWN. **Not settled by research:** nothing
 UA300- or ZMM200-specific was found in pyzk, pyzatt or php-zkteco (2026-10-26).
 

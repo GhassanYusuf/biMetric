@@ -127,13 +127,13 @@ UA300-specific in pyzk, pyzatt or php-zkteco.
 | Attendance | read | 2,101 → 2,115 records over eleven reads, none undecodable | C |
 | Attendance | clear | never run | U |
 | Password | read / write | read rides the user record but was never compared with a known value (I); write never run (U) | I / U |
-| Privilege | set | never run | U |
+| Privilege | set | `UserService::setPrivilege()`, the F18's method: a test user made 14 then 0, read back, name and password kept, the other 18 users unchanged, twice (2026-11-11, DC-045, library 2.23.0) | C |
 | Clock | read | `readClock`, C | C |
 | Clock | write | **differs from the F18.** While the row wrongly said F18, 2026-10-26 02:00 UTC: ACKed, but the immediate read-back still showed the old time (96 s slow), so the command failed; by 07:00 the clock was right. It applies later than the read-back. Not measured on the write test (the clock was right; a deliberate error would mis-stamp punches): run `--clock-only` once it drifts 30 s | U |
 | Everyone | wipe | never run | U |
 
 **To promote further:** card and fingerprint to C once moved workers punch by finger; the clock with `--clock-only`; password,
-privilege, clear and wipe each need their own run.
+clear and wipe each need their own run (privilege done 2026-11-11).
 
 ## inBIO460 — Glass Door
 

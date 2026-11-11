@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-045 | 2026-11-11 | Catering (UA300/ID, 192.168.7.120) | Administrator / normal user from the system on the UA300 (user.privilege unknown, never run) | OPEN |
+| DC-045 | 2026-11-11 | Catering (UA300/ID, 192.168.7.120) | Administrator / normal user from the system on the UA300 (user.privilege unknown, never run) | FIXED |
 | DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | FIXED |
 | DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | FIXED |
 | DC-042 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | 497 punches dated March 2029: the clock ran exactly 5 years ahead, 5–26 March 2024 | FIXED |
@@ -136,13 +136,20 @@ Template:
     other user's privilege compared before and after, test user deleted) extended: for a model still
     UNKNOWN it calls the library's `UserService::setPrivilege()` directly — the F18/F22 method —
     on the test user only, so normal callers stay refused until the evidence exists.
-  - Next: the owner runs it on Catering; if clean, a library release sets the UA300's
-    `user.privilege` to CONFIRMED (the F18 and F22 untouched), then the app's pins and docs.
+  - Owner ran it on Catering twice, 2026-11-11: both clean — test user (id 1) 14 then 0, each read
+    back with name and password kept; roster 18 users / 2 admins before and after, unchanged.
 - **Root cause:** not a fault: an action never proven on this model.
-- **Fix:** pending.
-- **Verified:** pending.
-- **Evidence:** —
-- **Status:** OPEN
+- **Fix:** library **2.23.0** (`UA300::capabilities()`: `user.privilege` UNKNOWN → CONFIRMED, with the
+  evidence in the code; `TerminalModelTest`; 179 library tests against the working copy), pushed by
+  the owner, installed (`composer update`, `queue:restart`). App: `DeviceModelMethodologyTest` pin
+  for the UA300 updated (13th action `u` → `c`); `docs/device-models.md`, `docs/device-capabilities.md`.
+  The F18 and F22 pins unchanged and passing (rule 21).
+- **Verified:** on Catering by the two test runs; after the install the app reads `user.privilege`
+  = confirmed for Catering (UA300/ID) and still confirmed for Camelot, IT ROOM (F18), On The Road
+  (F22); 842 tests passed. The Make administrator / normal user action is now offered on Catering.
+- **Evidence:** `tools/zkprobe/traces-2026-11-11/user-privilege-write-01.json`, `-02.json`; library
+  `c604da8` / `v2.23.0`.
+- **Status:** FIXED
 - **Keywords:** UA300, Catering, privilege, administrator, normal user, user.privilege, unknown,
   Akhil, zkt-test, user-privilege-write
 

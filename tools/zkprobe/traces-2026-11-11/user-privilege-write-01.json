@@ -1,0 +1,53 @@
+{
+    "label": "user-privilege-write",
+    "host": "192.168.7.120",
+    "started_at": "2026-11-11T07:21:43+00:00",
+    "question": "Does setUserPrivilege() read back 14 then 0 on a test user, keeping its name and password, with every other user unchanged?",
+    "devices": [
+        {
+            "device_id": 17,
+            "name": "Catering",
+            "host": "192.168.7.120",
+            "model": "UA300/ID",
+            "steps": [
+                {
+                    "at": "2026-11-11T07:21:44+00:00",
+                    "step": "roster before",
+                    "users": 18,
+                    "admins": 2
+                },
+                {
+                    "at": "2026-11-11T07:21:53+00:00",
+                    "step": "test user added",
+                    "user_id": "1"
+                },
+                {
+                    "at": "2026-11-11T07:21:57+00:00",
+                    "step": "made administrator and read back",
+                    "user_id": "1",
+                    "privilege": 14,
+                    "expected": 14,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-11-11T07:22:00+00:00",
+                    "step": "made normal user and read back",
+                    "user_id": "1",
+                    "privilege": 0,
+                    "expected": 0,
+                    "name_kept": true,
+                    "password_kept": true
+                },
+                {
+                    "at": "2026-11-11T07:22:05+00:00",
+                    "step": "roster after",
+                    "users": 18,
+                    "unchanged": true
+                }
+            ],
+            "roster_unchanged": true,
+            "verdict": "user.privilege reads back"
+        }
+    ]
+}
