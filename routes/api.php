@@ -208,6 +208,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Read a device's identity before it is saved, so the add form can auto-select
     // the model. Declared before the resource so it is not read as devices/{device}.
     Route::post('devices/identify', [DeviceController::class, 'identify']);
+    // Names only, for filters (2026-11-11); before devices/{device} so it is not read as an id.
+    Route::get('devices/options', [DeviceController::class, 'options']);
     Route::apiResource('devices', DeviceController::class)->names('api.devices');
     Route::post('devices/{device}/test-connection', [DeviceController::class, 'testConnection']);
     Route::post('devices/{device}/sync-attendance', [DeviceController::class, 'syncAttendance']);

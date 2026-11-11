@@ -56,6 +56,22 @@ class DeviceController extends Controller
         return ApiResponse::success(DeviceResource::collection($devices), 'Devices retrieved.');
     }
 
+    /**
+     * Terminal names only, for filters (owner, 2026-11-11: give HR the Terminal and Terminal
+     * role filters on Employees without the Devices page). Id and name — no address, model,
+     * status or settings — for anyone who may see terminals OR employees.
+     */
+    public function options(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user->can('devices.view') || $user->can('employees.view'), 403, 'This action is unauthorized.');
+
+        return ApiResponse::success(
+            Device::query()->orderBy('name')->get(['id', 'name'])->map(fn ($d) => ['id' => (int) $d->id, 'name' => $d->name])->values(),
+            'Terminals retrieved.',
+        );
+    }
+
     public function store(StoreDeviceRequest $request): JsonResponse
     {
         $this->authorize('create', Device::class);

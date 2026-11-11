@@ -49,4 +49,25 @@ class TerminalRoleFilterTest extends TestCase
         $this->assertSame(['Charmae', 'Loose', 'Ragesh'], $names('per_page=50'));
         $this->assertSame(14, collect($this->actingAs($admin, 'sanctum')->getJson('/api/employees?terminal_role=admin')->json('data.0.enrollments'))->firstWhere('device_id', $camelot->id)['device_privilege']);
     }
+
+    /** Owner, 2026-11-11: HR (view only) gets the two filters, not the Devices page. */
+    public function test_hr_gets_terminal_names_for_the_filters_but_not_the_devices(): void
+    {
+        Tenancy::clear();
+        $tenant = Tenant::create(['name' => 'Acme', 'slug' => 'acme']);
+        $this->seed(RolesAndPermissionsSeeder::class);
+        RolesAndPermissionsSeeder::seedTenantRoles($tenant);
+        Tenancy::set($tenant->id);
+        $hr = User::withoutGlobalScopes()->create(['name' => 'HR', 'email' => 'hr@acme.test', 'password' => 'secret-pass-1', 'tenant_id' => $tenant->id, 'is_active' => true, 'email_verified_at' => now()]);
+        $hr->syncRoles(['hr-manager']);
+        $camelot = Device::create(['name' => 'Camelot', 'ip_address' => '192.0.2.60', 'port' => 4370, 'protocol' => Device::PROTOCOL_BINARY, 'is_active' => true]);
+        $ragesh = Employee::create(['name' => 'Ragesh', 'employee_code' => '870156500', 'is_active' => true]);
+        EmployeeDeviceMap::create(['device_id' => $camelot->id, 'employee_id' => $ragesh->id, 'device_user_id' => '870156500', 'device_privilege' => 14]);
+        Tenancy::clear();
+
+        $this->actingAs($hr, 'sanctum')->getJson('/api/devices/options')->assertOk()
+            ->assertExactJson(['success' => true, 'message' => 'Terminals retrieved.', 'data' => [['id' => $camelot->id, 'name' => 'Camelot']], 'meta' => [], 'errors' => []]);
+        $this->actingAs($hr, 'sanctum')->getJson('/api/devices')->assertForbidden();
+        $this->assertSame(['Ragesh'], collect($this->actingAs($hr, 'sanctum')->getJson("/api/employees?terminal_role=admin&device_id={$camelot->id}")->assertOk()->json('data'))->pluck('name')->all());
+    }
 }

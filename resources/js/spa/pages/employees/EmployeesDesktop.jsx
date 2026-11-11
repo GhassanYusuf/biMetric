@@ -12,7 +12,7 @@ import { useRef, useState } from 'react';
 
 // Desktop employees: toolbar + wide data table.
 export default function EmployeesDesktop({
-    rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, treeCountKind, departmentsLoaded, devices,
+    rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, treeCountKind, departmentsLoaded, devices, filterDevices,
     canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
@@ -123,7 +123,7 @@ export default function EmployeesDesktop({
                 onSearch={onSearch}
                 filters={filters ?? {}}
                 onChange={onFilters}
-                devices={devices}
+                devices={filterDevices ?? devices}
             />
 
             <TableShell>

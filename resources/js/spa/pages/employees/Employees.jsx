@@ -83,6 +83,8 @@ export default function Employees() {
     const toast = useToast();
     const [rows, setRows] = useState([]);
     const [devices, setDevices] = useState([]);
+    // Terminal names for the filters when the full list is not allowed (2026-11-11).
+    const [filterDevices, setFilterDevices] = useState([]);
     // Company setting employees.auto_push_on_save (2026-09-24). Off until loaded.
     const [autoPush, setAutoPush] = useState(false);
     const [savingAutoPush, setSavingAutoPush] = useState(false);
@@ -231,7 +233,12 @@ export default function Employees() {
     // Terminals for the enroll dialog. A user who may push employees but not
     // view devices simply gets no terminals offered, which the dialog explains.
     useEffect(() => {
-        if (!can('devices.view')) return;
+        // Without devices.view (e.g. HR, view only), only the names for the Terminal and
+        // Terminal role filters (2026-11-11): no device actions are offered from those.
+        if (!can('devices.view')) {
+            if (can('employees.view')) api.get('/devices/options').then((res) => setFilterDevices(res.data ?? [])).catch(() => setFilterDevices([]));
+            return;
+        }
         api.get('/devices').then((res) => setDevices(res.data ?? [])).catch(() => setDevices([]));
         // A failed read leaves it OFF — the safe side: saves keep asking before pushing.
         api.get('/settings').then((res) => setAutoPush(!!res.data?.['employees.auto_push_on_save'])).catch(() => {});
@@ -860,6 +867,7 @@ export default function Employees() {
                 : unassignedCurrentCount,
         departmentsLoaded,
         devices,
+        filterDevices: devices.length > 0 ? devices : filterDevices,
         canCreate: can('employees.create'),
         canUpdate: can('employees.update'),
         canDelete: can('employees.delete'),
