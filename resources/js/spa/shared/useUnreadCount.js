@@ -12,7 +12,7 @@ export function useUnreadCount() {
 
     const refresh = useCallback(async () => {
         try {
-            const { data } = await api.get('/notifications/unread-count');
+            const { data } = await api.background('/notifications/unread-count');
             setCount(data.unread_count ?? 0);
         } catch {
             /* keep last known count on transient failure */

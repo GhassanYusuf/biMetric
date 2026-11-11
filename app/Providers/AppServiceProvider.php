@@ -49,6 +49,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Website sign-ins: 15 minutes idle, 8 hours at most (owner, 2026-11-11).
+        \Laravel\Sanctum\Sanctum::authenticateAccessTokensUsing([\App\Support\WebSession::class, 'allows']);
+
         Vite::prefetch(concurrency: 3);
 
         // Platform super-admins bypass every permission/policy check. Returning

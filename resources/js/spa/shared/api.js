@@ -125,6 +125,9 @@ function filenameFrom(header) {
 
 export const api = {
     get: (path) => request('GET', path),
+    // A poll the person did not ask for (live updates, counters): the server does not count it as
+    // activity, so an open tab cannot keep an idle sign-in alive (2026-11-11, WebSession).
+    background: (path) => request('GET', path, { headers: { 'X-Background': '1' } }),
     post: (path, body) => request('POST', path, { body }),
     put: (path, body) => request('PUT', path, { body }),
     patch: (path, body) => request('PATCH', path, { body }),

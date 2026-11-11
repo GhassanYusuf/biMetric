@@ -24,7 +24,7 @@ export function useLastSync() {
             return;
         }
         try {
-            const { data } = await api.get('/devices');
+            const { data } = await api.background('/devices');
             const devices = data ?? [];
 
             if (devices.length === 0) {

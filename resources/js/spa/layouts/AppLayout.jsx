@@ -1,6 +1,7 @@
 import { useDeviceClass } from '../shared/useDeviceClass';
 import { useUnreadCount } from '../shared/useUnreadCount';
 import { TopBarProvider } from '../shared/topbar';
+import { useIdleSignOut } from '../shared/useIdleSignOut';
 import CommandPalette, { useCommandPalette } from '../shared/CommandPalette';
 import DesktopLayout from './DesktopLayout';
 import MobileLayout from './MobileLayout';
@@ -17,6 +18,8 @@ export default function AppLayout() {
     const deviceClass = useDeviceClass();
     const unread = useUnreadCount();
     const palette = useCommandPalette();
+    // 15 minutes idle → a warning at 13, signed out at 15 (2026-11-11).
+    const idleWarning = useIdleSignOut();
 
     const openPalette = () => palette.setOpen(true);
 
@@ -28,6 +31,7 @@ export default function AppLayout() {
                 <MobileLayout unread={unread} onOpenPalette={openPalette} />
             )}
             <CommandPalette open={palette.open} onClose={() => palette.setOpen(false)} />
+            {idleWarning}
         </TopBarProvider>
     );
 }

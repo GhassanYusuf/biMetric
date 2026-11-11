@@ -41,7 +41,7 @@ export function useSyncProgress(deviceId, active) {
 
         async function poll() {
             try {
-                const { data } = await api.get(`/devices/${deviceId}/sync-progress`);
+                const { data } = await api.background(`/devices/${deviceId}/sync-progress`);
                 if (cancelled) return;
 
                 failures.current = 0;

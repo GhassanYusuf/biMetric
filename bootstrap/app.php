@@ -35,6 +35,8 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+        // Website sign-ins: 15 minutes idle, 8 hours at most (2026-11-11, App\Support\WebSession).
+        $middleware->api(append: [\App\Http\Middleware\RecordSessionActivity::class]);
 
         // Route-level aliases. `tenant` establishes the acting tenant after
         // auth; `permission`/`role` are spatie's authorization gates.

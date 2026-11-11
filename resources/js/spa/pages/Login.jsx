@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../shared/auth';
 import { ApiError } from '../shared/api';
 import { Button, Card, Spinner, TextField } from '../shared/ui';
+import { SIGNED_OUT_KEY } from '../shared/useIdleSignOut';
 
 // Shared across mobile/desktop — a single centered auth card is identical on
 // both, so no split is warranted here (the standards only require separate
@@ -13,7 +14,14 @@ export default function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [errors, setErrors] = useState({});
-    const [message, setMessage] = useState('');
+    // Why the last sign-in ended, when the idle limit ended it (2026-11-11); shown once.
+    const [message, setMessage] = useState(() => {
+        try {
+            const why = sessionStorage.getItem(SIGNED_OUT_KEY) ?? '';
+            sessionStorage.removeItem(SIGNED_OUT_KEY);
+            return why;
+        } catch { return ''; }
+    });
     const [submitting, setSubmitting] = useState(false);
 
     if (user) return <Navigate to="/dashboard" replace />;

@@ -31,7 +31,7 @@ async function poll() {
     if (inFlight || document.visibilityState !== 'visible' || subscribers.size === 0) return;
     inFlight = true;
     try {
-        const res = await api.get('/live');
+        const res = await api.background('/live');
         const next = res.data ?? {};
         if (stamps !== null) {
             const changed = Object.keys(next).filter((k) => next[k] !== stamps[k]);

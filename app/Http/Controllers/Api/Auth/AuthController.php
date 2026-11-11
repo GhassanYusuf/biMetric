@@ -8,6 +8,7 @@ use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Support\ApiResponse;
 use App\Support\Tenancy;
+use App\Support\WebSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -42,7 +43,13 @@ class AuthController extends Controller
             Tenancy::set($user->tenant_id);
         }
 
-        $token = $user->createToken($data['device_name'] ?? 'web')->plainTextToken;
+        // A website sign-in lasts 8 hours at most, and ends after 15 minutes idle (WebSession).
+        $name = $data['device_name'] ?? WebSession::NAME;
+        $created = $user->createToken($name, ['*'], $name === WebSession::NAME ? now()->addHours(WebSession::MAX_HOURS) : null);
+        if (\Illuminate\Support\Facades\Schema::hasColumn('personal_access_tokens', 'last_active_at')) {
+            $created->accessToken->forceFill(['last_active_at' => now()])->saveQuietly();
+        }
+        $token = $created->plainTextToken;
         $user->load('tenant');
 
         return ApiResponse::success([
