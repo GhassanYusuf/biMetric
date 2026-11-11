@@ -25,6 +25,9 @@ class CompanyResource extends JsonResource
             'employees_count' => $this->whenCounted('employees'),
             // The same, without the resigned (what the employee list shows by default).
             'current_count' => $this->whenCounted('current'),
+            // Its terminals, by their Active switch (2026-11-11).
+            'devices_active_count' => $this->whenCounted('devices_active'),
+            'devices_inactive_count' => $this->whenCounted('devices_inactive'),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

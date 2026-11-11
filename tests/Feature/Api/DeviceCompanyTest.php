@@ -37,6 +37,13 @@ class DeviceCompanyTest extends TestCase
         $this->assertSame($gems->id, $row['company_id']);
         $this->assertSame('GEMS', $row['company_name']);
 
+        // The company card's terminal counts, by the Active switch (2026-11-11).
+        Tenancy::set($device->tenant_id);
+        Device::create(['name' => 'Gems 2', 'ip_address' => '192.0.2.65', 'port' => 4370, 'protocol' => Device::PROTOCOL_BINARY, 'is_active' => false, 'company_id' => $gems->id]);
+        Tenancy::clear();
+        $card = collect($this->actingAs($admin, 'sanctum')->getJson('/api/companies')->assertOk()->json('data'))->firstWhere('id', $gems->id);
+        $this->assertSame([1, 1], [$card['devices_active_count'], $card['devices_inactive_count']]);
+
         // Back to no company.
         $this->actingAs($admin, 'sanctum')->putJson("/api/devices/{$device->id}", [
             'name' => 'Gems', 'ip_address' => '192.0.2.64', 'port' => 4370, 'protocol' => Device::PROTOCOL_BINARY, 'company_id' => null,

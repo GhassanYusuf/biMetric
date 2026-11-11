@@ -13,6 +13,15 @@ export function people(n) {
     return `${n.toLocaleString()} ${n === 1 ? 'person' : 'people'}`;
 }
 
+/** "3 terminals · 2 active · 1 inactive" (2026-11-11), by each terminal's Active switch. */
+export function terminals(company) {
+    const on = Number(company.devices_active_count ?? 0);
+    const off = Number(company.devices_inactive_count ?? 0);
+    const all = on + off;
+    if (all === 0) return 'no terminals';
+    return `${all} terminal${all === 1 ? '' : 's'} · ${on} active${off ? ` · ${off} inactive` : ''}`;
+}
+
 function LinkButton({ children, tone = 'slate', ...props }) {
     const tones = {
         slate: 'text-slate-600 hover:text-slate-900',
@@ -39,7 +48,7 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
                     <span className="min-w-0 truncate">{company.name}</span>
                 </span>
             )}
-            subtitle={`${company.departments.length} department${company.departments.length === 1 ? '' : 's'} · ${people(company.employees_count)}`}
+            subtitle={`${company.departments.length} department${company.departments.length === 1 ? '' : 's'} · ${people(company.employees_count)} · ${terminals(company)}`}
             bodyClass="px-3 pb-3 pt-2"
             action={canManage && (
                 <div className="flex shrink-0 items-center gap-1">

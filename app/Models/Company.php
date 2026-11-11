@@ -23,6 +23,12 @@ class Company extends Model
 
     protected $fillable = ['tenant_id', 'name', 'code', 'manager_id'];
 
+    /** The terminals that belong to this company (devices.company_id, 2026-11-11). */
+    public function devices(): HasMany
+    {
+        return $this->hasMany(Device::class);
+    }
+
     public function departments(): HasMany
     {
         return $this->hasMany(Department::class);

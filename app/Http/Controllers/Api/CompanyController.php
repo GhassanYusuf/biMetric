@@ -27,7 +27,13 @@ class CompanyController extends Controller
         // the resigned, as the employee list does by default (2026-11-03: the tree said 117
         // beside PROMOSEVEN while its list said 111).
         $companies = Company::query()
-            ->withCount(['departments', 'employees', 'employees as current_count' => fn ($q) => $q->whereNull('resigned_at')])
+            ->withCount([
+                'departments', 'employees', 'employees as current_count' => fn ($q) => $q->whereNull('resigned_at'),
+                // Its terminals by their Active switch (owner, 2026-11-11: "the number of devices
+                // that are active and inactive in the company card").
+                'devices as devices_active_count' => fn ($q) => $q->where('is_active', true),
+                'devices as devices_inactive_count' => fn ($q) => $q->where('is_active', false),
+            ])
             ->with('manager:id,name')
             ->orderBy('name')
             ->get();
