@@ -13,13 +13,50 @@ export function people(n) {
     return `${n.toLocaleString()} ${n === 1 ? 'person' : 'people'}`;
 }
 
-/** "3 terminals · 2 active · 1 inactive" (2026-11-11), by each terminal's Active switch. */
-export function terminals(company) {
+const ICONS = {
+    departments: 'M4 21V5a1 1 0 011-1h9a1 1 0 011 1v16M15 10h4a1 1 0 011 1v10M3 21h18M8 8h3M8 12h3M8 16h3',
+    people: 'M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z',
+    terminals: 'M7 3h10a1 1 0 011 1v16a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zM9 7h6M9 11h6M10 17h4',
+};
+
+/** One stat as an icon and its number, labelled for hover and screen readers (rule 7). */
+function Stat({ icon, value, label, tone = 'slate' }) {
+    const tones = {
+        slate: 'bg-slate-100 text-slate-700',
+        emerald: 'bg-emerald-50 text-emerald-700',
+        rose: 'bg-rose-50 text-rose-700',
+    };
+    return (
+        <span title={label} aria-label={label} role="img" className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${tones[tone]}`}>
+            {icon ? (
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICONS[icon]} /></svg>
+            ) : (
+                <span className={`h-2 w-2 rounded-full ${tone === 'emerald' ? 'bg-emerald-500' : 'bg-rose-500'}`} aria-hidden="true" />
+            )}
+            {value.toLocaleString()}
+        </span>
+    );
+}
+
+/**
+ * The card's line as badges, not words (owner, 2026-11-11: "don't put numbers next to
+ * department, people, terminal, active — put logos and badges"): departments, people, terminals,
+ * then green active and red inactive terminals (each terminal's Active switch).
+ */
+export function CompanyStats({ company }) {
     const on = Number(company.devices_active_count ?? 0);
     const off = Number(company.devices_inactive_count ?? 0);
-    const all = on + off;
-    if (all === 0) return 'no terminals';
-    return `${all} terminal${all === 1 ? '' : 's'} · ${on} active${off ? ` · ${off} inactive` : ''}`;
+    const depts = company.departments.length;
+    const ppl = Number(company.employees_count ?? 0);
+    return (
+        <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <Stat icon="departments" value={depts} label={`${depts} department${depts === 1 ? '' : 's'}`} />
+            <Stat icon="people" value={ppl} label={people(ppl)} />
+            <Stat icon="terminals" value={on + off} label={`${on + off} terminal${on + off === 1 ? '' : 's'}`} />
+            {on > 0 && <Stat value={on} tone="emerald" label={`${on} active terminal${on === 1 ? '' : 's'}`} />}
+            {off > 0 && <Stat value={off} tone="rose" label={`${off} inactive terminal${off === 1 ? '' : 's'}`} />}
+        </span>
+    );
 }
 
 function LinkButton({ children, tone = 'slate', ...props }) {
@@ -48,7 +85,7 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
                     <span className="min-w-0 truncate">{company.name}</span>
                 </span>
             )}
-            subtitle={`${company.departments.length} department${company.departments.length === 1 ? '' : 's'} · ${people(company.employees_count)} · ${terminals(company)}`}
+            subtitle={<CompanyStats company={company} />}
             bodyClass="px-3 pb-3 pt-2"
             action={canManage && (
                 <div className="flex shrink-0 items-center gap-1">
