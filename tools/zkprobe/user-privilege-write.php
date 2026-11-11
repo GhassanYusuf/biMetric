@@ -23,7 +23,13 @@
  * (the id is printed and in the trace).
  *
  * Owner's go-ahead: 2026-10-20, "apply the changes … to all devices, also the admin and
- * normal user thing" (rule 16).
+ * normal user thing" (rule 16). Again 2026-11-11 for the UA300 (Catering): "build the
+ * feature for UA300 to give admin and normal user same as F18" (casebook DC-045).
+ *
+ * A model whose `user.privilege` is still UNKNOWN (the UA300 until this runs) is refused by
+ * the driver, rightly, for every normal caller. For the TEST USER ONLY, this probe then calls
+ * the library's UserService::setPrivilege() directly, the method the F18 and F22 run, so the
+ * evidence that can promote the level is gathered without lowering the gate for anyone else.
  *
  * WHAT IT SETTLES (rule 21): `user.privilege` on that terminal's MODEL — IMPLEMENTED
  * until this reads back, CONFIRMED after clean runs. One model's run says nothing about
@@ -87,7 +93,11 @@ foreach ($devices as $device) {
             $driver->saveUser($device, $pin, 'zkt-test', null, false, null, '1357');
             $step('test user added', ['user_id' => $pin]);
             foreach ([true => 14, false => 0] as $admin => $expected) {
-                $user = $driver->setUserPrivilege($device, $pin, (bool) $admin);
+                // Through the driver when the model allows it; for an UNKNOWN model, the same
+                // library method directly, on the test user only (see the header).
+                $user = $device->capabilitySet()->level(\Promoseven\Biometric\Capability\Capability::USER_PRIVILEGE) === \Promoseven\Biometric\Capability\Capability::UNKNOWN
+                    ? $driver->run($device, fn (\Promoseven\Biometric\Client\Device $d) => $d->users()->setPrivilege($pin, $admin ? 14 : 0))
+                    : $driver->setUserPrivilege($device, $pin, (bool) $admin);
                 $ok = $user->privilege === $expected && $user->name === 'zkt-test' && $user->password === '1357';
                 $step(($admin ? 'made administrator' : 'made normal user').' and read back', [
                     'user_id' => $pin, 'privilege' => $user->privilege, 'expected' => $expected,

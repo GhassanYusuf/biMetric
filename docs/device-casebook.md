@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-11-10**
+**Last updated: 2026-11-11**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-045 | 2026-11-11 | Catering (UA300/ID, 192.168.7.120) | Administrator / normal user from the system on the UA300 (user.privilege unknown, never run) | OPEN |
 | DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | FIXED |
 | DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | FIXED |
 | DC-042 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | 497 punches dated March 2029: the clock ran exactly 5 years ahead, 5–26 March 2024 | FIXED |
@@ -119,6 +120,31 @@ Template:
 ---
 
 ## Entries
+
+### DC-045 — Administrator / normal user from the system on the UA300 (Catering)
+
+- **Date:** 2026-11-11
+- **Devices:** Catering (#17, UA300/ID, 192.168.7.120, firmware Ver 6.60 May 14 2018, ZMM200_TFT)
+- **Direction:** software → device
+- **Symptom:** owner, 2026-11-10: remove Akhil's (921257970) administrator role on Catering — the
+  system refused: `user.privilege` is UNKNOWN on the UA300 (never run; the F18's level is not
+  inherited, rule 15). Owner, 2026-11-11: "build the feature for UA300 to give admin and normal user
+  same as F18".
+- **What was done:** the method rule 21 asks for — prove on the model, then promote the level.
+  - `tools/zkprobe/user-privilege-write.php` (the 2026-10-20 F22 test: a temporary test user
+    "zkt-test" with password 1357 only, made 14 then 0, each read back, name and password kept, every
+    other user's privilege compared before and after, test user deleted) extended: for a model still
+    UNKNOWN it calls the library's `UserService::setPrivilege()` directly — the F18/F22 method —
+    on the test user only, so normal callers stay refused until the evidence exists.
+  - Next: the owner runs it on Catering; if clean, a library release sets the UA300's
+    `user.privilege` to CONFIRMED (the F18 and F22 untouched), then the app's pins and docs.
+- **Root cause:** not a fault: an action never proven on this model.
+- **Fix:** pending.
+- **Verified:** pending.
+- **Evidence:** —
+- **Status:** OPEN
+- **Keywords:** UA300, Catering, privilege, administrator, normal user, user.privilege, unknown,
+  Akhil, zkt-test, user-privilege-write
 
 ### DC-044 — Write the GEMS staff's punches back onto Gems Main Office, under each person's current ID
 
