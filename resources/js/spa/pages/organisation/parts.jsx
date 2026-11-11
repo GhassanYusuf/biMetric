@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { ActionMenu, Avatar, Badge, SectionCard } from '../../shared/ui';
+import { ActionMenu, Avatar, SectionCard } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 
 /*
@@ -134,7 +134,8 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
                     {company.departments.map((d) => (
                         <li key={d.id} className="flex items-center gap-3 px-2 py-2.5">
                             <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{d.name}</span>
-                            <Badge tone="slate">{people(d.employees_count)}</Badge>
+                            {/* The people icon and the number, like the company's badges (2026-11-11). */}
+                            <Stat icon="people" value={Number(d.employees_count ?? 0)} label={people(Number(d.employees_count ?? 0))} />
                             {canManage && (
                                 <div className="flex shrink-0 items-center gap-0.5">
                                     {/* Icons, not words (owner, 2026-11-11); named for hover and screen readers. */}
