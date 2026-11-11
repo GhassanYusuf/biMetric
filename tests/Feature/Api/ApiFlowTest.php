@@ -217,17 +217,28 @@ class ApiFlowTest extends TestCase
             ->assertJsonStructure(['errors' => ['employee_code']]);
     }
 
+    /**
+     * HR manager is view only since 2026-11-11 (owner): it cannot excuse an absence, but is still
+     * told when an administrator does.
+     */
     public function test_waiver_creates_persisted_notification_for_hr(): void
     {
         $hrToken = $this->tokenFor('hr@acme.test');
+        $adminToken = $this->tokenFor('admin@acme.test');
         $employee = Employee::where('employee_code', '1002')->first();
 
         $this->withToken($hrToken)
+            ->postJson("/api/employees/{$employee->id}/waivers", ['date' => '2026-07-21', 'reason' => 'Leave'])
+            ->assertForbidden();
+        $this->app['auth']->forgetGuards(); // the next request is another user
+
+        $this->withToken($adminToken)
             ->postJson("/api/employees/{$employee->id}/waivers", ['date' => '2026-07-20', 'reason' => 'Leave'])
             ->assertOk()
             ->assertJsonPath('data.waived', true);
 
         // HR should now have exactly one unread notification.
+        $this->app['auth']->forgetGuards();
         $this->withToken($hrToken)->getJson('/api/notifications/unread-count')
             ->assertOk()
             ->assertJsonPath('data.unread_count', 1);

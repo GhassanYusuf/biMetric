@@ -33,11 +33,12 @@ class RolesAndPermissionsSeeder extends Seeder
     /** Per-tenant roles => the permissions granted to each. */
     public const TENANT_ROLES = [
         'tenant-admin' => '*', // everything except platform tenants.*
+        // View only (owner, 2026-11-11: "the HR manager permission should be only view").
         'hr-manager' => [
-            'employees.view', 'employees.create', 'employees.update', 'employees.delete',
-            'attendance.view', 'attendance.waive',
-            'holidays.view', 'holidays.manage',
-            'departments.view', 'departments.manage',
+            'employees.view',
+            'attendance.view',
+            'holidays.view',
+            'departments.view',
             'reports.view', 'notifications.view',
         ],
         'operator' => [
