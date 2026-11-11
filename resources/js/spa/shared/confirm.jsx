@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { Button, Card } from './ui';
+import { Button, Card, TextField } from './ui';
 import { ELEVATION } from './theme';
 import { useEscapeKey } from './useEscapeKey';
 
@@ -17,6 +17,10 @@ import { useEscapeKey } from './useEscapeKey';
 |
 | `body` takes a string or an array of paragraphs. `danger` styles the primary
 | action as destructive. Resolve false on cancel, Escape, or backdrop click.
+|
+| `typeToConfirm: 'test'` (owner, 2026-11-11: "on the confirmation dialog let him write test to
+| confirm") adds a box asking for that exact text; the primary action stays disabled until it
+| matches (spaces at the ends and letter case ignored), and Enter in the box confirms once it does.
 */
 
 const ConfirmContext = createContext(null);
@@ -66,7 +70,10 @@ function ConfirmDialog({ request, onSettle }) {
         confirmLabel = 'Confirm',
         cancelLabel = 'Cancel',
         danger = false,
+        typeToConfirm = null,
     } = request;
+    const [typed, setTyped] = useState('');
+    const matches = typeToConfirm == null || typed.trim().toLowerCase() === String(typeToConfirm).trim().toLowerCase();
 
     const paragraphs = body == null ? [] : Array.isArray(body) ? body.filter(Boolean) : [body];
 
@@ -117,6 +124,17 @@ function ConfirmDialog({ request, onSettle }) {
                                     ))}
                                 </div>
                             )}
+                            {typeToConfirm != null && (
+                                <form className="mt-3" onSubmit={(e) => { e.preventDefault(); if (matches) onSettle(true); }}>
+                                    <TextField
+                                        label={`Type “${typeToConfirm}” to confirm`}
+                                        value={typed}
+                                        onChange={(e) => setTyped(e.target.value)}
+                                        autoComplete="off"
+                                        autoFocus
+                                    />
+                                </form>
+                            )}
                         </div>
                     </div>
 
@@ -127,7 +145,8 @@ function ConfirmDialog({ request, onSettle }) {
                         <Button
                             variant={danger ? 'danger' : 'primary'}
                             onClick={() => onSettle(true)}
-                            autoFocus
+                            disabled={!matches}
+                            autoFocus={typeToConfirm == null}
                         >
                             {confirmLabel}
                         </Button>

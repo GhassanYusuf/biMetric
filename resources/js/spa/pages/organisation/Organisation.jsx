@@ -111,6 +111,8 @@ export default function Organisation() {
                 : 'Only an empty department can be deleted — move its people to another department first.',
             confirmLabel: `Delete ${isCompany ? 'company' : 'department'}`,
             danger: true,
+            // Type its name to confirm (owner, 2026-11-11).
+            typeToConfirm: node.name,
         });
         if (!ok) return;
         try {
