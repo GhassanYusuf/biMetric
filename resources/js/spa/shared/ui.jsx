@@ -163,6 +163,9 @@ export function ActionMenu({
     // { label, result: 'success'|'error' } while an action from this menu has just
     // finished — the trigger shows it the way Button does (see Button's `result`).
     outcome = null,
+    // A square ⋯ button instead of "label ▾" (2026-11-11, the company cards). `label` is
+    // then the button's accessible name, e.g. "Actions for GEMS" (rule 7).
+    dots = false,
 }) {
     const entries = items.filter(Boolean).filter((i) => !i.hidden);
     const navCount = entries.filter((i) => !i.separator).length;
@@ -309,10 +312,10 @@ export function ActionMenu({
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={open}
-                aria-label={busy ? `${busy.label} in progress` : undefined}
+                aria-label={busy ? `${busy.label} in progress` : (dots ? String(label) : undefined)}
                 onClick={() => (open ? close() : setOpen(true))}
                 onKeyDown={onTriggerKey}
-                className={`inline-flex min-h-[34px] items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors duration-300 ${
+                className={`inline-flex min-h-[34px] items-center gap-2 rounded-xl border ${dots ? 'min-w-[34px] justify-center px-0' : 'px-3'} text-xs font-semibold transition-colors duration-300 ${
                     busy
                         ? 'border-violet-200 bg-violet-50 text-violet-700'
                         : outcome
@@ -330,6 +333,10 @@ export function ActionMenu({
                         <ResultIcon result={outcome.result} className="h-3.5 w-3.5" />
                         {outcome.label}
                     </>
+                ) : dots ? (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+                    </svg>
                 ) : (
                     <>
                         {label}

@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Avatar, Badge, SectionCard } from '../../shared/ui';
+import { ActionMenu, Avatar, Badge, SectionCard } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 
 /*
@@ -88,7 +88,7 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
             subtitle={<CompanyStats company={company} />}
             bodyClass="px-3 pb-3 pt-2"
             action={canManage && (
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center">
                     <input
                         ref={file}
                         type="file"
@@ -96,14 +96,18 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
                         className="hidden"
                         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onLogo?.(company, f); }}
                     />
-                    <LinkButton onClick={() => file.current?.click()} aria-label={`${company.logo_url ? 'Change' : 'Add'} ${company.name}'s logo`}>
-                        {company.logo_url ? 'Change logo' : 'Add logo'}
-                    </LinkButton>
-                    {company.logo_url && (
-                        <LinkButton tone="rose" onClick={() => onRemoveLogo?.(company)} aria-label={`Remove ${company.name}'s logo`}>Remove logo</LinkButton>
-                    )}
-                    <LinkButton onClick={() => onEdit(company, 'company')} aria-label={`Rename ${company.name}`}>Rename</LinkButton>
-                    <LinkButton tone="rose" onClick={() => onDelete(company, 'company')} aria-label={`Delete ${company.name}`}>Delete</LinkButton>
+                    {/* Logo, rename and delete under one ⋯ menu (owner, 2026-11-11). */}
+                    <ActionMenu
+                        dots
+                        label={`Actions for ${company.name}`}
+                        items={[
+                            { key: 'logo', label: company.logo_url ? 'Change logo' : 'Add logo', onSelect: () => file.current?.click() },
+                            company.logo_url && { key: 'nologo', label: 'Remove logo', onSelect: () => onRemoveLogo?.(company) },
+                            { key: 'rename', label: 'Rename', onSelect: () => onEdit(company, 'company') },
+                            { separator: true, key: 'sep' },
+                            { key: 'delete', label: 'Delete company', tone: 'danger', onSelect: () => onDelete(company, 'company') },
+                        ]}
+                    />
                 </div>
             )}
         >
