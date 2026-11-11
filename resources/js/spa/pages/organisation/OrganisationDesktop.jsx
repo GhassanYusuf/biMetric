@@ -2,7 +2,7 @@ import { Button, Card, EmptyState, InlineAlert, PageHeader } from '../../shared/
 import { CompanyCard, people } from './parts';
 
 // Desktop: every company as a card, side by side, its departments listed inside.
-export default function OrganisationDesktop({ companies, unassigned, canManage, onAddCompany, onAddDepartment, onEdit, onDelete }) {
+export default function OrganisationDesktop({ companies, unassigned, canManage, onAddCompany, onAddDepartment, onEdit, onDelete, onLogo, onRemoveLogo }) {
     return (
         <div className="space-y-5">
             <PageHeader title="Companies & departments" subtitle="The Company › Department tree employees are placed in">
@@ -24,7 +24,7 @@ export default function OrganisationDesktop({ companies, unassigned, canManage, 
             ) : (
                 <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2 2xl:grid-cols-3">
                     {companies.map((c) => (
-                        <CompanyCard key={c.id} company={c} canManage={canManage} onAddDepartment={onAddDepartment} onEdit={onEdit} onDelete={onDelete} />
+                        <CompanyCard key={c.id} company={c} canManage={canManage} onAddDepartment={onAddDepartment} onEdit={onEdit} onDelete={onDelete} onLogo={onLogo} onRemoveLogo={onRemoveLogo} />
                     ))}
                 </div>
             )}

@@ -77,6 +77,36 @@ class CompanyController extends Controller
         return ApiResponse::success(new CompanyResource($company->loadCount(['departments', 'employees'])), 'Company updated.');
     }
 
+    /**
+     * Sets or replaces the company's logo (owner, 2026-11-11), on its own endpoint like an
+     * employee's photo: a file cannot ride the JSON PUT. Stored on the public disk.
+     */
+    public function uploadLogo(\Illuminate\Http\Request $request, Company $company): JsonResponse
+    {
+        $this->authorize('update', $company);
+
+        $request->validate(['logo' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048']]);
+
+        if ($company->logo_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($company->logo_path);
+        }
+        $company->forceFill(['logo_path' => $request->file('logo')->store('company-logos', 'public')])->save();
+
+        return ApiResponse::success(new CompanyResource($company->loadCount(['departments', 'employees'])), "{$company->name}'s logo saved.");
+    }
+
+    public function removeLogo(Company $company): JsonResponse
+    {
+        $this->authorize('update', $company);
+
+        if ($company->logo_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($company->logo_path);
+            $company->forceFill(['logo_path' => null])->save();
+        }
+
+        return ApiResponse::success(new CompanyResource($company->loadCount(['departments', 'employees'])), "{$company->name}'s logo removed.");
+    }
+
     public function destroy(Company $company): JsonResponse
     {
         $this->authorize('delete', $company);

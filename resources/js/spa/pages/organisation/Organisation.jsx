@@ -52,6 +52,35 @@ export default function Organisation() {
 
     const companies = useMemo(() => buildOrg(companyRows, departmentRows), [companyRows, departmentRows]);
 
+    /** A company's logo (2026-11-11): PNG, JPG or WEBP up to 2 MB, stored in this app only. */
+    async function uploadLogo(company, file) {
+        if (file.size > 2 * 1024 * 1024) {
+            toast.error('That image is larger than 2 MB. Choose a smaller logo.');
+            return;
+        }
+        const body = new FormData();
+        body.append('logo', file);
+        try {
+            const res = await api.post(`/companies/${company.id}/logo`, body);
+            toast.success(res.message);
+            load();
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : `Could not save ${company.name}'s logo.`);
+        }
+    }
+
+    async function removeLogo(company) {
+        const ok = await confirm({ title: `Remove ${company.name}'s logo?`, body: 'Its initials are shown instead. You can add a logo again at any time.', confirmLabel: 'Remove logo', danger: true });
+        if (!ok) return;
+        try {
+            const res = await api.delete(`/companies/${company.id}/logo`);
+            toast.success(res.message);
+            load();
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : `Could not remove ${company.name}'s logo.`);
+        }
+    }
+
     async function save(payload) {
         const { node, kind } = editing;
         const path = kind === 'company' ? '/companies' : '/departments';
@@ -100,6 +129,8 @@ export default function Organisation() {
         onAddCompany: () => setEditing({ kind: 'company' }),
         onAddDepartment: (company) => setEditing({ kind: 'department', companyId: company.id }),
         onEdit: (node, kind) => setEditing({ kind, node }),
+        onLogo: uploadLogo,
+        onRemoveLogo: removeLogo,
         onDelete: remove,
     };
 

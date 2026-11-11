@@ -16,6 +16,8 @@ class CompanyResource extends JsonResource
             'id' => (int) $this->id,
             'name' => $this->name,
             'code' => $this->code,
+            // The company's logo (2026-11-11); null = none, the screens show initials.
+            'logo_url' => $this->logo_path ? \Illuminate\Support\Facades\Storage::disk('public')->url($this->logo_path) : null,
             'manager_id' => $this->manager_id === null ? null : (int) $this->manager_id,
             'manager_name' => $this->whenLoaded('manager', fn () => $this->manager?->name),
             'departments_count' => $this->whenCounted('departments'),

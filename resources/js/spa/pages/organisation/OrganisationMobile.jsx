@@ -2,7 +2,7 @@ import { Button, Card, EmptyState, InlineAlert, PageHeader } from '../../shared/
 import { CompanyCard, people } from './parts';
 
 // Mobile: the same company cards, stacked.
-export default function OrganisationMobile({ companies, unassigned, canManage, onAddCompany, onAddDepartment, onEdit, onDelete }) {
+export default function OrganisationMobile({ companies, unassigned, canManage, onAddCompany, onAddDepartment, onEdit, onDelete, onLogo, onRemoveLogo }) {
     return (
         <div className="space-y-4">
             <PageHeader title="Companies & departments" compact>
@@ -24,7 +24,7 @@ export default function OrganisationMobile({ companies, unassigned, canManage, o
             ) : (
                 <div className="space-y-3">
                     {companies.map((c) => (
-                        <CompanyCard key={c.id} company={c} canManage={canManage} onAddDepartment={onAddDepartment} onEdit={onEdit} onDelete={onDelete} />
+                        <CompanyCard key={c.id} company={c} canManage={canManage} onAddDepartment={onAddDepartment} onEdit={onEdit} onDelete={onDelete} onLogo={onLogo} onRemoveLogo={onRemoveLogo} />
                     ))}
                 </div>
             )}

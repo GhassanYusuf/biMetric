@@ -1,4 +1,5 @@
-import { Badge, SectionCard } from '../../shared/ui';
+import { useRef } from 'react';
+import { Avatar, Badge, SectionCard } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 
 /*
@@ -26,14 +27,35 @@ function LinkButton({ children, tone = 'slate', ...props }) {
 }
 
 /** One company and its departments, with the actions a manager has. */
-export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDelete }) {
+export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDelete, onLogo, onRemoveLogo }) {
+    // A hidden file input behind the Logo button (2026-11-11).
+    const file = useRef(null);
     return (
         <SectionCard
-            title={company.name}
+            title={(
+                <span className="flex items-center gap-3">
+                    {/* The company's logo, or its initials (shared Avatar, as on Employees). */}
+                    <Avatar src={company.logo_url} name={company.name} size="h-10 w-10" className="!rounded-lg !object-contain" />
+                    <span className="min-w-0 truncate">{company.name}</span>
+                </span>
+            )}
             subtitle={`${company.departments.length} department${company.departments.length === 1 ? '' : 's'} · ${people(company.employees_count)}`}
             bodyClass="px-3 pb-3 pt-2"
             action={canManage && (
                 <div className="flex shrink-0 items-center gap-1">
+                    <input
+                        ref={file}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onLogo?.(company, f); }}
+                    />
+                    <LinkButton onClick={() => file.current?.click()} aria-label={`${company.logo_url ? 'Change' : 'Add'} ${company.name}'s logo`}>
+                        {company.logo_url ? 'Change logo' : 'Add logo'}
+                    </LinkButton>
+                    {company.logo_url && (
+                        <LinkButton tone="rose" onClick={() => onRemoveLogo?.(company)} aria-label={`Remove ${company.name}'s logo`}>Remove logo</LinkButton>
+                    )}
                     <LinkButton onClick={() => onEdit(company, 'company')} aria-label={`Rename ${company.name}`}>Rename</LinkButton>
                     <LinkButton tone="rose" onClick={() => onDelete(company, 'company')} aria-label={`Delete ${company.name}`}>Delete</LinkButton>
                 </div>
