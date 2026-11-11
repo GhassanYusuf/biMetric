@@ -59,6 +59,22 @@ export function CompanyStats({ company }) {
     );
 }
 
+/** A small icon button with its own name (rule 7: label, focus ring, Enter/Space as a button). */
+function IconAction({ label, path, onClick, tone = 'slate' }) {
+    const tones = {
+        slate: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900',
+        rose: 'text-rose-600 hover:bg-rose-50 hover:text-rose-800',
+    };
+    return (
+        <button type="button" onClick={onClick} aria-label={label} title={label}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${tones[tone]} ${FOCUS}`}>
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={path} />
+            </svg>
+        </button>
+    );
+}
+
 function LinkButton({ children, tone = 'slate', ...props }) {
     const tones = {
         slate: 'text-slate-600 hover:text-slate-900',
@@ -120,9 +136,12 @@ export function CompanyCard({ company, canManage, onAddDepartment, onEdit, onDel
                             <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{d.name}</span>
                             <Badge tone="slate">{people(d.employees_count)}</Badge>
                             {canManage && (
-                                <div className="flex shrink-0 items-center">
-                                    <LinkButton onClick={() => onEdit(d, 'department')} aria-label={`Edit ${d.name}`}>Edit</LinkButton>
-                                    <LinkButton tone="rose" onClick={() => onDelete(d, 'department')} aria-label={`Delete ${d.name}`}>Delete</LinkButton>
+                                <div className="flex shrink-0 items-center gap-0.5">
+                                    {/* Icons, not words (owner, 2026-11-11); named for hover and screen readers. */}
+                                    <IconAction label={`Edit ${d.name}`} onClick={() => onEdit(d, 'department')}
+                                        path="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" />
+                                    <IconAction label={`Delete ${d.name}`} tone="rose" onClick={() => onDelete(d, 'department')}
+                                        path="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
                                 </div>
                             )}
                         </li>
