@@ -177,6 +177,9 @@ export default function EmployeeFormModal({
     // A picture from the computer goes through the cropper first (2026-11-12); the ID card's
     // photo does not (IdCardReadButton calls pickPhoto directly).
     const [cropping, setCropping] = useState(null);
+    // The full picture last chosen from the computer, so Edit photo can re-crop from all of it
+    // rather than from the already-cropped square (2026-11-12).
+    const [photoOriginal, setPhotoOriginal] = useState(null);
     const photoInput = useRef(null);
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
@@ -413,10 +416,29 @@ export default function EmployeeFormModal({
             setErrors((e) => ({ ...e, photo: ['Choose an image file.'] }));
             return;
         }
+        setPhotoOriginal(file);
         setCropping(file);
     }
 
+    /**
+     * Edit photo (owner, 2026-11-12: "allow edit after uploading the picture also"): re-crop the
+     * full picture last chosen, or else the photo shown — a saved one or the ID card's.
+     */
+    async function editPhoto() {
+        if (photoOriginal) { setCropping(photoOriginal); return; }
+        if (photoFile) { setCropping(photoFile); return; }
+        const shown = !photoRemoved ? employee?.photo_url : null;
+        if (!shown) return;
+        try {
+            const blob = await (await fetch(shown, { cache: 'no-store' })).blob();
+            setCropping(new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' }));
+        } catch {
+            setErrors((e) => ({ ...e, photo: ['The saved photo could not be opened for editing.'] }));
+        }
+    }
+
     function removePhoto() {
+        setPhotoOriginal(null);
         setPhotoFile(null);
         setPhotoPreview(null);
         setPhotoRemoved(true);
@@ -676,7 +698,8 @@ export default function EmployeeFormModal({
                                     disabled={busy}
                                     onDialogChange={setIdCardOpen}
                                     onApply={(patch) => setForm((f) => ({ ...f, ...patch }))}
-                                    onPhoto={pickPhoto}
+                                    // As it is, no crop; Edit photo then works from this photo (2026-11-12).
+                                    onPhoto={(f) => { setPhotoOriginal(null); pickPhoto(f); }}
                                     currentPhoto={shownPhoto}
                                 />
                                 <span className="text-xs text-slate-500">On a PC with the ID card reader: insert the card, then press Read ID card.</span>
@@ -876,6 +899,7 @@ export default function EmployeeFormModal({
                                     initial={(form.name.trim()[0] ?? '').toUpperCase()}
                                     inputRef={photoInput}
                                     onPick={cropPhoto}
+                                    onEdit={editPhoto}
                                     onRemove={removePhoto}
                                     error={err('photo')}
                                 />
@@ -1148,7 +1172,7 @@ function Row({ label, htmlFor, required = false, children }) {
 | webcam capture here, so the camera button the original has is left out rather
 | than shown as a second way to pick a file.
 */
-function PhotoPanel({ photo, initial, inputRef, onPick, onRemove, error }) {
+function PhotoPanel({ photo, initial, inputRef, onPick, onEdit, onRemove, error }) {
     return (
         <div className="order-first flex flex-col items-center lg:order-none">
             <div className="flex aspect-square w-36 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 lg:w-full">
@@ -1184,6 +1208,19 @@ function PhotoPanel({ photo, initial, inputRef, onPick, onRemove, error }) {
                         <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
                     </svg>
                 </button>
+                {photo && onEdit && (
+                    <button
+                        type="button"
+                        onClick={onEdit}
+                        title="Edit photo (crop)"
+                        aria-label="Edit photo (crop)"
+                        className={`flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 hover:text-violet-700 ${FOCUS}`}
+                    >
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />
+                        </svg>
+                    </button>
+                )}
                 {photo && (
                     <button
                         type="button"
