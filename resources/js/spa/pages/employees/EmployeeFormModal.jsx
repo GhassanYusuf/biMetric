@@ -11,6 +11,7 @@ import { can as canDevice, idMoveMethod } from '../devices/parts';
 import { FixButton, useTerminalFix } from './TerminalFixes';
 import Combobox from '../../shared/Combobox';
 import IdCardReadButton from './IdCardReader';
+import PhotoCropper from '../../shared/PhotoCropper';
 import { CountrySelect, PhoneField, phoneError } from '../../shared/CountryFields';
 
 /*
@@ -173,6 +174,9 @@ export default function EmployeeFormModal({
     const [photoFile, setPhotoFile] = useState(null);
     const [photoPreview, setPhotoPreview] = useState(null);
     const [photoRemoved, setPhotoRemoved] = useState(false);
+    // A picture from the computer goes through the cropper first (2026-11-12); the ID card's
+    // photo does not (IdCardReadButton calls pickPhoto directly).
+    const [cropping, setCropping] = useState(null);
     const photoInput = useRef(null);
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
@@ -317,7 +321,8 @@ export default function EmployeeFormModal({
 
     // Paused while the ID card dialog is open over the form: Escape closes that one only.
     const [idCardOpen, setIdCardOpen] = useState(false);
-    useEscapeKey(close, !busy && !idCardOpen);
+    // Escape closes the cropper first, not the whole form (2026-11-12).
+    useEscapeKey(close, !busy && !idCardOpen && !cropping);
 
     useEffect(() => {
         // An existing employee already has a code, and changing it changes the PIN
@@ -398,6 +403,17 @@ export default function EmployeeFormModal({
         setPhotoFile(file);
         setPhotoPreview(URL.createObjectURL(file));
         setPhotoRemoved(false);
+    }
+
+    /** From the computer: check it, then crop it to a square before it is used. */
+    function cropPhoto(file) {
+        if (photoInput.current) photoInput.current.value = ''; // the same file can be chosen again
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            setErrors((e) => ({ ...e, photo: ['Choose an image file.'] }));
+            return;
+        }
+        setCropping(file);
     }
 
     function removePhoto() {
@@ -859,7 +875,7 @@ export default function EmployeeFormModal({
                                     photo={shownPhoto}
                                     initial={(form.name.trim()[0] ?? '').toUpperCase()}
                                     inputRef={photoInput}
-                                    onPick={pickPhoto}
+                                    onPick={cropPhoto}
                                     onRemove={removePhoto}
                                     error={err('photo')}
                                 />
@@ -1081,6 +1097,14 @@ export default function EmployeeFormModal({
                     </div>
                 </form>
             </Card>
+            {cropping && (
+                <PhotoCropper
+                    file={cropping}
+                    title="Crop the employee's photo"
+                    onCancel={() => setCropping(null)}
+                    onDone={(cropped) => { setCropping(null); pickPhoto(cropped); }}
+                />
+            )}
         </div>
     );
 }
