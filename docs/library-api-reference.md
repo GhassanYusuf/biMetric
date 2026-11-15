@@ -363,6 +363,7 @@ matching on message text. See [error-handling.md](error-handling.md).
 | Class | |
 |---|---|
 | `DeviceConfig` | `host`, `port = 4370`, `commKey = 0`, `timeout = 8.0`, `timezone = '+03:00'`, `receiveBufferBytes = 4 MB`, `bulkWindowRetries = 4` (times a stalled windowed-read window is re-requested before the transfer is abandoned; raise for devices reached over the internet, `0` for pre-2.1.0 behaviour), `transport = 'udp'` (`'udp'`/`'tcp'`; TCP speaks the same commands inside the 8-byte TCP frame — see `TcpTransport` — with flow control and retransmission, for devices reached over the internet) |
+| `Contracts\TracksRequestIds` | `lastRequestId(): int` — the reply id the last request went out with (2.24.0). Implemented by `UdpTransport`. Lets `BulkReader` wait for a timed-out window's own answer instead of re-requesting it, and build a window only from datagrams carrying that id, placed by their sequence number (DC-047). A custom transport that implements it gets the same; one that does not keeps the arrival-order path. |
 | `DeviceUser` | `uid`, `userId`, `name`, `privilege`, `cardNumber`, `fingerSlots`; plus `hasCard()`, `fingerprintCount()`, `cardLooksLikeSentinel()` |
 | `Reply` | a parsed response: command, session, counter, payload |
 | `EnrollmentResult` | above |

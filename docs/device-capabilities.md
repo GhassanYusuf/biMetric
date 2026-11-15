@@ -103,6 +103,22 @@ If a future device refuses windowed reads on a table where the push path is also
 unreliable, that is a real operator-visible failure and **`attendance.read` is the
 flag that should drop**, not a new one.
 
+### What the windowed read's datagrams carry, and the F18 that shifts on a repeated request (2026-11-15)
+
+CONFIRMED read-only over UDP on four terminals (casebook DC-047, traces `datagram-headers-01…08`):
+
+| Fact | F18 gems workshop (internet) | F18 IT ROOM | F22 On The Road | UA300 Catering |
+|---|---|---|---|---|
+| PREPARE_DATA / DATA / ACK_OK of a window carry the request's reply id | yes (320 windows) | yes (30) | yes (22) | yes (6) |
+| DATA's session-id field numbers the datagrams 0, 1, 2 …, 1,024 bytes each | yes | yes | yes | yes |
+| A READ_BUFFER answered after the 8 s timeout | 6 seen in 26 reads | not seen | not seen | not seen |
+| Asking again for that window shifts the rest of the session | **yes, 3 of 3 (16 or 20 bytes)** | not tested | not tested | not tested |
+
+Library 2.24.0 waits for the late answer on UDP instead of asking again. With it, gems
+workshop read all 16,276 punches 5 of 5 times; the LAN terminals read unchanged. Whether IT
+ROOM, the F22 or the UA300 would also shift on a repeated request is unknown — they have never
+been slow enough to be asked twice — and is not assumed (rule 15).
+
 ### Confirmed (12)
 
 | Key | Notes |

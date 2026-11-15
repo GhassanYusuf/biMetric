@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-11-10**
+**Last updated: 2026-11-15**
 
 ---
 
@@ -87,6 +87,19 @@ on):** the audit log's before → after change — `app/Observers/AuditObserver.
 `AuditLogController.php`, `AuditLogResource.php`, `resources/js/spa/pages/audit/*`,
 `tests/Feature/Api/AuditAndErrorLogsTest.php`. It is LIVE (the working tree is production) and
 tested (836 passed then); ask the owner before committing. Owner owes the answers marked **(owner)**.
+
+000. **Library 2.24.0 is committed and tagged but NOT pushed or installed (2026-11-15, DC-047).**
+   `/var/biometric-protocol` `bff1b02` / tag `v2.24.0`. Production still runs 2.23.0 from
+   `vendor/`. Fixes gems workshop (#26, F18, 95.84.64.159:4371, internet) reading 16,276 punches
+   but decoding as few as 409: a window answered just after the 8 s timeout was requested again,
+   and the F18 then serves the rest of the session shifted. 2.24.0 waits for the late answer.
+   Proven read-only from source: gems 5/5 reads all 16,276; IT ROOM, F22, UA300 unchanged. To
+   ship: **(owner)** `cd /var/biometric-protocol && git push origin main --tags`, then
+   `cd /var/www/zkt && composer update promoseven/biometric-protocol && chown -R www-data:www-data
+   vendor/promoseven && php artisan queue:restart`; commit `composer.lock`; then press **Read
+   attendance (full)** on Gems WorkShop and close DC-047 when it imports all 16,276. DC-036
+   (Camelot, "restart before reading") is probably the same fault — re-test Camelot without a
+   restart after the install. Gems WorkShop **Import staff** is also still owed (DC-046).
 
 00. **Waiting for Good Wheels to come back online (owner: "keep it for a future task", 2026-11-10).**
    Good Wheels (#5, F18/ID, 46.184.163.106, over the internet) dropped 10:12–11:15 and again from

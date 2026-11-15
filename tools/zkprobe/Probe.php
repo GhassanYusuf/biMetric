@@ -129,6 +129,34 @@ final class Probe
         stream_set_timeout($this->sock, (int) $seconds, (int) (fmod($seconds, 1.0) * 1e6));
     }
 
+    /** The reply id the last request went out with (DC-047: which request a datagram answers). */
+    public function replyId(): int
+    {
+        return $this->replyId;
+    }
+
+    /**
+     * One datagram with its header parsed, or null after $pollSeconds of silence (DC-047).
+     *
+     * @return array{command:int, sessionId:int, replyId:int, len:int, data:string}|null
+     */
+    public function readPacket(float $pollSeconds): ?array
+    {
+        stream_set_timeout($this->sock, (int) $pollSeconds, (int) (fmod($pollSeconds, 1.0) * 1e6));
+        $d = @fread($this->sock, 8192);
+        stream_set_timeout($this->sock, 8, 0);
+        if ($d === false || $d === '') {
+            return null;
+        }
+        if (strlen($d) < 8) {
+            return ['command' => -1, 'sessionId' => -1, 'replyId' => -1, 'len' => 0, 'data' => ''];
+        }
+        $p = Packet::parse($d);
+
+        return ['command' => $p['command'], 'sessionId' => $p['sessionId'], 'replyId' => $p['replyId'],
+            'len' => strlen($p['data']), 'data' => $p['data']];
+    }
+
     /** One raw datagram, or '' on timeout. Used when we are only counting bytes. */
     public function readRaw(int $max = 8192): string
     {

@@ -94,8 +94,11 @@ Camelot F18 over a public IP, 2026-09-14): raise `attendance.device_window_retri
 (env `DEVICE_WINDOW_RETRIES`) for such a device. It is distinct from the receive
 buffer, which stops the *kernel* dropping a burst and does nothing for a device that
 goes quiet mid-transfer. A `TimeoutException` on a `READ_BUFFER` request is treated
-as the same stall and retried; a `TimeoutException` releasing the buffer
-(`FREE_DATA`, command 1502) is swallowed and never fails an otherwise-complete read.
+as a stall — but since library 2.24.0, on UDP, only after waiting up to 20 s for that
+request's own late answer: asking again for a window the device is still answering made the
+gems workshop F18 serve the rest of the read shifted (casebook DC-047). A `TimeoutException`
+releasing the buffer (`FREE_DATA`, command 1502) is swallowed and never fails an
+otherwise-complete read.
 
 ## One conversation per terminal: `DeviceBusyException` (2026-10-12)
 

@@ -621,6 +621,16 @@ how that uncertainty reaches the UI instead of being hidden in a comment.
   routed hop) going quiet. The reader re-requests the stalled window at the same
   offset rather than discarding the transfer; see `DeviceConfig::$bulkWindowRetries`
   and `docs/attendance-sync-flow.md`.
+- **A window answered late must not be asked for again (library 2.24.0, 2026-11-15).** On
+  gems workshop (F18, internet) a `READ_BUFFER` is sometimes answered just after the 8 s
+  timeout. If the reader requests the same window again, the F18 serves that window and every
+  later one in the staged session **16–20 bytes off** — clean datagrams, wrong place — and most
+  records fail to decode (16,276 punches, 409 decodable). On UDP the reader now waits up to 20 s
+  for the timed-out request's own answer before asking again. Also CONFIRMED that day on the F18,
+  F22 and UA300: a window's `PREPARE_DATA` (1500), `DATA` (1501) and `ACK_OK` (2000) all carry the
+  request's reply id, and in a `DATA` datagram the header's session-id field is a sequence number
+  0, 1, 2 … (1,024 bytes each except the last); the reader places data by that number and drops
+  datagrams for other requests. Casebook DC-047.
 - Fingerprint template decoding is unverified on any second device.
 - `verify_method` 48–51 (Camelot, once each) are not in the vendor's `VerifyType` dictionary.
 - A successful fingerprint *capture* has never been observed end to end — it

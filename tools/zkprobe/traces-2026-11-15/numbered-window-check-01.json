@@ -1,0 +1,143 @@
+{
+    "label": "numbered-window-check",
+    "host": "95.84.64.159:4371,192.168.7.62:4370,192.168.7.63:4370,192.168.7.120:4370",
+    "started_at": "2026-11-15T11:47:46+00:00",
+    "question": "Does the numbered window read (library 2.24.0) decode every punch, on every model?",
+    "library_loaded_from": "/var/biometric-protocol/src/Transport/BulkReader.php",
+    "numbered_windows": true,
+    "runs": [
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "read": 1,
+            "started_at": "2026-11-15T11:47:46+00:00",
+            "records": 16276,
+            "decoded": 11059,
+            "undecodable": 5217,
+            "newest_decoded": "2026-07-14 17:37",
+            "seconds": 108.6
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "read": 2,
+            "started_at": "2026-11-15T11:49:34+00:00",
+            "records": 16276,
+            "decoded": 3277,
+            "undecodable": 12999,
+            "newest_decoded": "2026-04-16 05:17",
+            "seconds": 136
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "read": 3,
+            "started_at": "2026-11-15T11:51:50+00:00",
+            "records": 16276,
+            "decoded": 409,
+            "undecodable": 15867,
+            "newest_decoded": "2026-02-01 06:46",
+            "seconds": 178.8
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "read": 4,
+            "started_at": "2026-11-15T11:54:49+00:00",
+            "records": 16276,
+            "decoded": 409,
+            "undecodable": 15867,
+            "newest_decoded": "2026-02-01 06:46",
+            "seconds": 75.2
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "read": 5,
+            "started_at": "2026-11-15T11:56:04+00:00",
+            "records": 16276,
+            "decoded": 7373,
+            "undecodable": 8903,
+            "newest_decoded": "2027-11-21 21:35",
+            "seconds": 104.7
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "read": 6,
+            "started_at": "2026-11-15T11:57:49+00:00",
+            "records": 16276,
+            "decoded": 6553,
+            "undecodable": 9723,
+            "newest_decoded": "2026-04-20 06:59",
+            "seconds": 127.2
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "read": 7,
+            "started_at": "2026-11-15T11:59:56+00:00",
+            "records": 16276,
+            "decoded": 409,
+            "undecodable": 15867,
+            "newest_decoded": "2026-02-01 06:46",
+            "seconds": 203.3
+        },
+        {
+            "id": 15,
+            "name": "IT ROOM",
+            "model": "F18",
+            "read": 1,
+            "started_at": "2026-11-15T12:03:20+00:00",
+            "records": 11928,
+            "decoded": 11928,
+            "undecodable": 0,
+            "newest_decoded": "2026-11-15 15:02",
+            "seconds": 17.2
+        },
+        {
+            "id": 15,
+            "name": "IT ROOM",
+            "model": "F18",
+            "read": 2,
+            "started_at": "2026-11-15T12:03:37+00:00",
+            "records": 11928,
+            "decoded": 11928,
+            "undecodable": 0,
+            "newest_decoded": "2026-11-15 15:02",
+            "seconds": 17
+        },
+        {
+            "id": 11,
+            "name": "On The Road",
+            "model": "F22/ID",
+            "read": 1,
+            "started_at": "2026-11-15T12:03:54+00:00",
+            "records": 8655,
+            "decoded": 8655,
+            "undecodable": 0,
+            "newest_decoded": "2026-11-15 07:58",
+            "seconds": 8.2
+        },
+        {
+            "id": 17,
+            "name": "Catering",
+            "model": "UA300/ID",
+            "read": 1,
+            "started_at": "2026-11-15T12:04:02+00:00",
+            "records": 2208,
+            "decoded": 2208,
+            "undecodable": 0,
+            "newest_decoded": "2026-11-14 22:51",
+            "seconds": 3.5
+        }
+    ],
+    "finished_at": "2026-11-15T12:04:06+00:00"
+}
