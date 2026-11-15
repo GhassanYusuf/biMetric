@@ -1,6 +1,6 @@
 # Device casebook
 
-**Last updated: 2026-11-11**
+**Last updated: 2026-11-15**
 
 The history of every problem met between this software and the terminals — what was
 seen, what was done about it, what the cause turned out to be, how it was fixed and
@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-046 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Import staff fails: a user name in a firmware code page ("DIRISAM<0xA0>PRADEEP") stops the whole roster read | OPEN |
 | DC-045 | 2026-11-11 | Catering (UA300/ID, 192.168.7.120) | Administrator / normal user from the system on the UA300 (user.privilege unknown, never run) | FIXED |
 | DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | FIXED |
 | DC-043 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Clear all punches from GEMS (first clear ever on hardware); a temporary allowance for the 497 already-archived "2029" punches | FIXED |
@@ -120,6 +121,36 @@ Template:
 ---
 
 ## Entries
+
+### DC-046 — gems workshop: Import staff fails on a user name that is not valid text
+
+- **Date:** 2026-11-15
+- **Devices:** gems workshop (#26, F18, 95.84.64.159:4371, over the internet; added 2026-11-15 08:11 UTC)
+- **Direction:** device → software
+- **Symptom:** owner, 2026-11-15 ~08:25 UTC: "I am trying to import staff on gems workshop, check the
+  status". Import staff (commands 49487, 49500) failed "because of an internal error"; 49501 then
+  timed out three times (internet link).
+- **What was done:** reads of the logs and database only.
+  - `laravel.log` 08:18:44 and 08:20:48: `QueryException IMSSP … translating string for input param 2 to
+    UCS-2` inserting `device_roster_entries` for user **2355**, name `DIRISAM<byte>PRADEEP`: one byte that
+    is not UTF-8 (a no-break space 0xA0 in Windows-1252, read as text by the codec). SQL Server refuses
+    it, and the roster read — the import's first step (DC-037) — fails whole. Same family as DC-036
+    (Camelot's non-UTF-8 bytes in an error message).
+  - The same session's attendance read (command 49488) read 16,274 records, imported 7,782, and archived
+    **8,492 as undecodable** (52 %): misaligned reads over the internet, the DC-036 pattern. Not
+    investigated yet. Health check: online, clock 128 s off.
+- **Root cause:** names on this firmware are stored in a code page, not UTF-8; nothing converted them
+  before the database.
+- **Fix:** `App\Support\Utf8::name()` (valid UTF-8 unchanged; otherwise read as Windows-1252, spacing
+  collapsed) applied in `ZktecoDriver::readUsers()`, the one place terminal users enter the app, so
+  roster, import and links all get storable names. Valid names (every F18 read so far) are returned
+  untouched: no change on working terminals (rule 15). Test `Utf8NameTest`; 852 passed;
+  `queue:restart`. Owed: the same conversion in the library's `UserCodec` (rule 8).
+- **Verified:** pending — the owner presses Import staff again.
+- **Evidence:** commands 49487, 49488, 49500, 49501; `laravel.log` 2026-11-15 08:18:44, 08:20:48.
+- **Status:** OPEN
+- **Keywords:** gems workshop, Import staff, internal error, IMSSP, UCS-2, translating string, roster,
+  device_roster_entries, Windows-1252, 0xA0, non-breaking space, DIRISAM PRADEEP, undecodable
 
 ### DC-045 — Administrator / normal user from the system on the UA300 (Catering)
 

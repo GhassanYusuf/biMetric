@@ -201,7 +201,15 @@ class ZktecoDriver implements BiometricDeviceDriver
      */
     public function readUsers(Device $device, bool $withFingerprints = false): array
     {
-        return $this->run($device, fn (ProtocolDevice $d) => $d->users()->all($withFingerprints));
+        $users = $this->run($device, fn (ProtocolDevice $d) => $d->users()->all($withFingerprints));
+
+        // A name that is not valid UTF-8 (a firmware code page) is made storable here, once,
+        // before the roster, the import or a link stores it (DC-046, 2026-11-15). Valid names —
+        // every one on the F18s read so far — pass through untouched. Owed in the library's
+        // UserCodec (rule 8); this is the adapter's guard meanwhile.
+        return array_map(fn (DeviceUser $u) => mb_check_encoding($u->name, 'UTF-8') ? $u : new DeviceUser(
+            $u->uid, $u->userId, \App\Support\Utf8::name($u->name), $u->privilege, $u->cardNumber, $u->fingerSlots, $u->password,
+        ), $users);
     }
 
     /**
