@@ -401,6 +401,11 @@ class ExportController extends Controller
             return ApiResponse::error($message, [], 422);
         }
 
+        // A long list (Asker-WorkShop: 717) needs more than the default 256 MB to lay out, even
+        // in blocks (the template splits the table, 2026-11-15). This request only.
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
+
         // Landscape: nine columns, and a terminal list that is a line per terminal.
         return $this->pdf->make('pdf.employee-roster', [
             'title' => 'Employees',
