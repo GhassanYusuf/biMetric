@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../shared/api';
 import { useToast } from '../shared/toast';
 import { useAuth } from '../shared/auth';
-import { useLastSync, shortAgo } from '../shared/useLastSync';
+import { useLastSync, shortAgo, failingTarget } from '../shared/useLastSync';
 import { TopBarSlot } from '../shared/topbar';
 import { ELEVATION, FOCUS } from '../shared/theme';
 import { ProgressBar, Spinner } from '../shared/ui';
@@ -114,7 +114,7 @@ function LastSyncPill({ sync }) {
 
     return (
         <button
-            onClick={() => navigate('/devices')}
+            onClick={() => navigate(failingTarget(sync))}
             className={`hidden ${PILL} transition-colors duration-150 hover:text-violet-700 sm:flex ${FOCUS}`}
             title={sync.at ? `Most recent device sync: ${sync.at.toLocaleString()}` : 'No successful sync recorded yet'}
         >

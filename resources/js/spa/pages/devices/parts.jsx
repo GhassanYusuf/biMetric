@@ -208,7 +208,7 @@ export function clearPunchesConfirm(device) {
 */
 const OPEN_KEY = 'devices.openCompanies';
 
-export function useCompanyGroups(rows) {
+export function useCompanyGroups(rows, { allOpen = false } = {}) {
     const [open, setOpen] = useState(() => {
         try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]')); } catch { return new Set(); }
     });
@@ -226,11 +226,23 @@ export function useCompanyGroups(rows) {
         try { localStorage.setItem(OPEN_KEY, JSON.stringify([...next])); } catch { /* private window: forget on reload */ }
         return next;
     });
-    return { groups, isOpen: (key) => open.has(key), toggle };
+    // allOpen: every group open without touching what is remembered (the failing view, 2026-11-15).
+    return { groups, isOpen: (key) => allOpen || open.has(key), toggle };
 }
 
 /** One line for a company header: how many terminals, and how many are failing. */
 export function groupSummary(devices) {
     const failing = devices.filter((d) => d.last_sync_status === 'error').length;
     return `${devices.length} terminal${devices.length === 1 ? '' : 's'}${failing ? ` · ${failing} reporting errors` : ''}`;
+}
+
+
+/** "Showing only the N failing terminals · Show all" (2026-11-15). State, not an event (rule 2). */
+export function FailingOnlyNote({ count, onShowAll }) {
+    return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200" role="status">
+            <span>{count === 0 ? 'No terminal is failing now.' : `Showing only the ${count} terminal${count === 1 ? '' : 's'} whose last read failed.`}</span>
+            <button type="button" onClick={onShowAll} className="font-semibold underline underline-offset-2 hover:text-rose-950">Show all terminals</button>
+        </div>
+    );
 }

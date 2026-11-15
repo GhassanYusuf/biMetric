@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../shared/auth';
-import { useLastSync, shortAgo } from '../shared/useLastSync';
+import { useLastSync, shortAgo, failingTarget } from '../shared/useLastSync';
 import { TopBarSlot } from '../shared/topbar';
 import { ELEVATION, FOCUS } from '../shared/theme';
 import { Icon, Logo, MOBILE_BAR_ITEMS, MOBILE_MORE_ITEMS } from './nav';
@@ -16,6 +16,7 @@ export default function MobileLayout({ unread, onOpenPalette }) {
     const { pathname } = useLocation();
     const [moreOpen, setMoreOpen] = useState(false);
     const sync = useLastSync();
+    const navigate = useNavigate();
 
     const allowed = (list) => list.filter((i) => !i.permission || can(i.permission));
     const items = allowed(MOBILE_BAR_ITEMS);
@@ -38,7 +39,8 @@ export default function MobileLayout({ unread, onOpenPalette }) {
                             {greeting}{firstName && `, ${firstName}`}
                         </div>
                         {sync.available && (
-                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            // Rule 5: tappable like the desktop pill, to the failing terminals (2026-11-15).
+                            <button type="button" onClick={() => navigate(failingTarget(sync))} className={`flex items-center gap-1.5 rounded text-[11px] text-slate-500 ${FOCUS}`}>
                                 <span
                                     className={`h-1.5 w-1.5 rounded-full ${
                                         sync.empty ? 'bg-slate-300' : sync.errored > 0 ? 'bg-rose-500' : sync.at ? 'bg-emerald-500' : 'bg-slate-300'
@@ -46,7 +48,7 @@ export default function MobileLayout({ unread, onOpenPalette }) {
                                     aria-hidden="true"
                                 />
                                 {sync.empty ? 'No devices' : sync.errored > 0 ? `${sync.errored} failing` : `Synced ${shortAgo(sync.at)}`}
-                            </div>
+                            </button>
                         )}
                     </div>
 

@@ -1,19 +1,19 @@
 import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { ActionMenu, Badge, Button, EmptyState, PageHeader, ProgressBar, TableShell, Thead } from '../../shared/ui';
-import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, devicePunches, groupSummary, relativeTime, useCompanyGroups } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, devicePunches, groupSummary, relativeTime, useCompanyGroups, FailingOnlyNote } from './parts';
 import { FOCUS } from '../../shared/theme';
 import { describeProgress } from '../../shared/useSyncProgress';
 import { can } from './parts';
 
 // Desktop devices: wide table, one row per unit, hardware actions inline.
 export default function DevicesDesktop({
-    rows, busy, outcomeOf, syncingId, syncProgress, syncStalled,
+    rows, failingOnly = false, onShowAll, busy, outcomeOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
     onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe, onRestart,
 }) {
     const showActions = canSync || canUpdate || canDelete;
-    const { groups, isOpen, toggle } = useCompanyGroups(rows);
+    const { groups, isOpen, toggle } = useCompanyGroups(rows, { allOpen: failingOnly });
     const failing = rows.filter((d) => d.last_sync_status === 'error').length;
 
     return (
@@ -28,6 +28,8 @@ export default function DevicesDesktop({
             >
                 {canCreate && <Button onClick={onAdd}>+ Add device</Button>}
             </PageHeader>
+
+            {failingOnly && <FailingOnlyNote count={rows.length} onShowAll={onShowAll} />}
 
             <TableShell>
                 <Thead>

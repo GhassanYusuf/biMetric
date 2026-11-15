@@ -28,7 +28,7 @@ export function useLastSync() {
             const devices = data ?? [];
 
             if (devices.length === 0) {
-                setState({ empty: true, at: null, errored: 0, total: 0 });
+                setState({ empty: true, at: null, errored: 0, total: 0, failingIds: [] });
                 return;
             }
 
@@ -41,6 +41,8 @@ export function useLastSync() {
                 empty: false,
                 at: timestamps.length ? new Date(Math.max(...timestamps)) : null,
                 errored: devices.filter((d) => d.last_sync_status === 'error').length,
+                // Which ones, so a click can go straight to them (2026-11-15).
+                failingIds: devices.filter((d) => d.last_sync_status === 'error').map((d) => d.id),
                 total: devices.length,
             });
         } catch {
@@ -57,6 +59,18 @@ export function useLastSync() {
     useMqtt(topics, () => refresh());
 
     return { ...(state ?? {}), available: state !== null, refresh };
+}
+
+/**
+ * Where "N devices failing" leads (owner, 2026-11-15: "it should take me directly to the failing
+ * device"): one failing terminal → its own page; several → Devices showing only those, their
+ * companies open; none → Devices.
+ */
+export function failingTarget(sync) {
+    const ids = sync?.failingIds ?? [];
+    if (ids.length === 1) return `/devices/${ids[0]}`;
+    if (ids.length > 1) return '/devices?failing=1';
+    return '/devices';
 }
 
 /** "2m ago" / "3h ago" / a date. Kept short enough for a chrome pill. */

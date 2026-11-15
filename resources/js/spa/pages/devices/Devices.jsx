@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMqtt } from '../../shared/useMqtt';
 import { api, ApiError } from '../../shared/api';
 import { useAuth } from '../../shared/auth';
@@ -378,8 +379,15 @@ export default function Devices() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [status, commandId, stalled, syncingId, load, toast, settle]);
 
+    // From "N devices failing" (2026-11-15): only the failing terminals, their companies open.
+    const [params, setParams] = useSearchParams();
+    const failingOnly = params.get('failing') === '1';
+    const shownRows = failingOnly ? rows.filter((d) => d.last_sync_status === 'error') : rows;
+
     const presentationProps = {
-        rows,
+        rows: shownRows,
+        failingOnly,
+        onShowAll: () => setParams({}),
         busy,
         resultOf,
         outcomeOf,

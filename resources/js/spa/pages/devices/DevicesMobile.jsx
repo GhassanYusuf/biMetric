@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, PageHeader } from '../../shared/ui';
-import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, can, devicePunches, groupSummary, relativeTime, useCompanyGroups } from './parts';
+import { AdoptionBadge, PROTOCOL_LABELS, SyncBadge, can, devicePunches, groupSummary, relativeTime, useCompanyGroups, FailingOnlyNote } from './parts';
 import { FOCUS } from '../../shared/theme';
 import { Fragment } from 'react';
 import { SyncProgressRow } from './DevicesDesktop';
@@ -8,16 +8,18 @@ import { SyncProgressRow } from './DevicesDesktop';
 // Mobile devices: stacked cards, actions as a full-width row of large tap
 // targets rather than a cramped table.
 export default function DevicesMobile({
-    rows, busy, resultOf, syncingId, syncProgress, syncStalled,
+    rows, failingOnly = false, onShowAll, busy, resultOf, syncingId, syncProgress, syncStalled,
     canCreate, canUpdate, canDelete, canSync,
     onAdd, onEdit, onDelete, onTest, onSync, onImport, onFullResync, onRangeSync, onAdopt, onClearPunches, onWipe, onRestart,
 }) {
-    const { groups, isOpen, toggle } = useCompanyGroups(rows);
+    const { groups, isOpen, toggle } = useCompanyGroups(rows, { allOpen: failingOnly });
     return (
         <div className="space-y-4">
             <PageHeader title="Devices" compact>
                 {canCreate && <Button onClick={onAdd} className="px-3">+ Add</Button>}
             </PageHeader>
+
+            {failingOnly && <FailingOnlyNote count={rows.length} onShowAll={onShowAll} />}
 
             {rows.length === 0 ? (
                 <Card>
