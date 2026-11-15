@@ -1020,6 +1020,7 @@ export default function Employees() {
                 <MoveToCompanyModal
                     devices={devices}
                     companies={companies}
+                    departments={departments}
                     onMoved={async () => {
                         setMovingTerminal(false);
                         // People changed company: the list and the tree's counts both move.

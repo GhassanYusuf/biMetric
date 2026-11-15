@@ -15,10 +15,12 @@ import { useEscapeKey } from '../../shared/useEscapeKey';
 | people in NO company move unless the box is ticked: a terminal shared by two companies
 | must not pull anyone out of the right one. Nothing is written to any terminal.
 */
-export default function MoveToCompanyModal({ devices, companies, onMoved, onClose }) {
+export default function MoveToCompanyModal({ devices, companies, departments = [], onMoved, onClose }) {
     const toast = useToast();
     const [deviceId, setDeviceId] = useState('');
     const [companyId, setCompanyId] = useState('');
+    // Optional (2026-11-15): a department of that company.
+    const [departmentId, setDepartmentId] = useState('');
     const [includeAssigned, setIncludeAssigned] = useState(false);
     const [preview, setPreview] = useState(null);
     const [loadingPreview, setLoadingPreview] = useState(false);
@@ -33,7 +35,7 @@ export default function MoveToCompanyModal({ devices, companies, onMoved, onClos
         if (!deviceId || !companyId) return undefined;
         let live = true;
         setLoadingPreview(true);
-        api.get(`/employees/move-to-company/preview?device_id=${deviceId}&company_id=${companyId}`)
+        api.get(`/employees/move-to-company/preview?device_id=${deviceId}&company_id=${companyId}${departmentId ? `&department_id=${departmentId}` : ''}`)
             .then((res) => { if (live) setPreview(res.data); })
             .catch((err) => {
                 if (!live) return;
@@ -42,11 +44,13 @@ export default function MoveToCompanyModal({ devices, companies, onMoved, onClos
             })
             .finally(() => { if (live) setLoadingPreview(false); });
         return () => { live = false; };
-    }, [deviceId, companyId, toast]);
+    }, [deviceId, companyId, departmentId, toast]);
 
     const elsewhere = (preview?.elsewhere ?? []).reduce((n, g) => n + g.count, 0);
-    const willMove = preview ? preview.unassigned + (includeAssigned ? elsewhere : 0) : 0;
+    const willMove = preview ? preview.unassigned + (includeAssigned ? elsewhere : 0) + (departmentId ? (preview.already_unplaced ?? 0) : 0) : 0;
     const company = companies.find((c) => String(c.id) === String(companyId));
+    const ownDepartments = departments.filter((d) => String(d.company_id) === String(companyId));
+    const department = ownDepartments.find((d) => String(d.id) === String(departmentId));
     const device = devices.find((d) => String(d.id) === String(deviceId));
 
     async function move() {
@@ -55,6 +59,7 @@ export default function MoveToCompanyModal({ devices, companies, onMoved, onClos
             const res = await api.post('/employees/move-to-company', {
                 device_id: Number(deviceId),
                 company_id: Number(companyId),
+                department_id: departmentId ? Number(departmentId) : null,
                 include_assigned: includeAssigned,
             });
             toast.success(res.message);
@@ -91,9 +96,15 @@ export default function MoveToCompanyModal({ devices, companies, onMoved, onClos
                         {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </SelectField>
 
-                    <SelectField id="move-company" label="Company" value={companyId} onChange={(e) => setCompanyId(e.target.value)} error={errors.company_id?.[0]} disabled={busy}>
+                    <SelectField id="move-company" label="Company" value={companyId} onChange={(e) => { setCompanyId(e.target.value); setDepartmentId(''); }} error={errors.company_id?.[0]} disabled={busy}>
                         <option value="">Choose a company…</option>
                         {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </SelectField>
+
+                    {/* Optional (owner, 2026-11-15): one of that company's departments. */}
+                    <SelectField id="move-department" label="Department (optional)" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} error={errors.department_id?.[0]} disabled={busy || !companyId || ownDepartments.length === 0}>
+                        <option value="">{companyId && ownDepartments.length === 0 ? 'This company has no departments' : 'No department'}</option>
+                        {ownDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </SelectField>
 
                     {loadingPreview && <Skeleton className="h-16 w-full rounded-xl" />}
@@ -108,6 +119,7 @@ export default function MoveToCompanyModal({ devices, companies, onMoved, onClos
                                             {`${preview.total} ${preview.total === 1 ? 'person is' : 'people are'} on ${device?.name}: `}
                                             {`${preview.unassigned} in no company`}
                                             {preview.already > 0 && `, ${preview.already} already in ${company?.name}`}
+                                            {department && preview.already_unplaced > 0 && ` (${preview.already_unplaced} of them in no department, who go into ${department.name})`}
                                             {preview.elsewhere.length > 0 && `, ${preview.elsewhere.map((g) => `${g.count} in ${g.company}`).join(', ')}`}
                                             .
                                         </>

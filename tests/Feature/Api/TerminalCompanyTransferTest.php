@@ -136,4 +136,33 @@ class TerminalCompanyTransferTest extends TestCase
         $this->api()->postJson('/api/employees/move-to-company', ['device_id' => 999, 'company_id' => 999])
             ->assertUnprocessable()->assertJsonValidationErrors(['device_id', 'company_id']);
     }
+
+    /** Owner, 2026-11-15: "in Move terminal to company add department also". */
+    public function test_with_a_department_the_moved_and_the_unplaced_go_into_it_and_others_stay(): void
+    {
+        Tenancy::set($this->tenant->id);
+        $workshop = Department::create(['name' => 'Workshop', 'company_id' => $this->jjsCo->id]);
+        $kitchen = Department::create(['name' => 'Kitchen', 'company_id' => $this->jjsCo->id]);
+        $chef = Employee::create(['name' => 'Chef', 'employee_code' => '7', 'is_active' => true, 'company_id' => $this->jjsCo->id, 'department_id' => $kitchen->id]);
+        EmployeeDeviceMap::create(['employee_id' => $chef->id, 'device_id' => $this->jjs->id, 'device_user_id' => '7', 'valid_from' => now()]);
+        Tenancy::clear();
+        $dept = fn (string $code) => Employee::withoutGlobalScopes()->where('employee_code', $code)->value('department_id');
+
+        $this->api()->getJson("/api/employees/move-to-company/preview?device_id={$this->jjs->id}&company_id={$this->jjsCo->id}&department_id={$workshop->id}")
+            ->assertOk()->assertJsonPath('data.already_unplaced', 1); // #4: in JJ'S, no department
+
+        $this->api()->postJson('/api/employees/move-to-company', ['device_id' => $this->jjs->id, 'company_id' => $this->jjsCo->id, 'department_id' => $workshop->id])
+            ->assertOk()->assertJsonPath('data.moved', 2)->assertJsonPath('data.placed', 1)
+            ->assertJsonPath('message', "Moved 2 people from JJs into JJ'S › Workshop. 1 already in JJ'S was put in Workshop. 1 already in another company was left where they are.");
+
+        foreach (['1', '2', '4'] as $code) {
+            $this->assertSame($workshop->id, (int) $dept($code), "#{$code} in Workshop");
+        }
+        $this->assertSame($kitchen->id, (int) $dept('7'), 'someone in another department of the company stays there');
+
+        // A department of another company is refused.
+        $finance = Department::withoutGlobalScopes()->where('name', 'Finance')->value('id');
+        $this->api()->postJson('/api/employees/move-to-company', ['device_id' => $this->jjs->id, 'company_id' => $this->jjsCo->id, 'department_id' => $finance])
+            ->assertStatus(422)->assertJsonValidationErrors('department_id');
+    }
 }
