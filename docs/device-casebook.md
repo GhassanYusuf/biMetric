@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-047 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Full reads get all 16,276 punches but decode as few as 409: a slow window asked for twice makes the F18 serve the rest shifted | OPEN |
+| DC-047 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Full reads get all 16,276 punches but decode as few as 409: a slow window asked for twice makes the F18 serve the rest shifted | FIXED |
 | DC-046 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Import staff fails: a user name in a firmware code page ("DIRISAM<0xA0>PRADEEP") stops the whole roster read | OPEN |
 | DC-045 | 2026-11-11 | Catering (UA300/ID, 192.168.7.120) | Administrator / normal user from the system on the UA300 (user.privilege unknown, never run) | FIXED |
 | DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | FIXED |
@@ -167,12 +167,21 @@ Template:
   number; contract `TracksRequestIds`, implemented by `UdpTransport`; TCP unchanged). Tests
   `NumberedWindowTest` (186 library tests pass). Shared transport code: re-confirmed on IT ROOM (F18),
   the F22 and the UA300 before release (rule 15, 21).
-- **Verified:** on hardware from library source (above). Pending: the installed 2.24.0, and a full read
-  from the app importing all 16,276.
+- **Verified:** installed 2026-11-15 (`composer.lock` `4d4f6c4`, `queue:restart`). The owner's full read
+  from the app, command 50078 / sync run 997 (12:35 UTC): read 16,276, **0 undecodable**, 8,494 imported,
+  7,782 already known, 8 unmatched; newest punch 2026-11-15 11:13 UTC.
+  - **Production data, owner ran it:** run 994 (a shifted read before the fix) had stored one phantom
+    punch — `attendance_logs` #1409956, user 2352 (employee #2580), 2026-04-22 03:54:24 UTC, **status 49**
+    (ASCII "1"; all 16,276 genuine records here are 255), 34 s before that person's real punch #1408874.
+    Saved to `storage/app/dc-047-phantom-punch-2026-11-15.json`, then deleted
+    (`/tmp/dc047-remove-phantom.php`). Undo: insert the saved row back with IDENTITY_INSERT. Gems
+    WorkShop now holds 16,276 punches, the terminal's count.
+  - Side effect found on the way: a 5,000-punch attendance-log PDF of these punches ran out of memory;
+    fixed in `bc3cd3c` (blocks of 60 rows, 1024M).
 - **Evidence:** sync runs 984, 993, 994; commands 49488, 49669, 49912; traces
   `tools/zkprobe/traces-2026-11-15/attendance-transport-01…02`, `datagram-headers-01…08`,
   `numbered-window-check-01…02`.
-- **Status:** OPEN
+- **Status:** FIXED
 - **Keywords:** gems workshop, undecodable, could not be decoded, misaligned, shifted, 40-byte, UDP,
   READ_BUFFER, windowed read, slow window, timeout, re-request, late answer, reply id, sequence number,
   partial, 16,276, 409
