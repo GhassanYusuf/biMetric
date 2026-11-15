@@ -441,6 +441,35 @@ class ExportTest extends TestCase
     }
 
     /**
+     * Owner, 2026-11-15: the PDF shows each person's photo. A JPEG is embedded; a PNG (dompdf
+     * needs GD for it, which production lacks) and a photo missing on disk print initials, and
+     * none of them may break the export.
+     */
+    public function test_the_employee_list_pdf_carries_the_photo_and_falls_back_to_initials(): void
+    {
+        Storage::fake('public');
+        $jpeg = base64_decode('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=');
+        Storage::disk('public')->put('employees/a.jpg', $jpeg);
+        Storage::disk('public')->put('employees/b.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='));
+
+        $all = Employee::query()->orderBy('id')->get();
+        $all[0]->update(['photo_path' => 'employees/a.jpg']);
+        $all[1]->update(['photo_path' => 'employees/b.png']);
+        $all[2]->update(['photo_path' => 'employees/gone.jpg']);
+
+        $data = app(\App\Services\Reports\EmployeeRoster::class)->build(\Illuminate\Http\Request::create('/'));
+        $byName = collect($data['rows'])->keyBy('name');
+        $this->assertNotNull($byName[$all[0]->fullName()]['photo']);
+        $this->assertNull($byName[$all[1]->fullName()]['photo']);
+        $this->assertNull($byName[$all[2]->fullName()]['photo']);
+        $this->assertNotSame('', $byName[$all[1]->fullName()]['initials']);
+
+        $pdf = $this->login('admin@acme.test')->get('/api/exports/employees');
+        $pdf->assertOk();
+        $this->assertStringStartsWith('%PDF-', $pdf->getContent());
+    }
+
+    /**
      * Owner, 2026-10-21: "if I selected one of the companies it should export that
      * company's employees" — its departments' people included, nobody else's, and the
      * same status filter as the screen (resigned left out unless asked for).

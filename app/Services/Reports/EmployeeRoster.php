@@ -8,6 +8,7 @@ use App\Models\EmployeeDeviceMap;
 use App\Services\Employees\EmployeeRosterQuery;
 use App\Support\OrgScope;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * The Employees screen as a list for a file (owner, 2026-10-21): "all employees" in
@@ -24,7 +25,9 @@ class EmployeeRoster
 {
     /**
      * @return array{
-     *   rows: list<array{no:int, code:?string, name:string, company:?string, department:?string,
+     *   rows: list<array{no:int, code:?string, name:string, initials:string,
+     *         photo:?array{path:string, w:float, h:float, x:float, y:float}, resigned:bool, active:bool,
+     *         company:?string, department:?string,
      *         job_title:?string, status:string, card:?string,
      *         terminals: list<array{name:string, fingers:?int, card:bool}>}>,
      *   filterLines: list<string>,
@@ -49,6 +52,10 @@ class EmployeeRoster
                 'no' => $i + 1,
                 'code' => $employee->employee_code,
                 'name' => $employee->fullName(),
+                'initials' => $this->initials($employee->fullName()),
+                'photo' => $this->photo($employee),
+                'resigned' => $employee->resigned_at !== null,
+                'active' => (bool) $employee->is_active,
                 'company' => $company,
                 'department' => $department,
                 'job_title' => $employee->job_title,
@@ -83,6 +90,45 @@ class EmployeeRoster
         }
 
         return [$company->name, $department?->name];
+    }
+
+    /**
+     * The person's photo for the PDF (owner, 2026-11-15: "make the export have the avatar"), as
+     * a file path and the box it is drawn in. JPEG only: dompdf embeds a JPEG as it is, but needs
+     * the GD extension for PNG and WebP, and this server has no GD (a PNG threw "The PHP GD
+     * extension is required" on 2026-11-15). A PNG, a WebP or a file missing on disk prints the
+     * initials instead. Photos taken through the cropper are JPEG already.
+     *
+     * Drawn to cover a square, like the avatar on screen: the box is the image scaled so its
+     * short side fills the square, offset to centre it; the template clips the rest.
+     *
+     * @return array{path:string, w:float, h:float, x:float, y:float}|null
+     */
+    private function photo(Employee $employee, float $size = 26.0): ?array
+    {
+        if (! $employee->photo_path) {
+            return null;
+        }
+        $path = Storage::disk('public')->path($employee->photo_path);
+        $info = is_file($path) ? @getimagesize($path) : false;
+        if (! $info || $info[2] !== IMAGETYPE_JPEG || ! $info[0] || ! $info[1]) {
+            return null;
+        }
+        $scale = $size / min($info[0], $info[1]);
+        $w = round($info[0] * $scale, 2);
+        $h = round($info[1] * $scale, 2);
+
+        return ['path' => $path, 'w' => $w, 'h' => $h, 'x' => round(($size - $w) / 2, 2), 'y' => round(($size - $h) / 2, 2)];
+    }
+
+    /** "Ghassan Yusuf" → "GY", for a person with no photo. */
+    private function initials(string $name): string
+    {
+        $parts = preg_split('/\s+/u', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $first = $parts[0] ?? '?';
+        $last = count($parts) > 1 ? $parts[count($parts) - 1] : '';
+
+        return mb_strtoupper(mb_substr($first, 0, 1).mb_substr($last, 0, 1));
     }
 
     private function status(Employee $employee): string
