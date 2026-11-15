@@ -149,6 +149,9 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Get by Personnel ID (2026-10-22): the same answer as GET employees/{employee}.
     Route::get('employees/by-code/{code}', [EmployeeController::class, 'showByCode']);
 
+    // Delete several ticked on the Employees screen, same three choices as offboard (2026-11-15).
+    // Before the resource so `bulk-offboard` is never bound as an employee id.
+    Route::post('employees/bulk-offboard', [EmployeeController::class, 'bulkOffboard']);
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
     // Delete with the choice spelled out: record only / resign / everywhere (2026-11-03).
     Route::post('employees/{employee}/offboard', [EmployeeController::class, 'offboard']);

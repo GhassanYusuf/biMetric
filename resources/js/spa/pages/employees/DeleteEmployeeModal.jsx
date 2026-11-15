@@ -21,7 +21,7 @@ import { useEscapeKey } from '../../shared/useEscapeKey';
 | every case. Until 2026-11-03 Delete was the record only, behind a warning that was easy to
 | miss (casebook DC-025: a deleted employee kept opening three doors).
 */
-const Option = ({ name, value, checked, onChange, disabled, title, children }) => (
+export const Option = ({ name, value, checked, onChange, disabled, title, children }) => (
     <label className={`flex cursor-pointer items-start gap-3 rounded-xl p-3 ring-1 transition-colors ${checked ? 'bg-violet-50 ring-violet-300' : 'ring-slate-200 hover:bg-slate-50'}`}>
         <input
             type="radio"

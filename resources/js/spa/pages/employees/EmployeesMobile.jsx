@@ -9,6 +9,7 @@ import DepartmentTree from './DepartmentTree';
 import { Link } from 'react-router-dom';
 import { employeeRowActions } from './rowActions';
 import { useRef, useState } from 'react';
+import { SelectBox, SelectionBar } from './BulkSelection';
 
 /*
 | Mobile employees: search + stacked tap-friendly cards (no wide table).
@@ -23,9 +24,11 @@ export default function EmployeesMobile({
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
     onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, highlightNoPunches, onToggleHighlightNoPunches, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
+    selectable = false, selectedIds = [], onToggleSelect, onSelectPage, onClearSelection, onBulkDelete,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
+    const ticked = new Set(selectedIds);
 
     /*
      | The card is the menu trigger (2026-10-05), the same decision as the desktop
@@ -136,6 +139,15 @@ export default function EmployeesMobile({
                 </Card>
             ) : (
                 <div className="space-y-2">
+                    {/* Ticked people and what to do with them; sticks while the cards scroll. */}
+                    <SelectionBar
+                        className="sticky top-2 z-10"
+                        count={selectedIds.length}
+                        pageCount={rows.length}
+                        onSelectPage={onSelectPage}
+                        onClear={onClearSelection}
+                        onDelete={onBulkDelete}
+                    />
                     {rows.map((e, i) => (
                         <Card
                             key={e.id}
@@ -158,10 +170,18 @@ export default function EmployeesMobile({
                             }}
                             className={`cursor-pointer p-4 active:bg-slate-50 ${
                                 highlightNoPunches && hasNoPunches(e) ? '!bg-amber-50' : ''
-                            } ${menuFor === e.id ? 'bg-violet-50/60' : ''} ${FOCUS}`}
+                            } ${menuFor === e.id || ticked.has(e.id) ? 'bg-violet-50/60' : ''} ${FOCUS}`}
                         >
                             <div className="flex items-start justify-between gap-3">
                                 <div className="flex min-w-0 items-baseline gap-2.5">
+                                    {selectable && (
+                                        <SelectBox
+                                            className="h-5 w-5 shrink-0 self-center"
+                                            checked={ticked.has(e.id)}
+                                            onChange={(on) => onToggleSelect(e.id, on)}
+                                            label={`Select ${[e.name, e.last_name].filter(Boolean).join(' ')}`}
+                                        />
+                                    )}
                                     {/* Rule 5: the desktop "No." column, same number.
                                         Cards are already visually discrete, so they get
                                         the number but not the stripe — and `active:` is

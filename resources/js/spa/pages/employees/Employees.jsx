@@ -14,6 +14,7 @@ import EmployeesMobile from './EmployeesMobile';
 import EmployeeFormModal from './EmployeeFormModal';
 import MergeModal from './MergeModal';
 import DeleteEmployeeModal from './DeleteEmployeeModal';
+import BulkDeleteEmployeesModal from './BulkDeleteEmployeesModal';
 import { useNoPunchHighlight } from './NoPunchHighlight';
 import DuplicateScanModal from './DuplicateScanModal';
 import MoveToCompanyModal from './MoveToCompanyModal';
@@ -109,6 +110,13 @@ export default function Employees() {
     const [movingTerminal, setMovingTerminal] = useState(false);
     // Delete, with the choice spelled out (2026-11-03).
     const [deleting, setDeleting] = useState(null);
+    /*
+     * Ticked employees, for deleting several at once (owner, 2026-11-15). Ids on the page on
+     * screen only: a new search, filter or page clears them, so a tick can never act on someone
+     * no longer in view. A live refresh (rule 18) keeps them, dropping anyone who left the page.
+     */
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [bulkDeleting, setBulkDeleting] = useState(false);
     // Amber rows for people with no punches, this viewer's choice (2026-11-03).
     const [highlightNoPunches, setHighlightNoPunches] = useNoPunchHighlight();
     const [viewing, setViewing] = useState(null); // employee whose enrollment is open
@@ -247,6 +255,7 @@ export default function Employees() {
     // Debounced server-side search — no full reload, just the list re-queries.
     function onSearch(term) {
         setSearch(term);
+        setSelectedIds([]);
         clearTimeout(debounce.current);
         debounce.current = setTimeout(() => {
             // A new term is a new result set, so page 1 of it — page 4 of the old
@@ -256,7 +265,17 @@ export default function Employees() {
         }, 200);
     }
 
+    // Anyone no longer on the page (deleted, or moved out by a live refresh) is unticked.
+    useEffect(() => {
+        setSelectedIds((ids) => {
+            const onPage = new Set(rows.map((r) => r.id));
+            const kept = ids.filter((id) => onPage.has(id));
+            return kept.length === ids.length ? ids : kept;
+        });
+    }, [rows]);
+
     function goToPage(next) {
+        setSelectedIds([]);
         pageRef.current = next;
         load(search, filters, next);
     }
@@ -856,7 +875,7 @@ export default function Employees() {
         search,
         onSearch,
         filters,
-        onFilters: setFilters,
+        onFilters: (next) => { setSelectedIds([]); setFilters(next); },
         companies,
         departments,
         // The tree counts the people the Status filter lists (2026-11-03): everyone for
@@ -880,6 +899,13 @@ export default function Employees() {
         onPage: goToPage,
         onAdd: () => setFormOpen(true),
         onDelete: deleteEmployee,
+        // Tick to delete several (2026-11-15): only for someone who may delete.
+        selectable: can('employees.delete'),
+        selectedIds,
+        onToggleSelect: (id, on) => setSelectedIds((ids) => (on ? [...new Set([...ids, id])] : ids.filter((x) => x !== id))),
+        onSelectPage: () => setSelectedIds(rows.map((r) => r.id)),
+        onClearSelection: () => setSelectedIds([]),
+        onBulkDelete: () => setBulkDeleting(true),
         onEnroll: (employee) => setEnrolling(employee),
         onEdit: (employee) => {
             setEditing(employee);
@@ -1014,6 +1040,19 @@ export default function Employees() {
                         await load(search, filters);
                     }}
                     onClose={() => setDeleting(null)}
+                />
+            )}
+            {bulkDeleting && (
+                <BulkDeleteEmployeesModal
+                    employees={rows.filter((r) => selectedIds.includes(r.id))}
+                    onDone={async () => {
+                        setBulkDeleting(false);
+                        setSelectedIds([]);
+                        // Deleted, resigned or waiting for terminals: rows and tree counts changed.
+                        loadDepartments();
+                        await load(search, filters);
+                    }}
+                    onClose={() => setBulkDeleting(false)}
                 />
             )}
             {movingTerminal && (

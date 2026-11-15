@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { employeeRowActions } from './rowActions';
 import { EmploymentBadges, orgOf } from './employeeLabels';
 import { useRef, useState } from 'react';
+import { SelectBox, SelectionBar } from './BulkSelection';
 
 // Desktop employees: toolbar + wide data table.
 export default function EmployeesDesktop({
@@ -17,12 +18,16 @@ export default function EmployeesDesktop({
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
     onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, highlightNoPunches, onToggleHighlightNoPunches, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
+    selectable = false, selectedIds = [], onToggleSelect, onSelectPage, onClearSelection, onBulkDelete,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
     // Not a count of the whole roster — only of what is on screen. Said that way in the
     // banner below, because "12 missing" would read as an estate-wide figure.
     const lastRead = syncedAgo(rows);
+    const ticked = new Set(selectedIds);
+    const allTicked = rows.length > 0 && rows.every((r) => ticked.has(r.id));
+    const cols = selectable ? 12 : 11;
 
     /*
      | The row is the menu trigger (2026-10-05): tapping anywhere on an employee
@@ -126,9 +131,27 @@ export default function EmployeesDesktop({
                 devices={filterDevices ?? devices}
             />
 
+            <SelectionBar
+                count={selectedIds.length}
+                pageCount={rows.length}
+                onSelectPage={onSelectPage}
+                onClear={onClearSelection}
+                onDelete={onBulkDelete}
+            />
+
             <TableShell>
                 <Thead>
                     <tr>
+                        {selectable && (
+                            <th className="py-3 pl-5 pr-1" style={{ width: '1%' }}>
+                                <SelectBox
+                                    checked={allTicked}
+                                    indeterminate={selectedIds.length > 0}
+                                    onChange={(on) => (on ? onSelectPage() : onClearSelection())}
+                                    label="Select everyone on this page"
+                                />
+                            </th>
+                        )}
                         {/* Position in the list as shown, so it renumbers with the
                             filters rather than pretending to be a stable id. No font
                             of its own — Thead styles every header, and a column that
@@ -149,7 +172,7 @@ export default function EmployeesDesktop({
                 <tbody>
                     {rows.length === 0 && (
                         <tr>
-                            <td colSpan={11}>
+                            <td colSpan={cols}>
                                 <EmptyState
                                     title={searching || filtering ? 'No matches' : 'No employees yet'}
                                     hint={searching
@@ -210,8 +233,18 @@ export default function EmployeesDesktop({
                                 highlightNoPunches && hasNoPunches(e)
                                     ? 'bg-amber-50 hover:bg-amber-100'
                                     : 'odd:bg-white even:bg-slate-50/70 hover:bg-violet-50'
-                            } ${menuFor === e.id ? 'bg-violet-50' : ''} ${FOCUS}`}
+                            } ${menuFor === e.id || ticked.has(e.id) ? 'bg-violet-50' : ''} ${FOCUS}`}
                         >
+                            {selectable && (
+                                // The whole cell ticks, so a near miss does not open the row's menu.
+                                <td className="cursor-default py-3.5 pl-5 pr-1" onClick={(ev) => { ev.stopPropagation(); onToggleSelect(e.id, !ticked.has(e.id)); }}>
+                                    <SelectBox
+                                        checked={ticked.has(e.id)}
+                                        onChange={(on) => onToggleSelect(e.id, on)}
+                                        label={`Select ${[e.name, e.last_name].filter(Boolean).join(' ')}`}
+                                    />
+                                </td>
+                            )}
                             <td className="px-5 py-3.5 text-center tabular-nums text-slate-600">{i + 1}</td>
                             <td className="px-5 py-3.5">
                                 <div className="flex items-center gap-3">

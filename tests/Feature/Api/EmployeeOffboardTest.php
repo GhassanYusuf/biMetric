@@ -141,4 +141,77 @@ class EmployeeOffboardTest extends TestCase
     {
         $this->offboard($this->person('16'), 'shred')->assertUnprocessable()->assertJsonValidationErrors('mode');
     }
+
+    // --- Several at once, ticked on the Employees screen (owner, 2026-11-15) ---------------
+
+    private function bulk(array $ids, string $mode, ?User $as = null)
+    {
+        $token = ($as ?? $this->admin)->createToken('test', ['*'])->plainTextToken;
+        $this->app['auth']->forgetGuards();
+
+        return $this->withToken($token)->postJson('/api/employees/bulk-offboard', ['ids' => $ids, 'mode' => $mode]);
+    }
+
+    public function test_bulk_everywhere_treats_each_person_as_a_single_delete_would(): void
+    {
+        $on = $this->person('21');
+        $off = $this->person('22', onTerminal: false);
+
+        $this->bulk([$on->id, $off->id], 'everywhere')->assertOk()
+            ->assertJsonPath('data.deleted', 1)
+            ->assertJsonPath('data.pending', 1)
+            ->assertJsonPath('data.device_commands', 1);
+
+        // The one on a terminal waits for it (removal queued, card and fingers saved by it);
+        // the one on none is gone at once.
+        $this->assertSame(1, $this->removals());
+        $this->assertFalse((bool) Employee::withoutGlobalScopes()->find($on->id)->is_active);
+        $this->assertNull(Employee::withoutGlobalScopes()->find($off->id));
+    }
+
+    public function test_bulk_resign_keeps_every_record(): void
+    {
+        $a = $this->person('23');
+        $b = $this->person('24');
+
+        $this->bulk([$a->id, $b->id], 'resign')->assertOk()->assertJsonPath('data.resigned', 2)->assertJsonPath('data.device_commands', 2);
+
+        foreach ([$a, $b] as $e) {
+            $this->assertNotNull(Employee::withoutGlobalScopes()->find($e->id)->resigned_at);
+        }
+    }
+
+    public function test_bulk_record_only_touches_no_terminal(): void
+    {
+        $a = $this->person('25');
+
+        $this->bulk([$a->id], 'record')->assertOk()->assertJsonPath('data.record_only', 1);
+
+        $this->assertSame(0, $this->removals());
+        $this->assertNull(Employee::withoutGlobalScopes()->find($a->id));
+    }
+
+    public function test_bulk_reports_an_unknown_id_and_carries_on(): void
+    {
+        $a = $this->person('26', onTerminal: false);
+
+        $res = $this->bulk([$a->id, 999999], 'everywhere')->assertOk()->assertJsonPath('data.deleted', 1);
+        $this->assertSame(['#999999 (not found)'], $res->json('data.refused'));
+    }
+
+    public function test_bulk_needs_the_delete_permission(): void
+    {
+        $a = $this->person('27', onTerminal: false);
+        $this->admin->forceFill(['can_delete' => false])->save();
+
+        $res = $this->bulk([$a->id], 'everywhere')->assertOk()->assertJsonPath('data.deleted', 0);
+        $this->assertSame([$a->name], $res->json('data.refused'));
+        $this->assertNotNull(Employee::withoutGlobalScopes()->find($a->id));
+    }
+
+    public function test_bulk_refuses_more_than_two_hundred_and_an_unknown_choice(): void
+    {
+        $this->bulk(range(1, 201), 'everywhere')->assertUnprocessable()->assertJsonValidationErrors('ids');
+        $this->bulk([1], 'shred')->assertUnprocessable()->assertJsonValidationErrors('mode');
+    }
 }

@@ -142,6 +142,12 @@ that cannot be written leaves the record, inactive, with its copy, never half a 
 exception to rule 19. Punches are kept in every case (`attendance_logs.employee_id` SET NULL).
 Before 2026-11-03 Delete was the record only, behind an easy-to-miss warning (DC-025).
 
+**Several at once (2026-11-15).** Ticking employees and pressing *Delete N…* asks the same three
+choices once, `POST /api/employees/bulk-offboard` (`EmployeeController::bulkOffboard()`, at most
+200). Each person goes through `offboardOne()`, the code the single delete runs, so every rule
+above holds per person; permission is checked per person, and anyone refused, not found or failed
+is named in the result. A choice that deletes records asks for the number of people to be typed.
+
 ### 3. Restore on every add — automatically
 
 Every way a person is put on a terminal ends in `DeviceUserSyncService::pushEmployee()`

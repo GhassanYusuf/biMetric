@@ -265,33 +265,156 @@ class EmployeeController extends Controller
         $this->authorize($mode === 'resign' ? 'update' : 'delete', $employee);
         $name = $employee->name;
 
+        $outcome = $this->offboardOne($employee, $mode, $offboarding);
+
+        if ($mode === 'record') {
+            return ApiResponse::success(['deleted' => true], "{$name} deleted from the system. Their access on the terminals is unchanged.");
+        }
+
+        if ($mode === 'resign') {
+            return ApiResponse::success(
+                ['deleted' => false] + $this->offboardSummary($outcome['result']),
+                $this->offboardMessage("{$name} is marked resigned and kept with their fingerprints, card and punches.", $outcome['result']),
+            );
+        }
+
+        if ($outcome['deleted']) {
+            return ApiResponse::success(['deleted' => true], "{$name} deleted from the system. They were on no terminal.");
+        }
+
+        return ApiResponse::success(
+            ['deleted' => false] + $this->offboardSummary($outcome['result']),
+            $this->offboardMessage("{$name} is inactive now and will be deleted once every terminal confirms the removal.", $outcome['result']),
+        );
+    }
+
+    /**
+     * Delete several at once, ticked on the Employees screen (owner, 2026-11-15: "multiple select
+     * by tick to delete"). The same three choices as offboard(), applied to each person through the
+     * same offboardOne(), so a bulk delete cannot do anything a single one would not: every terminal
+     * removal still saves card and fingers first (rule 19), and a terminal that cannot be written
+     * leaves that person inactive, never half-removed. Permission is checked per person; one refused
+     * or missing is reported and the rest go ahead. Capped at 200 (each terminal removal is a queued
+     * device command, rule 11).
+     */
+    public function bulkOffboard(Request $request, EmployeeOffboarding $offboarding): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:200'],
+            'ids.*' => ['integer', 'distinct'],
+            'mode' => ['required', Rule::in(['record', 'resign', 'everywhere'])],
+        ]);
+        $mode = $data['mode'];
+        $ability = $mode === 'resign' ? 'update' : 'delete';
+
+        // The tenant and company scopes apply: an id the operator cannot see is "not found".
+        $employees = Employee::query()->whereIn('id', $data['ids'])->get()->keyBy('id');
+        $counts = ['deleted' => 0, 'resigned' => 0, 'pending' => 0, 'record_only' => 0];
+        $commands = 0;
+        $skipped = [];
+        $refused = [];
+        $failed = [];
+
+        foreach ($data['ids'] as $id) {
+            $employee = $employees->get($id);
+            if ($employee === null) {
+                $refused[] = "#{$id} (not found)";
+
+                continue;
+            }
+            if ($request->user()->cannot($ability, $employee)) {
+                $refused[] = $employee->name;
+
+                continue;
+            }
+            try {
+                $outcome = $this->offboardOne($employee, $mode, $offboarding);
+            } catch (\Throwable $e) {
+                report($e);
+                $failed[] = $employee->name;
+
+                continue;
+            }
+            $commands += count($outcome['result']['commands']);
+            foreach ($outcome['result']['skipped'] as $s) {
+                $skipped[$s['device_name']] = $s['reason'];
+            }
+            match (true) {
+                $mode === 'record' => $counts['record_only']++,
+                $mode === 'resign' => $counts['resigned']++,
+                $outcome['deleted'] => $counts['deleted']++,
+                default => $counts['pending']++,
+            };
+        }
+
+        return ApiResponse::success(
+            $counts + [
+                'device_commands' => $commands,
+                'skipped_devices' => array_map(fn ($n, $r) => ['device_name' => $n, 'reason' => $r], array_keys($skipped), $skipped),
+                'refused' => $refused,
+                'failed' => $failed,
+            ],
+            $this->bulkOffboardMessage($counts, $commands, $skipped, $refused, $failed),
+        );
+    }
+
+    /**
+     * One person through one of the three choices. Shared by offboard() and bulkOffboard().
+     *
+     * @return array{deleted:bool, result:array{commands:list<mixed>, skipped:list<array{device_name:string,reason:string}>}}
+     */
+    private function offboardOne(Employee $employee, string $mode, EmployeeOffboarding $offboarding): array
+    {
         if ($mode === 'record') {
             $offboarding->remove($employee, fromDevices: false);
 
-            return ApiResponse::success(['deleted' => true], "{$name} deleted from the system. Their access on the terminals is unchanged.");
+            return ['deleted' => true, 'result' => ['commands' => [], 'skipped' => []]];
         }
 
         if ($mode === 'resign') {
             if (! $employee->isResigned()) {
                 $employee->forceFill(['resigned_at' => now(config('attendance.timezone'))->toDateString()])->save();
             }
-            $result = $offboarding->takeOffTerminals($employee);
 
-            return ApiResponse::success(
-                ['deleted' => false] + $this->offboardSummary($result),
-                $this->offboardMessage("{$name} is marked resigned and kept with their fingerprints, card and punches.", $result),
-            );
+            return ['deleted' => false, 'result' => $offboarding->takeOffTerminals($employee)];
         }
 
         $result = $offboarding->remove($employee, fromDevices: true);
-        if ($result['deleted']) {
-            return ApiResponse::success(['deleted' => true], "{$name} deleted from the system. They were on no terminal.");
+
+        return ['deleted' => $result['deleted'], 'result' => $result];
+    }
+
+    /** @param array<string,string> $skipped device name => reason */
+    private function bulkOffboardMessage(array $counts, int $commands, array $skipped, array $refused, array $failed): string
+    {
+        $n = fn (int $c, string $one, string $many) => $c.' '.($c === 1 ? $one : $many);
+        $parts = [];
+        if ($counts['record_only'] > 0) {
+            $parts[] = $n($counts['record_only'], 'employee', 'employees').' deleted from the system; their access on the terminals is unchanged.';
+        }
+        if ($counts['deleted'] > 0) {
+            $parts[] = $n($counts['deleted'], 'employee', 'employees').' deleted (on no terminal).';
+        }
+        if ($counts['pending'] > 0) {
+            $parts[] = $n($counts['pending'], 'employee is', 'employees are').' inactive now and will be deleted once every terminal confirms the removal.';
+        }
+        if ($counts['resigned'] > 0) {
+            $parts[] = $n($counts['resigned'], 'employee', 'employees').' marked resigned and kept with fingerprints, card and punches.';
+        }
+        if ($commands > 0) {
+            $parts[] = $n($commands, 'terminal removal', 'terminal removals').' queued (card and fingerprints saved first).';
+        }
+        if ($skipped !== []) {
+            $parts[] = 'Not removed from '.implode(', ', array_map(fn ($d, $r) => "{$d} ({$r})", array_keys($skipped), $skipped)).'.';
+        }
+        if ($refused !== []) {
+            $parts[] = 'Not allowed or not found: '.implode(', ', array_slice($refused, 0, 10)).(count($refused) > 10 ? ' and '.(count($refused) - 10).' more' : '').'.';
+        }
+        if ($failed !== []) {
+            $parts[] = 'Failed: '.implode(', ', array_slice($failed, 0, 10)).(count($failed) > 10 ? ' and '.(count($failed) - 10).' more' : '').'.';
         }
 
-        return ApiResponse::success(
-            ['deleted' => false] + $this->offboardSummary($result),
-            $this->offboardMessage("{$name} is inactive now and will be deleted once every terminal confirms the removal.", $result),
-        );
+        return $parts === [] ? 'Nobody was changed.' : implode(' ', $parts);
     }
 
     /** @param array{commands:list<mixed>, skipped:list<array{device_name:string,reason:string}>} $result */
