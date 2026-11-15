@@ -146,6 +146,11 @@ class ExportController extends Controller
             $filterLines[] = $scope;
         }
 
+        // Up to MAX_ROWS punches needs more than the default 256 MB to lay out, even in blocks of 60
+        // (the template splits the table, 2026-11-15: a Gems WorkShop log ran out). This request only.
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
+
         return $this->render('pdf.attendance-log', [
             'title' => 'Attendance log',
             'rangeLabel' => $this->rangeLabel($filters['from'] ?? null, $filters['to'] ?? null),

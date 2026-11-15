@@ -21,6 +21,14 @@
         {{ number_format($shown) }} punch{{ $shown === 1 ? '' : 'es' }}, newest first.
     </p>
 
+    {{--
+      | One table per block of rows (2026-11-15): dompdf lays a whole table out in memory before it
+      | breaks it into pages, and a 5,000-punch log (Gems WorkShop, once its 16,277 punches were
+      | read) ran past 256 MB in one table. The blocks follow on directly, each repeating the
+      | header, so the pages read the same. Same fix as pdf.employee-roster.
+    --}}
+    @php($blocks = count($rows) ? array_chunk(is_array($rows) ? $rows : $rows->all(), 60) : [[]])
+    @foreach ($blocks as $block)
     <table>
         <thead>
             <tr>
@@ -33,7 +41,7 @@
             </tr>
         </thead>
         <tbody>
-            @forelse ($rows as $row)
+            @forelse ($block as $row)
                 <tr>
                     {{-- A punch the sync could not attribute to anybody stays
                          "Unmatched" here too, rather than being dropped. --}}
@@ -49,4 +57,5 @@
             @endforelse
         </tbody>
     </table>
+    @endforeach
 @endsection
