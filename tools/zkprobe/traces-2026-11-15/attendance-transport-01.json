@@ -1,0 +1,52 @@
+{
+    "label": "attendance-transport",
+    "host": "192.168.7.62,95.84.64.159",
+    "started_at": "2026-11-15T11:28:49+00:00",
+    "question": "Is the undecodable share of a full punch read caused by the UDP windowed reassembly?",
+    "window_bytes": 16384,
+    "runs": [
+        {
+            "id": 15,
+            "name": "IT ROOM",
+            "model": "F18",
+            "host": "192.168.7.62:4370",
+            "transport": "udp",
+            "started_at": "2026-11-15T11:28:49+00:00",
+            "seconds": 16.6,
+            "records": 11926,
+            "decoded": 11926,
+            "undecodable": 0,
+            "windows_total": 30,
+            "windows_with_undecodable": 0,
+            "undecodable_by_window": [],
+            "newest_decoded": "2026-11-15 14:20"
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "host": "95.84.64.159:4371",
+            "transport": "udp",
+            "started_at": "2026-11-15T11:29:06+00:00",
+            "seconds": 31.5,
+            "records": 16276,
+            "decoded": 16276,
+            "undecodable": 0,
+            "windows_total": 40,
+            "windows_with_undecodable": 0,
+            "undecodable_by_window": [],
+            "newest_decoded": "2026-11-15 14:13"
+        },
+        {
+            "id": 26,
+            "name": "Gems WorkShop",
+            "model": "F18",
+            "host": "95.84.64.159:4371",
+            "transport": "tcp",
+            "started_at": "2026-11-15T11:29:38+00:00",
+            "seconds": 8,
+            "error": "Promoseven\\Biometric\\Exception\\TimeoutException: Device connection timed out or closed unexpectedly."
+        }
+    ],
+    "finished_at": "2026-11-15T11:29:46+00:00"
+}

@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-047 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Full reads get all 16,276 punches but decode as few as 5 %: the UDP windowed read splices stray datagrams into the data | OPEN |
 | DC-046 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Import staff fails: a user name in a firmware code page ("DIRISAM<0xA0>PRADEEP") stops the whole roster read | OPEN |
 | DC-045 | 2026-11-11 | Catering (UA300/ID, 192.168.7.120) | Administrator / normal user from the system on the UA300 (user.privilege unknown, never run) | FIXED |
 | DC-044 | 2026-11-10 | Gems Main Office (F18, 192.168.7.64) | Write the 12 GEMS staff's 24,420 punches back onto the cleared terminal, under each person's current ID | FIXED |
@@ -121,6 +122,54 @@ Template:
 ---
 
 ## Entries
+
+### DC-047 — gems workshop: full reads get every punch but decode only part of them
+
+- **Date:** 2026-11-15
+- **Devices:** gems workshop (#26, F18, 95.84.64.159:4371, over the internet); control IT ROOM (#15, F18, 192.168.7.62, LAN)
+- **Direction:** device → software
+- **Symptom:** owner, 2026-11-15: "for gems workshop the f18 it has on device 16,276 why it is not reading
+  it all on the system". The system holds 7,783 of its punches, newest 2026-05-09.
+- **What was done:** reads only (database, logs, and read-only probes on the terminal).
+  - Sync runs 984 / 993 / 994 (commands 49488, 49669, 49912) each read every record (16,274, 16,274,
+    16,276) and called 8,492 / 11,359 / 10,951 of them undecodable. The undecodable rows in
+    `attendance_raw_logs` are real punches read at a shifted offset: the user id ("1371") and a valid
+    April 2026 stamp are there, the record just starts part-way into the 40-byte chunk. The shape of
+    the shift differs between the three runs and changes within run 994 — so not a bad spot in the
+    terminal's table.
+  - `tools/zkprobe/attendance-transport.php` (new, READ-ONLY), traces
+    `traces-2026-11-15/attendance-transport-01.json`, `-02.json`. Same code, same terminal, minutes apart:
+    UDP 31.5 s **16,276 / 16,276 decoded** (newest 2026-11-15 14:13 local); UDP 35.8 s **16,276 / 16,276**;
+    UDP 55.7 s **819 / 16,276** — the slip in window 1–2 of 40 (16 KB windows) and every later window
+    wholly shifted (409–410 bad records each). Control IT ROOM UDP 16.6 s and 17.2 s: 11,926 / 11,926,
+    both runs.
+  - The bad read is the slow one: a window stalled and was re-requested. A slip that persists into every
+    following window (each window is requested by offset) means the socket is left holding stray
+    datagrams that are read as the start of the next window.
+  - `UdpTransport::readRawPayload()` strips the 8-byte header of whatever datagram arrives and returns the
+    rest as data: it does not check the command (CMD_DATA vs a late PREPARE_DATA / ACK reply to the
+    re-requested window) nor the reply id. `BulkReader::readWindow()` concatenates in arrival order.
+    `drainStaleDatagrams()` runs only before a retry, not after a window that completed with the
+    retry's duplicates still on the way.
+  - TCP (`attendance.device_transport=tcp`) timed out at connect (8 s): the router appears to forward
+    UDP 4371 only. Not evidence about the terminal.
+  - **Dead end:** "the terminal's table is corrupt / a firmware record size" — ruled out by two clean
+    full reads of the same table.
+- **Root cause:** probable, not yet proven at datagram level: the UDP windowed read accepts stray
+  datagrams after a stalled window is re-requested over a lossy link, and splices them into the data;
+  the offset then stays wrong for the rest of the read. Same family as DC-036 (Camelot), whose "restart
+  first" workaround may have been helping by making stalls rarer, not by changing the table.
+- **Fix:** none yet. Proposed, in the library (rule 8): accept only CMD_DATA datagrams carrying the
+  current READ_BUFFER's reply id in a window, and drain after a retried window as well as before. Needs
+  a datagram-header capture on gems workshop first (rule 16), then re-confirmation on IT ROOM (rule 15:
+  shared transport code). Meanwhile a clean read imports everything (the import de-duplicates), so
+  repeating the full read until one comes back clean is a safe workaround.
+- **Verified:** diagnosis by the traces above; fix pending.
+- **Evidence:** sync runs 984, 993, 994; commands 49488, 49669, 49912; traces
+  `tools/zkprobe/traces-2026-11-15/attendance-transport-01.json`, `-02.json`.
+- **Status:** OPEN
+- **Keywords:** gems workshop, undecodable, could not be decoded, misaligned, shifted, 40-byte, UDP,
+  READ_BUFFER, windowed read, stall, re-request, stray datagram, readRawPayload, partial, 16,276
 
 ### DC-046 — gems workshop: Import staff fails on a user name that is not valid text
 
