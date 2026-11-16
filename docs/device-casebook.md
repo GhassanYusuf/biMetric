@@ -163,11 +163,22 @@ Template:
 - **Root cause:** (1) the save-before-removal treats "no template decoded" as "no fingers" and deletes;
   (2) the roster read's vault capture can likewise store nothing without saying so, so Gems WorkShop never
   got its safety copy. Probably made likelier by DC-047 (template reads shifted before 2.24.0).
-- **Fix:** pending. Immediate: `/tmp/gw-capture.php` (owner to run) takes the full copy now and checks
-  coverage. Code: refuse a removal unless every finger the terminal lists for that user (its template
-  table / `fingerSlots`) is in the vault after the capture; report a capture that stored nothing for people
-  who have fingers.
-- **Verified:** pending.
+- **Fix:** 2026-11-16, `DeviceUserSyncService::assertEveryFingerSaved()`, called from
+  `saveCredentialsBeforeRemoval()` (every removal of an employee: ID change, delete, resign, bulk delete):
+  after the capture, every finger expected on this terminal must have a stored copy, or the removal is
+  refused with the fingers named. Expected = what the terminal reports now; when it reports none, what
+  earlier reads recorded (link `fingerprint_slots`, roster entry). A user table that cannot say which
+  fingers refuses too. First version also used the earlier records when the terminal did report fingers;
+  a read-only dry run showed that would have falsely blocked Ali Mohamed Jaafar on IT ROOM (stale roster
+  "finger 5", now enrolled on 6 and 7), so earlier records are used only for an empty report. Tests: five
+  in `FingerprintPushTest` (empty template read with a listed finger; both empty but the last read saw one;
+  finger list unknown; no fingers anywhere still removed; a finger saved earlier lets it go ahead); 884
+  pass. Immediate data step: `/tmp/gw-capture.php` (owner to run) takes Gems WorkShop's full copy.
+  Still open: why the 02:30 roster read's capture stored nothing for Gems WorkShop.
+- **Verified:** read-only dry run of the guard's decision on ten terminals (IT ROOM, Glass Door, Entrance,
+  Gems WorkShop, On The Road, Catering, Good Wheels, Camelot, JJs, Gems; 1,058 linked people): no false
+  refusal; on Gems WorkShop the save-first fills the 635 missing copies before any delete
+  (`/tmp/guard-dryrun.php`). Not yet exercised by a real removal on hardware.
 - **Evidence:** commands 49611, 50364, 52101; `laravel.log` 2026-11-15 14:37:19–14:40:47; audit log
   `employee.updated` #2580 14:37:29; roster entry 2336; read-only reads 2026-11-16 (`/tmp/gw-who.php`,
   `/tmp/gw-vault-gap.php`).

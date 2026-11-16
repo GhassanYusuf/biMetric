@@ -1364,23 +1364,27 @@ class DeviceUserSyncService
     {
         $capabilities = $this->driver->capabilities($device);
         $found = null;
+        // The fingers the terminal's user table lists for $pin: null = it could not say.
+        $listedSlots = null;
+        // The fingers its template table returned for $pin; null = not read.
+        $readSlots = null;
+        $guarded = $capabilities->supports(Capability::TEMPLATE_BLOB_READ);
+        $withFingers = $guarded && $capabilities->supports(Capability::TEMPLATE_TABLE_READ);
 
         try {
             if ($capabilities->supports(Capability::USER_READ)) {
                 $found = false;
-                foreach ($this->driver->readUsers($device, false) as $user) {
-                    if ($user->userId === $pin) {
-                        $found = true;
+                foreach ($this->driver->readUsers($device, $withFingers) as $user) {
+                    if ($user->userId !== $pin) {
+                        continue;
                     }
-                    if ($user->userId === $pin) {
-                        // Their privilege goes with the record too; kept on the mapping so
-                        // a re-add can put an admin back as an admin (privilegeToRestore).
-                        $this->identity->activeMap($device, $employee)?->update(['device_privilege' => $user->privilege]);
-                    }
-                    if ($user->userId === $pin) {
-                        $this->capturePassword($device, $employee->id, $user);
-                    }
-                    if ($user->userId === $pin && $user->hasCard() && ! $user->cardLooksLikeSentinel()) {
+                    $found = true;
+                    $listedSlots = $user->fingerSlots;
+                    // Their privilege goes with the record too; kept on the mapping so
+                    // a re-add can put an admin back as an admin (privilegeToRestore).
+                    $this->identity->activeMap($device, $employee)?->update(['device_privilege' => $user->privilege]);
+                    $this->capturePassword($device, $employee->id, $user);
+                    if ($user->hasCard() && ! $user->cardLooksLikeSentinel()) {
                         $this->recordCard($device, $employee->id, $user);
                         if (empty($employee->card_number)) {
                             $employee->update(['card_number' => $user->cardNumber]);
@@ -1389,13 +1393,18 @@ class DeviceUserSyncService
                 }
             }
 
-            if ($capabilities->supports(Capability::TEMPLATE_BLOB_READ)) {
+            if ($guarded) {
                 $vault = app(FingerprintVault::class);
                 $vault->assertReady();
-                $vault->capture($device, $this->driver->readTemplates($device), $employee->id);
+                $records = $this->driver->readTemplates($device);
+                $vault->capture($device, $records, $employee->id);
+                $readSlots = [];
+                foreach ($records as $r) {
+                    if ((string) ($r['user_id'] ?? '') === $pin) {
+                        $readSlots[] = (int) $r['slot'];
+                    }
+                }
             }
-
-            return $found;
         } catch (\Throwable $e) {
             // DomainException: a refusal with an operator-readable reason, which the
             // controller returns as a 409 rather than letting it become "Server error.".
@@ -1403,6 +1412,91 @@ class DeviceUserSyncService
                 "{$employee->name} was not removed from {$device->name}: their card and fingerprints could not be saved to the system first ({$e->getMessage()}). Try again when the terminal answers."
             );
         }
+
+        if ($guarded && $found !== false) {
+            $this->assertEveryFingerSaved($device, $employee, $pin, $found, $withFingers, $listedSlots, $readSlots ?? []);
+        }
+
+        return $found;
+    }
+
+    /**
+     * Refuses the removal unless every finger this person is known to have on this terminal is in
+     * the system (owner, 2026-11-16: "add a guard that blocks deletes unless every finger is
+     * confirmed saved"; casebook DC-048).
+     *
+     * Why: on Gems WorkShop (F18, internet) three people lost their only fingerprint when their
+     * terminal ID was changed straight after a restart. The terminal's template table came back
+     * empty, the capture stored nothing without failing, and the delete went ahead. "Nothing read"
+     * had been taken for "no fingers" — the confusion rule 10 forbids.
+     *
+     * The fingers expected are what the terminal reports now — its user table's list and its template
+     * table's records for them. When it reports none at all, what the system last recorded for this
+     * terminal ID (the live link's finger list and the roster entry, from earlier good reads) is used
+     * instead: that is what catches an empty read. Earlier records are not consulted when the
+     * terminal does report fingers, so a stale one cannot block a removal (IT ROOM, 2026-11-16: a
+     * roster entry still said finger 5 for someone now enrolled on 6 and 7). Each expected finger
+     * must have a stored copy (any terminal: that is what a restore writes back, copiesFor()).
+     *
+     * A terminal whose user table cannot say which fingers a person has blocks it too. Only terminals
+     * that can read templates are guarded; one that cannot read them never had a copy to take.
+     *
+     * @param  list<int>|null  $listedSlots
+     * @param  list<int>  $readSlots
+     */
+    private function assertEveryFingerSaved(Device $device, Employee $employee, string $pin, ?bool $found, bool $withFingers, ?array $listedSlots, array $readSlots): void
+    {
+        if ($found === true && $withFingers && $listedSlots === null) {
+            throw new \DomainException(
+                "{$employee->name} was not removed from {$device->name}: the terminal did not say which fingerprints user ID {$pin} has, so they cannot be confirmed saved. Nothing was deleted. Try again in a minute; if it repeats, read the terminal's enrollment first."
+            );
+        }
+
+        // What the terminal reports now: its user table's list and its template table's records.
+        $expected = array_merge($listedSlots ?? [], $readSlots);
+
+        // Nothing reported now: the suspicious case (an empty read straight after a restart lost
+        // three fingers on Gems WorkShop). Fall back on what earlier good reads recorded for this
+        // terminal ID. Not consulted when the terminal does report fingers, so a stale earlier
+        // record (a finger since re-enrolled elsewhere) cannot block a removal.
+        $fromLastRead = false;
+        if ($expected === []) {
+            $map = $this->identity->activeMap($device, $employee);
+            if ($map !== null && (string) $map->device_user_id === $pin && is_array($map->fingerprint_slots)) {
+                $expected = $map->fingerprint_slots;
+            }
+            $roster = DeviceRosterEntry::query()->where('device_id', $device->id)->where('device_user_id', $pin)->value('fingerprint_slots');
+            $rosterSlots = is_string($roster) ? json_decode($roster, true) : $roster;
+            if (is_array($rosterSlots)) {
+                $expected = array_merge($expected, $rosterSlots);
+            }
+            $fromLastRead = $expected !== [];
+        }
+
+        $expected = array_values(array_unique(array_map('intval', $expected)));
+        sort($expected);
+        if ($expected === []) {
+            return;
+        }
+
+        $saved = app(FingerprintVault::class)->storedSlots($employee->id);
+        $missing = array_values(array_diff($expected, $saved));
+        if ($missing === []) {
+            return;
+        }
+
+        Log::channel('device')->warning('Removal refused: fingerprints not confirmed saved.', [
+            'device_id' => $device->id, 'employee_id' => $employee->id, 'pin' => $pin,
+            'expected' => $expected, 'saved' => $saved, 'listed_now' => $listedSlots, 'read_now' => $readSlots,
+        ]);
+
+        $fingers = implode(', ', $missing);
+        $now = $fromLastRead
+            ? ' The terminal returned no fingerprints for them just now, but it held them when it was last read — it may have just restarted or be busy.'
+            : '';
+        throw new \DomainException(
+            "{$employee->name} was not removed from {$device->name}: fingerprint(s) {$fingers} on user ID {$pin} are not saved in the system, and deleting the user would lose them.{$now} Nothing was deleted. Wait a minute and try again, or use Read fingerprints to system on the person first."
+        );
     }
 
     /**

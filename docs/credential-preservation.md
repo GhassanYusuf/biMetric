@@ -63,6 +63,17 @@ copy.
    whatever the terminal holds is saved. Before this, a removal whose delete had reached
    the terminal but whose next step timed out could never be finished: every retry
    failed with "not on the device" (a 502).
+6. **Every finger confirmed saved, or no delete (2026-11-16, DC-048).**
+   `assertEveryFingerSaved()`: after the capture, every finger the person is expected to have on
+   this terminal must have a stored copy (any terminal — what a restore writes back). Expected =
+   what the terminal reports now (its user table's finger list and its template records for them);
+   if it reports **none at all**, what earlier good reads recorded for that terminal ID (the live
+   link's `fingerprint_slots`, the roster entry) — that is what catches an empty read straight
+   after a restart, which cost Harichandra, Jinu Sobha Nair and Aslam Khan their only fingerprint
+   on Gems WorkShop. A user table that cannot say which fingers they have also refuses. The
+   operator is told which fingers and why; nothing is deleted. Terminals that cannot read
+   templates are not guarded (there was never a copy to take). Dry run on 2026-11-16 across ten
+   terminals (F18, F22, UA300, inBIO460, TF1700; 1,058 linked people): no false refusal.
 
 **The keypad password** (2026-10-12) is a credential like the card. Captured on every
 roster read and before every removal into `employees.device_password` when that is

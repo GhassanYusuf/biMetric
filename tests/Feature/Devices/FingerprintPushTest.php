@@ -212,6 +212,86 @@ class FingerprintPushTest extends TestCase
     }
 
     /**
+     * DC-048, Gems WorkShop 2026-11-15/16: straight after a restart the template table came back
+     * empty, nothing was saved, and the delete went ahead — three people lost their only finger.
+     * The user table still listed the finger; the removal must refuse.
+     */
+    public function test_an_empty_template_read_does_not_let_a_listed_finger_be_deleted(): void
+    {
+        \App\Models\BiometricTemplate::query()->delete();
+        $this->driver->roster = [new DeviceUser(uid: 40, userId: '501', name: 'Aisha Rahman', fingerSlots: [6])];
+        $this->driver->templates = [];
+
+        try {
+            app(\App\Services\Devices\DeviceUserSyncService::class)->removeEmployee($this->f18, $this->employee);
+            $this->fail('Expected the removal to be refused.');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('fingerprint(s) 6 on user ID 501 are not saved', $e->getMessage());
+        }
+
+        $this->assertSame([], $this->driver->deletes);
+        $this->assertNotNull(app(\App\Services\Devices\DeviceIdentityResolver::class)->activeMap($this->f18, $this->employee), 'the link must stay open');
+    }
+
+    /** Both tables empty, but the last good read saw finger 6: still refused (the restart case). */
+    public function test_a_finger_seen_on_the_last_read_blocks_the_delete_when_nothing_is_read_now(): void
+    {
+        \App\Models\BiometricTemplate::query()->delete();
+        EmployeeDeviceMap::where('employee_id', $this->employee->id)->where('device_id', $this->f18->id)->update(['fingerprint_slots' => json_encode([6])]);
+        $this->driver->roster = [new DeviceUser(uid: 40, userId: '501', name: 'Aisha Rahman', fingerSlots: [])];
+        $this->driver->templates = [];
+
+        try {
+            app(\App\Services\Devices\DeviceUserSyncService::class)->removeEmployee($this->f18, $this->employee);
+            $this->fail('Expected the removal to be refused.');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('held them when it was last read', $e->getMessage());
+        }
+
+        $this->assertSame([], $this->driver->deletes);
+    }
+
+    /** A user table that cannot say which fingers they have: refused, nothing deleted. */
+    public function test_a_terminal_that_cannot_say_which_fingers_blocks_the_delete(): void
+    {
+        $this->driver->roster = [new DeviceUser(uid: 40, userId: '501', name: 'Aisha Rahman', fingerSlots: null)];
+
+        try {
+            app(\App\Services\Devices\DeviceUserSyncService::class)->removeEmployee($this->f18, $this->employee);
+            $this->fail('Expected the removal to be refused.');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('did not say which fingerprints', $e->getMessage());
+        }
+
+        $this->assertSame([], $this->driver->deletes);
+    }
+
+    /** Someone with no finger anywhere — now or on any earlier read — is removed as before. */
+    public function test_someone_with_no_fingers_is_still_removed(): void
+    {
+        \App\Models\BiometricTemplate::query()->delete();
+        $this->driver->roster = [new DeviceUser(uid: 40, userId: '501', name: 'Aisha Rahman', fingerSlots: [])];
+        $this->driver->templates = [];
+
+        app(\App\Services\Devices\DeviceUserSyncService::class)->removeEmployee($this->f18, $this->employee);
+
+        $this->assertSame(['501'], $this->driver->deletes);
+    }
+
+    /** A finger already saved earlier (from any terminal) satisfies the guard even if not read now. */
+    public function test_a_finger_saved_earlier_lets_the_delete_go_ahead(): void
+    {
+        // setUp's copy of slot 6 stays in the vault; the terminal reads empty now.
+        app(FingerprintVault::class)->capture($this->f18, $this->driver->templates);
+        $this->driver->roster = [new DeviceUser(uid: 40, userId: '501', name: 'Aisha Rahman', fingerSlots: [6])];
+        $this->driver->templates = [];
+
+        app(\App\Services\Devices\DeviceUserSyncService::class)->removeEmployee($this->f18, $this->employee);
+
+        $this->assertSame(['501'], $this->driver->deletes);
+    }
+
+    /**
      * DC-032, Riza on Catering: the delete ran, the next step timed out, the link stayed
      * open, and every later removal threw "not on the device" (a 502). Now it closes the
      * link, sends no delete, and keeps the saved copies.
