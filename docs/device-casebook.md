@@ -149,6 +149,17 @@ Template:
     nightly read (command 52101, 2026-11-16 02:30 UTC) reported success but stored **no** template (the
     audit log shows captures only from Ali's one-person actions). Why the 02:30 capture stored nothing is
     not yet known.
+  - 2026-11-16, second report: **ASLAM KHAN** (#2542), 2296 → 860788580 by Ali Mohammed at 05:55:23 UTC,
+    removal 05:57:03 — one minute after Ali's restart of the terminal (command 52608, 05:55:49). He punched
+    by fingerprint at 06:49 local under 2296, before the change. Terminal now: 860788580 (uid 741), no
+    finger, no card; roster had slot 6 for 2296; no copy.
+  - Read-only sweep (`/tmp/gw-damage.php`): **37** terminal IDs changed on Gems WorkShop between
+    2026-11-15 13:24 and 2026-11-16 06:14 UTC (all by Ali Mohammed). **33 fine** (fingers saved, then put
+    back under the new ID), **1** had none (NIZAR AYARI), **3 lost**: HARICHANDRA (2352, slot 6, 15 Nov
+    14:41), **JINU SOBHA NAIR** (2089 → 921253150, slots 6+7, 15 Nov 14:45 — her old ID's delete had failed
+    read-back at 14:39) and ASLAM KHAN (2296, slot 6, 16 Nov 05:57). All three ran while the terminal was
+    unstable: around the restarts at 14:40 and 05:55, with writes dropped. So the move works when the
+    terminal reads properly; the hole is the empty read being taken as "no fingers".
 - **Root cause:** (1) the save-before-removal treats "no template decoded" as "no fingers" and deletes;
   (2) the roster read's vault capture can likewise store nothing without saying so, so Gems WorkShop never
   got its safety copy. Probably made likelier by DC-047 (template reads shifted before 2.24.0).
