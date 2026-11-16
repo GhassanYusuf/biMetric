@@ -4,8 +4,8 @@ import { FOCUS } from '../../shared/theme';
 
 /*
 | Tick several employees, then act on them together (owner, 2026-11-15: "multiple select by tick
-| to delete in employees"). Shared by EmployeesDesktop and EmployeesMobile so both behave the same
-| (rule 5). Selection is held by Employees.jsx; these only render it.
+| to delete in employees"; 2026-11-16: and move them to a company / department). Shared by
+| EmployeesDesktop and EmployeesMobile so both behave the same (rule 5). Selection is held by Employees.jsx; these only render it.
 |
 | The row and the card open the actions menu on click, so a tick box stops its click from
 | reaching them — ticking must never also open a menu.
@@ -36,7 +36,7 @@ export function SelectBox({ checked, indeterminate = false, onChange, label, cla
  * What is ticked, and what can be done with it. Shown only while something is ticked: it is the
  * page's current state (rule 2's InlineAlert side), not the result of an action.
  */
-export function SelectionBar({ count, pageCount, onSelectPage, onClear, onDelete, className = '' }) {
+export function SelectionBar({ count, pageCount, onSelectPage, onClear, onMove, onDelete, className = '' }) {
     if (count === 0) return null;
 
     return (
@@ -55,6 +55,11 @@ export function SelectionBar({ count, pageCount, onSelectPage, onClear, onDelete
                 Clear
             </button>
             <span className="flex-1" />
+            {onMove && (
+                <Button variant="secondary" onClick={onMove} className="min-h-[38px] px-4 text-sm">
+                    Move {count.toLocaleString()}…
+                </Button>
+            )}
             {onDelete && (
                 <Button variant="danger" onClick={onDelete} className="min-h-[38px] px-4 text-sm">
                     Delete {count.toLocaleString()}…

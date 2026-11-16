@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Employee\StoreEmployeeRequest;
 use App\Http\Requests\Api\Employee\UpdateEmployeeRequest;
 use App\Http\Resources\EmployeeResource;
+use App\Models\Company;
+use App\Models\Department;
 use App\Models\Device;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
@@ -355,6 +357,88 @@ class EmployeeController extends Controller
                 'failed' => $failed,
             ],
             $this->bulkOffboardMessage($counts, $commands, $skipped, $refused, $failed),
+        );
+    }
+
+    /**
+     * Move the ticked employees to a company, and optionally a department in it (owner, 2026-11-16:
+     * "select employees and move either from company to department by multi select or from company
+     * to company with the ability to select the department"). One call covers both: the same
+     * company with a department is a move between departments; another company is a move between
+     * companies, into one of its departments or directly under it.
+     *
+     * The company is looked up through the company scope, so a user limited to some companies
+     * cannot move anyone into one they cannot see; the department must belong to it. Each person
+     * is saved on their own, so the audit log records every move with before and after values, and
+     * permission is checked per person. Terminals are not touched: company and department live in
+     * the system only. At most 500.
+     */
+    public function bulkMove(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['integer', 'distinct'],
+            'company_id' => ['required', 'integer'],
+            'department_id' => ['nullable', 'integer'],
+        ]);
+
+        $company = Company::query()->find($data['company_id']);
+        if ($company === null) {
+            return ApiResponse::error('Choose a company you can see.', ['company_id' => ['Choose a company you can see.']], 422);
+        }
+        $department = null;
+        if (! empty($data['department_id'])) {
+            $department = Department::query()->where('company_id', $company->id)->find($data['department_id']);
+            if ($department === null) {
+                return ApiResponse::error("That department is not in {$company->name}.", ['department_id' => ["That department is not in {$company->name}."]], 422);
+            }
+        }
+        $where = $department ? "{$company->name} › {$department->name}" : $company->name;
+
+        $employees = Employee::query()->whereIn('id', $data['ids'])->get()->keyBy('id');
+        $moved = 0;
+        $already = 0;
+        $refused = [];
+
+        foreach ($data['ids'] as $id) {
+            $employee = $employees->get($id);
+            if ($employee === null) {
+                $refused[] = "#{$id} (not found)";
+
+                continue;
+            }
+            if ($request->user()->cannot('update', $employee)) {
+                $refused[] = $employee->name;
+
+                continue;
+            }
+            if ((int) $employee->company_id === $company->id && (int) $employee->department_id === (int) $department?->id) {
+                $already++;
+
+                continue;
+            }
+            // Both set, so Employee::booted keeps them consistent and rewrites the free-text column.
+            $employee->company_id = $company->id;
+            $employee->department_id = $department?->id;
+            $employee->save();
+            $moved++;
+        }
+
+        $n = fn (int $c) => $c.' '.($c === 1 ? 'employee' : 'employees');
+        $parts = [];
+        if ($moved > 0) {
+            $parts[] = "{$n($moved)} moved to {$where}.";
+        }
+        if ($already > 0) {
+            $parts[] = "{$n($already)} already there.";
+        }
+        if ($refused !== []) {
+            $parts[] = 'Not allowed or not found: '.implode(', ', array_slice($refused, 0, 10)).(count($refused) > 10 ? ' and '.(count($refused) - 10).' more' : '').'.';
+        }
+
+        return ApiResponse::success(
+            ['moved' => $moved, 'already' => $already, 'refused' => $refused, 'to' => $where],
+            $parts === [] ? 'Nobody was moved.' : implode(' ', $parts),
         );
     }
 

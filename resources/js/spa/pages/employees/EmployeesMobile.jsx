@@ -24,7 +24,7 @@ export default function EmployeesMobile({
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
     onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, highlightNoPunches, onToggleHighlightNoPunches, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
-    selectable = false, selectedIds = [], onToggleSelect, onSelectPage, onClearSelection, onBulkDelete,
+    selectable = false, selectedIds = [], onToggleSelect, onSelectPage, onClearSelection, onBulkDelete, onBulkMove,
 }) {
     const searching = search.trim().length > 0;
     const filtering = Object.values(filters ?? {}).some((v) => v !== '' && v != null);
@@ -146,7 +146,8 @@ export default function EmployeesMobile({
                         pageCount={rows.length}
                         onSelectPage={onSelectPage}
                         onClear={onClearSelection}
-                        onDelete={onBulkDelete}
+                        onMove={onBulkMove}
+                onDelete={onBulkDelete}
                     />
                     {rows.map((e, i) => (
                         <Card

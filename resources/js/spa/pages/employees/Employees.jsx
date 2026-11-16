@@ -15,6 +15,7 @@ import EmployeeFormModal from './EmployeeFormModal';
 import MergeModal from './MergeModal';
 import DeleteEmployeeModal from './DeleteEmployeeModal';
 import BulkDeleteEmployeesModal from './BulkDeleteEmployeesModal';
+import BulkMoveEmployeesModal from './BulkMoveEmployeesModal';
 import { useNoPunchHighlight } from './NoPunchHighlight';
 import DuplicateScanModal from './DuplicateScanModal';
 import MoveToCompanyModal from './MoveToCompanyModal';
@@ -117,6 +118,7 @@ export default function Employees() {
      */
     const [selectedIds, setSelectedIds] = useState([]);
     const [bulkDeleting, setBulkDeleting] = useState(false);
+    const [bulkMoving, setBulkMoving] = useState(false);
     // Amber rows for people with no punches, this viewer's choice (2026-11-03).
     const [highlightNoPunches, setHighlightNoPunches] = useNoPunchHighlight();
     const [viewing, setViewing] = useState(null); // employee whose enrollment is open
@@ -899,13 +901,14 @@ export default function Employees() {
         onPage: goToPage,
         onAdd: () => setFormOpen(true),
         onDelete: deleteEmployee,
-        // Tick to delete several (2026-11-15): only for someone who may delete.
-        selectable: can('employees.delete'),
+        // Tick to delete or move several (2026-11-15, 2026-11-16): for someone who may do either.
+        selectable: can('employees.delete') || (can('employees.update') && companies.length > 0),
         selectedIds,
         onToggleSelect: (id, on) => setSelectedIds((ids) => (on ? [...new Set([...ids, id])] : ids.filter((x) => x !== id))),
         onSelectPage: () => setSelectedIds(rows.map((r) => r.id)),
         onClearSelection: () => setSelectedIds([]),
-        onBulkDelete: () => setBulkDeleting(true),
+        onBulkDelete: can('employees.delete') ? () => setBulkDeleting(true) : null,
+        onBulkMove: can('employees.update') && companies.length > 0 ? () => setBulkMoving(true) : null,
         onEnroll: (employee) => setEnrolling(employee),
         onEdit: (employee) => {
             setEditing(employee);
@@ -1053,6 +1056,21 @@ export default function Employees() {
                         await load(search, filters);
                     }}
                     onClose={() => setBulkDeleting(false)}
+                />
+            )}
+            {bulkMoving && (
+                <BulkMoveEmployeesModal
+                    employees={rows.filter((r) => selectedIds.includes(r.id))}
+                    companies={companies}
+                    departments={departments}
+                    onDone={async () => {
+                        setBulkMoving(false);
+                        setSelectedIds([]);
+                        // The tree counts and, under a company filter, the list itself changed.
+                        loadDepartments();
+                        await load(search, filters);
+                    }}
+                    onClose={() => setBulkMoving(false)}
                 />
             )}
             {movingTerminal && (

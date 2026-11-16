@@ -152,6 +152,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Delete several ticked on the Employees screen, same three choices as offboard (2026-11-15).
     // Before the resource so `bulk-offboard` is never bound as an employee id.
     Route::post('employees/bulk-offboard', [EmployeeController::class, 'bulkOffboard']);
+    // Move several ticked employees to a company / department (2026-11-16).
+    Route::post('employees/bulk-move', [EmployeeController::class, 'bulkMove']);
     Route::apiResource('employees', EmployeeController::class)->names('api.employees');
     // Delete with the choice spelled out: record only / resign / everywhere (2026-11-03).
     Route::post('employees/{employee}/offboard', [EmployeeController::class, 'offboard']);
