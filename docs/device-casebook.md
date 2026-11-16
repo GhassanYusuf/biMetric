@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-048 | 2026-11-16 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | A terminal-ID change deleted Harichandra's only fingerprint: the save-before-delete stored nothing, and 753 fingers there had no system copy | OPEN |
 | DC-047 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Full reads get all 16,276 punches but decode as few as 409: a slow window asked for twice makes the F18 serve the rest shifted | FIXED |
 | DC-046 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Import staff fails: a user name in a firmware code page ("DIRISAM<0xA0>PRADEEP") stops the whole roster read | OPEN |
 | DC-045 | 2026-11-11 | Catering (UA300/ID, 192.168.7.120) | Administrator / normal user from the system on the UA300 (user.privilege unknown, never run) | FIXED |
@@ -122,6 +123,46 @@ Template:
 ---
 
 ## Entries
+
+### DC-048 — Gems WorkShop: a terminal-ID change deleted the only copy of a fingerprint
+
+- **Date:** 2026-11-16
+- **Devices:** Gems WorkShop (#26, F18, 95.84.64.159:4371, over the internet)
+- **Direction:** software → device
+- **Symptom:** owner, 2026-11-16: "981232604 … his punch is yesterday but he has not fingerprint or card,
+  how did he punch". HARICHANDRA CHANDRA KUMAR (#2580, GEMS).
+- **What was done:** reads only (database, logs, two read-only reads of the terminal).
+  - His punches up to 2026-11-15 07:23 local were by **fingerprint** under terminal user **2352**. None since.
+  - 2026-11-15 14:37:29 UTC Ali Mohammed (user 13) edited him: Personnel ID 2352 → 981232604. The terminal
+    misbehaved meanwhile (14:37–14:40: deletes of 2352 and 2089 "accepted but still there", a finger write
+    for 990710688 "accepted but not kept"); he restarted it at 14:40:11 (command 50364). At 14:41:45 the link
+    2352 was closed and its roster entry marked "Deleted from the device" (`DeviceUserSyncService::removeEmployee`).
+  - Terminal now (read 2026-11-16): user 981232604 (uid 732, HARICHANDRA), **no fingerprint, no card**; 2352 gone.
+    The roster had recorded 2352 with a finger in slot 6. **No copy of it exists**: `biometric_templates` has no
+    row for #2580, nor does any snapshot table or file. It cannot be recovered; he must enroll again.
+  - `saveCredentialsBeforeRemoval()` captures `readTemplates()` into the vault before the delete. A template
+    table that did not decode yields `[]` (rule 10: unknown), and the capture stores nothing **without
+    failing**, so the delete went ahead. Rule 19 says save or refuse; this saved nothing and did not refuse.
+  - Wider: on 2026-11-16 the terminal held **801 templates for 670 users**; the vault held **48**, so **753
+    fingers of 635 people existed only on the terminal**. The import's enrollment read (command 49611,
+    2026-11-15 09:08 UTC, before library 2.24.0) said the fingerprint table "could not be decoded"; the
+    nightly read (command 52101, 2026-11-16 02:30 UTC) reported success but stored **no** template (the
+    audit log shows captures only from Ali's one-person actions). Why the 02:30 capture stored nothing is
+    not yet known.
+- **Root cause:** (1) the save-before-removal treats "no template decoded" as "no fingers" and deletes;
+  (2) the roster read's vault capture can likewise store nothing without saying so, so Gems WorkShop never
+  got its safety copy. Probably made likelier by DC-047 (template reads shifted before 2.24.0).
+- **Fix:** pending. Immediate: `/tmp/gw-capture.php` (owner to run) takes the full copy now and checks
+  coverage. Code: refuse a removal unless every finger the terminal lists for that user (its template
+  table / `fingerSlots`) is in the vault after the capture; report a capture that stored nothing for people
+  who have fingers.
+- **Verified:** pending.
+- **Evidence:** commands 49611, 50364, 52101; `laravel.log` 2026-11-15 14:37:19–14:40:47; audit log
+  `employee.updated` #2580 14:37:29; roster entry 2336; read-only reads 2026-11-16 (`/tmp/gw-who.php`,
+  `/tmp/gw-vault-gap.php`).
+- **Status:** OPEN
+- **Keywords:** Gems WorkShop, HARICHANDRA, 981232604, 2352, fingerprint lost, no fingerprint, ID change,
+  user ID move, removeEmployee, saveCredentialsBeforeRemoval, FingerprintVault, vault, rule 19, 753
 
 ### DC-047 — gems workshop: full reads get every punch but decode only part of them
 
