@@ -156,6 +156,22 @@ class EmployeeRoster
             $lines[] = 'Terminal: '.(Device::find($request->integer('device_id'))?->name ?? '#'.$request->integer('device_id'));
         }
 
+        if ($request->query('terminal_role') === 'admin') {
+            $lines[] = 'Administrators on a terminal';
+        } elseif ($request->query('terminal_role') === 'user') {
+            $lines[] = 'Normal users on the terminals';
+        }
+        if ($request->query('punches') === 'none') {
+            $lines[] = 'No punches';
+        } elseif ($request->query('punches') === 'some') {
+            $lines[] = 'Has punches';
+        }
+        if ($request->query('device_user_id') === 'same') {
+            $lines[] = 'Terminal ID = Personnel ID';
+        } elseif ($request->query('device_user_id') === 'different') {
+            $lines[] = 'Terminal ID ≠ Personnel ID';
+        }
+
         $lines[] = match (true) {
             $request->filled('resigned') && $request->boolean('resigned') => 'Resigned only',
             $request->filled('is_active') => $request->boolean('is_active') ? 'Active only' : 'Inactive only',

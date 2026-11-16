@@ -44,6 +44,9 @@ function rosterParams(term, active) {
     else if (active.device) params.set('device_id', active.device);
     // Administrator or normal user on the terminals (2026-11-10), on the chosen terminal if any.
     if (active.role) params.set('terminal_role', active.role);
+    // No punches / has punches, and terminal user ID against Personnel ID (2026-11-16).
+    if (active.punches) params.set('punches', active.punches);
+    if (active.idmatch && active.device !== 'none') params.set('device_user_id', active.idmatch);
     return params;
 }
 

@@ -35,6 +35,14 @@ class EmployeeRosterQuery
         // administrator on at least one terminal (on device_id when one is chosen); user = on
         // a terminal and administrator on none of them (or not on that one).
         'terminal_role' => ['nullable', 'in:admin,user'],
+        // Punches (owner, 2026-11-16: "those that do not have punches"): none = no punch in the
+        // system from any terminal; some = at least one. The same count as the Punches column.
+        'punches' => ['nullable', 'in:none,some'],
+        // Terminal user ID against Personnel ID (owner, 2026-11-16: "whose device user ID is the
+        // same as their personal ID"). same = on a terminal, and every live terminal ID equals
+        // their Personnel ID (employee_code); different = on a terminal under some other ID
+        // somewhere (or with no Personnel ID). On the chosen terminal only, when one is chosen.
+        'device_user_id' => ['nullable', 'in:same,different'],
     ];
 
     public static function build(Request $request): Builder
@@ -92,11 +100,30 @@ class EmployeeRosterQuery
                     ->when($request->filled('device_id'), fn ($d) => $d->where('device_id', $request->integer('device_id'))))
                 ->whereDoesntHave('deviceMaps', fn ($m) => $m->whereNull('valid_to')->where('device_privilege', '>', 0)
                     ->when($request->filled('device_id'), fn ($d) => $d->where('device_id', $request->integer('device_id')))))
+            ->when($request->query('punches') === 'none', fn ($q) => $q->whereDoesntHave('attendanceLogs'))
+            ->when($request->query('punches') === 'some', fn ($q) => $q->whereHas('attendanceLogs'))
+            ->when($request->query('device_user_id') === 'same', fn ($q) => $q
+                ->whereNotNull('employees.employee_code')
+                ->whereHas('deviceMaps', fn ($m) => self::liveOn($m, $request))
+                ->whereDoesntHave('deviceMaps', fn ($m) => self::liveOn($m, $request)
+                    ->whereColumn('employee_device_maps.device_user_id', '!=', 'employees.employee_code')))
+            ->when($request->query('device_user_id') === 'different', fn ($q) => $q
+                ->whereHas('deviceMaps', fn ($m) => self::liveOn($m, $request)
+                    ->where(fn ($w) => $w
+                        ->whereColumn('employee_device_maps.device_user_id', '!=', 'employees.employee_code')
+                        ->orWhereNull('employees.employee_code'))))
             // On no terminal at all: they cannot clock in anywhere.
             ->when($request->boolean('unenrolled'), fn ($q) => $q->whereDoesntHave(
                 'deviceMaps',
                 fn ($m) => $m->whereNull('valid_to'),
             ))
             ->orderBy('name');
+    }
+
+    /** Live terminal links, on the chosen terminal when one is chosen. */
+    private static function liveOn(Builder $maps, Request $request): Builder
+    {
+        return $maps->whereNull('valid_to')
+            ->when($request->filled('device_id'), fn ($d) => $d->where('device_id', $request->integer('device_id')));
     }
 }

@@ -73,6 +73,37 @@ export default function EmployeeFilters({
                     </SelectField>
                 )}
 
+                {/* Punches (owner, 2026-11-16): nobody's punch from any terminal, or at least
+                    one. The same count as the Punches column. */}
+                <SelectField
+                    label="Punches"
+                    aria-label="Filter by punches"
+                    value={filters.punches ?? ''}
+                    onChange={(e) => set('punches', e.target.value)}
+                    className={stacked ? '' : 'w-40'}
+                >
+                    <option value="">Any</option>
+                    <option value="none">No punches</option>
+                    <option value="some">Has punches</option>
+                </SelectField>
+
+                {/* Terminal user ID against Personnel ID (owner, 2026-11-16). On the chosen
+                    terminal when one is chosen, otherwise on every terminal they are on. */}
+                {devices.length > 0 && (
+                    <SelectField
+                        label="Terminal ID"
+                        aria-label="Filter by terminal user ID against Personnel ID"
+                        value={filters.idmatch ?? ''}
+                        onChange={(e) => set('idmatch', e.target.value)}
+                        disabled={filters.device === 'none'}
+                        className={stacked ? '' : 'w-52'}
+                    >
+                        <option value="">Any</option>
+                        <option value="same">Same as Personnel ID</option>
+                        <option value="different">Different from Personnel ID</option>
+                    </SelectField>
+                )}
+
                 {/* Resigned people are hidden until asked for (2026-10-12): they are off
                     the terminals and no longer part of the roster anyone works from. */}
                 <SelectField
