@@ -162,9 +162,9 @@ class EmployeeOffboardTest extends TestCase
             ->assertJsonPath('data.pending', 1)
             ->assertJsonPath('data.device_commands', 1);
 
-        // The one on a terminal waits for it (removal queued, card and fingers saved by it);
-        // the one on none is gone at once.
-        $this->assertSame(1, $this->removals());
+        // The one on a terminal waits for it (one batch job for the terminal, card and fingers
+        // saved by it); the one on none is gone at once.
+        $this->assertSame(1, DeviceCommand::withoutGlobalScopes()->where('command', DeviceCommand::REMOVE_USERS)->count());
         $this->assertFalse((bool) Employee::withoutGlobalScopes()->find($on->id)->is_active);
         $this->assertNull(Employee::withoutGlobalScopes()->find($off->id));
     }
@@ -174,7 +174,8 @@ class EmployeeOffboardTest extends TestCase
         $a = $this->person('23');
         $b = $this->person('24');
 
-        $this->bulk([$a->id, $b->id], 'resign')->assertOk()->assertJsonPath('data.resigned', 2)->assertJsonPath('data.device_commands', 2);
+        // Both on the same terminal: ONE job takes them both off (2026-11-16, faster bulk delete).
+        $this->bulk([$a->id, $b->id], 'resign')->assertOk()->assertJsonPath('data.resigned', 2)->assertJsonPath('data.device_commands', 1);
 
         foreach ([$a, $b] as $e) {
             $this->assertNotNull(Employee::withoutGlobalScopes()->find($e->id)->resigned_at);

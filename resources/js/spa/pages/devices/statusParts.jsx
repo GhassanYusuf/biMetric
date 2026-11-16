@@ -143,6 +143,7 @@ export const COMMAND_LABELS = {
     sync_time: 'Set device clock',
     push_user: 'Push employee',
     remove_user: 'Remove employee',
+    remove_users: 'Remove employees (batch)',
     enroll_fingerprint: 'Capture fingerprint',
     enroll_card: 'Capture card',
     delete_fingerprint: 'Delete fingerprint',

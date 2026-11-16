@@ -92,6 +92,8 @@ class DeviceCommandHandler
                 $this->employee($payload),
             ),
 
+            DeviceCommand::REMOVE_USERS => $this->removeMany($device, $payload),
+
             DeviceCommand::ENROLL_FINGERPRINT => $this->enrollment->captureFingerprint(
                 $device,
                 $this->employee($payload),
@@ -187,6 +189,38 @@ class DeviceCommandHandler
         $result['raw']['roster'] = $roster['raw'] ?? null;
 
         return $result;
+    }
+
+    /**
+     * REMOVE_USERS: several employees off one terminal with one read (2026-11-16). Only people still
+     * linked to this terminal are taken — so a retry after the terminal stopped answering picks up
+     * where it stopped — and each record marked for deletion is deleted as soon as that person is
+     * off every terminal queued for them (EmployeeOffboarding::deleteIfOffAllTargets).
+     *
+     * @return array{message:string, raw:array<string,mixed>}
+     */
+    private function removeMany(Device $device, array $payload): array
+    {
+        $deleteAfter = [];
+        foreach ($payload['employees'] ?? [] as $row) {
+            $deleteAfter[(int) $row['id']] = $row[\App\Services\Integration\EmployeeOffboarding::DELETE_AFTER] ?? null;
+        }
+
+        $stillOn = \App\Models\EmployeeDeviceMap::query()->where('device_id', $device->id)->whereNull('valid_to')
+            ->whereIn('employee_id', array_keys($deleteAfter))->pluck('employee_id')->map(fn ($i) => (int) $i)->all();
+        $employees = Employee::query()->whereIn('id', $stillOn)->orderBy('id')->get();
+
+        if ($employees->isEmpty()) {
+            return ['message' => "Nobody left to remove from {$device->name}.", 'raw' => ['device_id' => $device->id, 'removed' => [], 'refused' => []]];
+        }
+
+        $offboarding = app(\App\Services\Integration\EmployeeOffboarding::class);
+
+        return $this->users->removeEmployees($device, $employees, function (Employee $employee) use ($deleteAfter, $offboarding) {
+            if (! empty($deleteAfter[$employee->id])) {
+                $offboarding->deleteIfOffAllTargets($employee, $deleteAfter[$employee->id]);
+            }
+        });
     }
 
     private function employee(array $payload): Employee

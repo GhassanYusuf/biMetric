@@ -31,6 +31,8 @@ class DeviceCommand extends Model
     public const IMPORT_EMPLOYEES = 'import_employees';
     public const PUSH_USER = 'push_user';
     public const REMOVE_USER = 'remove_user';
+    // Several employees off one terminal in one job, one shared read (2026-11-16, DC-048 follow-up).
+    public const REMOVE_USERS = 'remove_users';
     public const ENROLL_FINGERPRINT = 'enroll_fingerprint';
     public const ENROLL_CARD = 'enroll_card';
     public const DELETE_FINGERPRINT = 'delete_fingerprint';

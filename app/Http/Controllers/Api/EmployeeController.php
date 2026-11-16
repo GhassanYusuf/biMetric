@@ -311,11 +311,12 @@ class EmployeeController extends Controller
 
         // The tenant and company scopes apply: an id the operator cannot see is "not found".
         $employees = Employee::query()->whereIn('id', $data['ids'])->get()->keyBy('id');
-        $counts = ['deleted' => 0, 'resigned' => 0, 'pending' => 0, 'record_only' => 0];
-        $commands = 0;
-        $skipped = [];
+        $counts = ['deleted' => 0, 'resigned' => 0, 'pending' => 0, 'record_only' => 0, 'kept_inactive' => 0];
         $refused = [];
         $failed = [];
+        // Taken off their terminals together, one job per terminal (2026-11-16, "faster bulk delete").
+        $toTakeOff = [];
+        $deleteAfter = [];
 
         foreach ($data['ids'] as $id) {
             $employee = $employees->get($id);
@@ -330,33 +331,49 @@ class EmployeeController extends Controller
                 continue;
             }
             try {
-                $outcome = $this->offboardOne($employee, $mode, $offboarding);
+                if ($mode === 'record') {
+                    $this->offboardOne($employee, 'record', $offboarding);
+                    $counts['record_only']++;
+                } elseif ($mode === 'resign') {
+                    if (! $employee->isResigned()) {
+                        $employee->forceFill(['resigned_at' => now(config('attendance.timezone'))->toDateString()])->save();
+                    }
+                    $counts['resigned']++;
+                    $toTakeOff[] = $employee;
+                } elseif (! $employee->deviceMaps()->whereNull('valid_to')->exists()) {
+                    $employee->delete(); // on no terminal at all — nothing to clean up
+                    $counts['deleted']++;
+                } else {
+                    // Off the door list until the terminals confirm, as a single delete does.
+                    $employee->forceFill(['is_active' => false])->save();
+                    $deleteAfter[$employee->id] = (string) \Illuminate\Support\Str::uuid();
+                    $toTakeOff[] = $employee;
+                }
             } catch (\Throwable $e) {
                 report($e);
                 $failed[] = $employee->name;
+            }
+        }
 
-                continue;
+        $jobs = 0;
+        $skipped = [];
+        if ($toTakeOff !== []) {
+            $queued = $offboarding->takeManyOffTerminals($toTakeOff, $deleteAfter);
+            $jobs = count($queued['commands']);
+            $skipped = $queued['skipped'];
+            foreach (array_keys($deleteAfter) as $id) {
+                in_array($id, $queued['queued_for'], true) ? $counts['pending']++ : $counts['kept_inactive']++;
             }
-            $commands += count($outcome['result']['commands']);
-            foreach ($outcome['result']['skipped'] as $s) {
-                $skipped[$s['device_name']] = $s['reason'];
-            }
-            match (true) {
-                $mode === 'record' => $counts['record_only']++,
-                $mode === 'resign' => $counts['resigned']++,
-                $outcome['deleted'] => $counts['deleted']++,
-                default => $counts['pending']++,
-            };
         }
 
         return ApiResponse::success(
             $counts + [
-                'device_commands' => $commands,
+                'device_commands' => $jobs,
                 'skipped_devices' => array_map(fn ($n, $r) => ['device_name' => $n, 'reason' => $r], array_keys($skipped), $skipped),
                 'refused' => $refused,
                 'failed' => $failed,
             ],
-            $this->bulkOffboardMessage($counts, $commands, $skipped, $refused, $failed),
+            $this->bulkOffboardMessage($counts, $jobs, $skipped, $refused, $failed),
         );
     }
 
@@ -485,8 +502,11 @@ class EmployeeController extends Controller
         if ($counts['resigned'] > 0) {
             $parts[] = $n($counts['resigned'], 'employee', 'employees').' marked resigned and kept with fingerprints, card and punches.';
         }
+        if ($counts['kept_inactive'] > 0) {
+            $parts[] = $n($counts['kept_inactive'], 'employee is', 'employees are').' kept, inactive: their terminals cannot be written from here.';
+        }
         if ($commands > 0) {
-            $parts[] = $n($commands, 'terminal removal', 'terminal removals').' queued (card and fingerprints saved first).';
+            $parts[] = 'Taking them off the terminals now: '.$n($commands, 'job', 'jobs').', one per terminal, each reading it once (card and fingerprints saved first).';
         }
         if ($skipped !== []) {
             $parts[] = 'Not removed from '.implode(', ', array_map(fn ($d, $r) => "{$d} ({$r})", array_keys($skipped), $skipped)).'.';

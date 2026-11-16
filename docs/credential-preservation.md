@@ -159,6 +159,18 @@ choices once, `POST /api/employees/bulk-offboard` (`EmployeeController::bulkOffb
 above holds per person; permission is checked per person, and anyone refused, not found or failed
 is named in the result. A choice that deletes records asks for the number of people to be typed.
 
+**One read per terminal (2026-11-16).** The terminal part of a bulk resign or delete is queued as
+`REMOVE_USERS` — one job per terminal, at most 60 people each (`EmployeeOffboarding::takeManyOffTerminals`).
+The job reads the terminal's users and fingerprints once, captures every fingerprint on it into the
+vault, then runs `removeEmployee()` for each person against that read
+(`DeviceUserSyncService::removeEmployees`): the card/password save, the every-finger guard, the
+read-back of each delete and the link/roster bookkeeping are unchanged per person. A person refused
+is listed and the batch goes on; three removals in a row that fail because the terminal is silent
+stop the job for a retry, which takes only people still on the terminal. A record marked for deletion
+is deleted once its person is off every terminal queued for them (`deleteIfOffAllTargets`). Before,
+each person re-read the whole terminal: ~10 s a person on Gems WorkShop (719 users, 801 fingerprints,
+internet). The single-person Delete still queues one `REMOVE_USER`.
+
 ### 3. Restore on every add — automatically
 
 Every way a person is put on a terminal ends in `DeviceUserSyncService::pushEmployee()`

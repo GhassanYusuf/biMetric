@@ -86,6 +86,8 @@ class FakeBiometricDriver implements BiometricDeviceDriver
 
     public function readUsers(Device $device, bool $withFingerprints = false): array
     {
+        $this->userReads++;
+
         return $this->roster;
     }
 
@@ -276,8 +278,19 @@ class FakeBiometricDriver implements BiometricDeviceDriver
         return $removed;
     }
 
+    /** How many reads of each table were made (the batch removal reads once). */
+    public int $userReads = 0;
+
+    public int $templateReads = 0;
+
+    /** Deletes after this many succeed time out, as a terminal that stops answering does. */
+    public ?int $silentAfterDeletes = null;
+
     public function deleteUser(Device $device, string $userId): void
     {
+        if ($this->silentAfterDeletes !== null && count($this->deletes) >= $this->silentAfterDeletes) {
+            throw new \Promoseven\Biometric\Exception\TimeoutException('Device connection timed out or closed unexpectedly.');
+        }
         $this->roster = array_values(array_filter(
             $this->roster,
             fn (DeviceUser $u) => $u->userId !== $userId,
@@ -333,6 +346,7 @@ class FakeBiometricDriver implements BiometricDeviceDriver
 
     public function readTemplates(Device $device): array
     {
+        $this->templateReads++;
         if ($this->templatesUnsupported) {
             throw new \Promoseven\Biometric\Exception\UnsupportedCommandException('No template table here.');
         }

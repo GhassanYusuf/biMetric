@@ -175,6 +175,11 @@ Template:
   finger list unknown; no fingers anywhere still removed; a finger saved earlier lets it go ahead); 884
   pass. Immediate data step: `/tmp/gw-capture.php` (owner to run) takes Gems WorkShop's full copy.
   Still open: why the 02:30 roster read's capture stored nothing for Gems WorkShop.
+  2026-11-16 ~13:00–13:20 local: the owner's bulk delete of GEMS staff queued 579 single removals; 343
+  succeeded at ~10 s each (each re-read the whole terminal), then from 13:07 local Gems WorkShop stopped
+  answering and every removal failed after 8 s ("could not be saved to the system first … timed out") —
+  refused, nothing deleted, those people kept inactive. Added the batch removal (`REMOVE_USERS`, one read
+  per terminal; `BulkRemovalTest`); `/tmp/gw-batch-removals.php` moves the unfinished ones onto it.
 - **Verified:** read-only dry run of the guard's decision on ten terminals (IT ROOM, Glass Door, Entrance,
   Gems WorkShop, On The Road, Catering, Good Wheels, Camelot, JJs, Gems; 1,058 linked people): no false
   refusal; on Gems WorkShop the save-first fills the 635 missing copies before any delete

@@ -1131,6 +1131,114 @@ class DeviceUserSyncService
     }
 
     /**
+     * One terminal read shared by every removal of a batch (removeEmployees()): the user table
+     * (with finger lists) and the template table. Null outside a batch.
+     *
+     * @var array{device_id:int, users:?list<DeviceUser>, templates:?list<array<string,mixed>>}|null
+     */
+    private ?array $batchRead = null;
+
+    /**
+     * Removes several employees from one terminal in one job (owner, 2026-11-16: "build the faster
+     * bulk delete"). Reads the terminal's user table and template table ONCE, saves every
+     * fingerprint on it into the system, then runs removeEmployee() for each person against that
+     * read — so every rule of a single removal holds per person: card and keypad password saved,
+     * every finger confirmed saved (assertEveryFingerSaved) or that person is refused, each delete
+     * read back, the link closed and the number kept reserved.
+     *
+     * Before this a bulk delete queued one removal per person, and each re-read the whole terminal:
+     * on Gems WorkShop (719 users, 801 fingerprints, over the internet) about 10 s a person, an hour
+     * for 500, until the terminal stopped answering mid-way (2026-11-16, 13:07 local).
+     *
+     * A person refused (fingers not saved, a write the terminal dropped) is reported and the batch
+     * goes on. Three removals in a row that fail because the terminal does not answer stop the batch
+     * and rethrow, so the queue retries it later; a retry only takes people still on the terminal.
+     *
+     * @param  iterable<Employee>  $employees
+     * @param  callable(Employee):void|null  $afterEach  run after each person is off the terminal
+     * @return array{message:string, raw:array<string,mixed>}
+     */
+    public function removeEmployees(Device $device, iterable $employees, ?callable $afterEach = null): array
+    {
+        $device->assertWritable();
+        $capabilities = $this->driver->capabilities($device);
+        $capabilities->require(Capability::USER_DELETE);
+
+        $blob = $capabilities->supports(Capability::TEMPLATE_BLOB_READ);
+        $withFingers = $blob && $capabilities->supports(Capability::TEMPLATE_TABLE_READ);
+
+        // The one read. A failure here removes nobody and lets the queue retry.
+        $users = $capabilities->supports(Capability::USER_READ) ? $this->driver->readUsers($device, $withFingers) : null;
+        $templates = $blob ? $this->driver->readTemplates($device) : null;
+        if ($templates !== null && $templates !== []) {
+            // Everyone on the terminal, not only this batch: the copy rule 19 wants anyway.
+            $vault = app(FingerprintVault::class);
+            $vault->assertReady();
+            $vault->capture($device, $templates);
+        }
+
+        $this->batchRead = ['device_id' => $device->id, 'users' => $users, 'templates' => $templates];
+        $removed = [];
+        $refused = [];
+        $silent = 0;
+
+        try {
+            foreach ($employees as $employee) {
+                try {
+                    $this->removeEmployee($device, $employee);
+                    $removed[] = $employee->id;
+                    $silent = 0;
+                    if ($afterEach !== null) {
+                        $afterEach($employee);
+                    }
+                } catch (\Promoseven\Biometric\Exception\DeviceException $e) {
+                    $refused[] = ['employee_id' => $employee->id, 'name' => $employee->name, 'reason' => $e->getMessage()];
+                    if (! $e instanceof VerificationException && ++$silent >= 3) {
+                        // The terminal stopped answering: stop, and let the queue try again later.
+                        throw $e;
+                    }
+                } catch (\DomainException $e) {
+                    $refused[] = ['employee_id' => $employee->id, 'name' => $employee->name, 'reason' => $e->getMessage()];
+                }
+            }
+        } finally {
+            $this->batchRead = null;
+        }
+
+        $parts = [sprintf('Removed %d of %d from %s.', count($removed), count($removed) + count($refused), $device->name)];
+        if ($refused !== []) {
+            $parts[] = 'Not removed: '.implode('; ', array_map(fn ($r) => $r['name'], array_slice($refused, 0, 10)))
+                .(count($refused) > 10 ? ' and '.(count($refused) - 10).' more' : '')
+                .' (still on the terminal; reasons in the details).';
+        }
+
+        return [
+            'message' => implode(' ', $parts),
+            'raw' => ['device_id' => $device->id, 'removed' => $removed, 'refused' => $refused],
+        ];
+    }
+
+    /** @return list<DeviceUser> the batch's read when one is running for $device, else a fresh read */
+    private function usersForRemoval(Device $device, bool $withFingers): array
+    {
+        if ($this->batchRead !== null && $this->batchRead['device_id'] === $device->id && $this->batchRead['users'] !== null) {
+            return $this->batchRead['users'];
+        }
+
+        return $this->driver->readUsers($device, $withFingers);
+    }
+
+    /** @return list<array<string,mixed>> the batch's template read when one is running for $device, else a fresh read */
+    private function templatesForRemoval(Device $device): array
+    {
+        if ($this->batchRead !== null && $this->batchRead['device_id'] === $device->id && $this->batchRead['templates'] !== null) {
+            return $this->batchRead['templates'];
+        }
+
+        return $this->driver->readTemplates($device);
+    }
+
+    /**
      * Removes an employee's record from the device — templates and card with it.
      *
      * @return array{message:string, raw:array<string,mixed>}
@@ -1374,7 +1482,7 @@ class DeviceUserSyncService
         try {
             if ($capabilities->supports(Capability::USER_READ)) {
                 $found = false;
-                foreach ($this->driver->readUsers($device, $withFingers) as $user) {
+                foreach ($this->usersForRemoval($device, $withFingers) as $user) {
                     if ($user->userId !== $pin) {
                         continue;
                     }
@@ -1396,7 +1504,7 @@ class DeviceUserSyncService
             if ($guarded) {
                 $vault = app(FingerprintVault::class);
                 $vault->assertReady();
-                $records = $this->driver->readTemplates($device);
+                $records = $this->templatesForRemoval($device);
                 $vault->capture($device, $records, $employee->id);
                 $readSlots = [];
                 foreach ($records as $r) {

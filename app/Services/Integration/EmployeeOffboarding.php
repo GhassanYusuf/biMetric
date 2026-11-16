@@ -4,6 +4,7 @@ namespace App\Services\Integration;
 
 use App\Models\DeviceCommand;
 use App\Models\Employee;
+use App\Models\EmployeeDeviceMap;
 use App\Services\Devices\DeviceCommandBus;
 use Illuminate\Support\Str;
 
@@ -94,6 +95,82 @@ class EmployeeOffboarding
         }
 
         return ['commands' => $commands, 'skipped' => $skipped];
+    }
+
+    /** Most people one REMOVE_USERS job carries; a bigger batch becomes several jobs on that terminal. */
+    public const BATCH_SIZE = 60;
+
+    /**
+     * Takes several employees off their terminals with ONE job per terminal (REMOVE_USERS) instead
+     * of one job per person (owner, 2026-11-16: "build the faster bulk delete"). Each job reads its
+     * terminal once and removes everyone in it (DeviceUserSyncService::removeEmployees), with every
+     * rule of a single removal per person.
+     *
+     * $deleteAfter maps employee id => a batch id for people whose record is to be deleted once they
+     * are off every terminal queued here (deleteIfOffAllTargets); people not in it are only taken off
+     * (a resignation).
+     *
+     * @param  iterable<Employee>  $employees
+     * @param  array<int,string>  $deleteAfter
+     * @return array{commands:list<DeviceCommand>, skipped:array<string,string>, queued_for:list<int>}
+     *         skipped: terminal name => why it cannot be written; queued_for: employees with a removal queued
+     */
+    public function takeManyOffTerminals(iterable $employees, array $deleteAfter = []): array
+    {
+        $ids = collect($employees)->pluck('id')->map(fn ($i) => (int) $i)->all();
+        $maps = EmployeeDeviceMap::query()->whereIn('employee_id', $ids)->whereNull('valid_to')->with('device')->get();
+
+        $commands = [];
+        $skipped = [];
+        $queuedFor = [];
+
+        foreach ($maps->groupBy('device_id') as $deviceMaps) {
+            $device = $deviceMaps->first()->device;
+            if ($device === null) {
+                continue;
+            }
+            if ($refusal = $device->userWriteRefusal()) {
+                $skipped[$device->name] = $refusal;
+
+                continue;
+            }
+            $people = $deviceMaps->pluck('employee_id')->map(fn ($i) => (int) $i)->unique()->values();
+            foreach ($people->chunk(self::BATCH_SIZE) as $chunk) {
+                $commands[] = $this->bus->dispatch($device, DeviceCommand::REMOVE_USERS, [
+                    'employees' => $chunk->map(fn ($id) => ['id' => $id, self::DELETE_AFTER => $deleteAfter[$id] ?? null])->values()->all(),
+                ]);
+                array_push($queuedFor, ...$chunk->all());
+            }
+        }
+
+        return ['commands' => $commands, 'skipped' => $skipped, 'queued_for' => array_values(array_unique($queuedFor))];
+    }
+
+    /**
+     * Deletes the record once the person is off every terminal a removal was queued on for this
+     * delete. Called by the REMOVE_USERS job after each person it takes off; the last terminal to
+     * confirm deletes the row. A terminal that refused or failed leaves its link open, so the
+     * record stays (inactive) — the same rule as commandFinished() for single removals.
+     */
+    public function deleteIfOffAllTargets(Employee $employee, string $batch): void
+    {
+        $targets = DeviceCommand::withoutGlobalScopes()
+            ->where('tenant_id', $employee->tenant_id)
+            ->whereIn('command', [DeviceCommand::REMOVE_USER, DeviceCommand::REMOVE_USERS])
+            ->where('payload', 'like', '%'.$batch.'%')
+            ->pluck('device_id')
+            ->unique()
+            ->all();
+
+        $stillOn = EmployeeDeviceMap::query()
+            ->where('employee_id', $employee->id)
+            ->whereNull('valid_to')
+            ->whereIn('device_id', $targets)
+            ->exists();
+
+        if (! $stillOn) {
+            $employee->delete();
+        }
     }
 
     /** Called by the observer when a command reaches a final state. */
