@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-11-15**
+**Last updated: 2026-11-17**
 
 ---
 
@@ -87,6 +87,28 @@ on):** the audit log's before → after change — `app/Observers/AuditObserver.
 `AuditLogController.php`, `AuditLogResource.php`, `resources/js/spa/pages/audit/*`,
 `tests/Feature/Api/AuditAndErrorLogsTest.php`. It is LIVE (the working tree is production) and
 tested (836 passed then); ask the owner before committing. Owner owes the answers marked **(owner)**.
+
+0000. **Open from 2026-11-16/17 (resume here).**
+   - **DC-048 OPEN — fingerprints lost on Gems WorkShop.** Three people lost their only fingerprint when
+     their terminal ID was changed straight after a restart (HARICHANDRA 981232604, JINU SOBHA NAIR
+     921253150, ASLAM KHAN 860788580): **(owner)** they must enrol again at Gems WorkShop. Fixed in code:
+     no removal unless every finger is confirmed saved (`assertEveryFingerSaved`, `3884d1e`). **(owner)**
+     run `/tmp/gw-capture.php` to take Gems WorkShop's full fingerprint copy (635 people had none).
+     Still unknown: why the 02:30 roster read's vault capture stored nothing there.
+   - **Gems WorkShop stopped answering 2026-11-16 ~13:07 local** during a big bulk delete. Batch jobs
+     (`REMOVE_USERS`, `5f669c8`) retry 3 times over ~7 min and then stop; people not removed stay
+     inactive. **(owner)** once it answers: re-delete the inactive GEMS people, and optionally run
+     `/tmp/gw-batch-removals.php`. Offered, not decided: let batch removals keep retrying for hours.
+   - **Permissions are flexible (2026-11-17, `0162787`).** Owner's rule: nothing hardcoded — any
+     permission can be added to or removed from any person (Users → ⋯ → Permissions) or level;
+     re-seeding never resets a level; Administrator always holds everything. New permission
+     `employees.fingerprint` (take/copy fingerprints only). Terminals follow the company limit
+     (Aghila now sees only her six companies' terminals). Migration and permission seed RUN.
+     **(owner)** create the GEMS HR account as described in the session (HR manager + GEMS only +
+     the fingerprint permission).
+   - **The Seven Hotel (#28, F18, 46.184.130.194:4370)** answered on 2026-11-16 02:30 after the
+     hotel fixed the F18's network: 176 users, none linked yet, fingerprint table did not decode.
+     Next: Import staff, then look at the template decode.
 
 000. **Gems WorkShop punches — DONE 2026-11-15 (DC-047 FIXED).** Library 2.24.0 pushed, installed
    (`4d4f6c4`): a window request answered just after the 8 s timeout is now waited for instead of
