@@ -42,6 +42,22 @@ what was observed on the reference F18, not a datasheet.
 > gets its own file rather than a branch inside the F18 path, and a level confirmed
 > on the F18 is `unknown` on another model until that model has been read.
 
+## The operation log (F18) — read-only, EXPERIMENTAL in a probe only (2026-11-17)
+
+Read as table 4 (`DB_RRQ` + `FCT_OPLOG`, pyzk; openzk) through the windowed read, read-only
+(`tools/zkprobe/oplog-read.php`). Layout found from the bytes and checked against known events, on three
+F18s (IT ROOM 192.168.7.62, City One 46.184.207.245, Gems 192.168.7.64): a 4-byte length, then 16-byte
+records — byte 2 the operation code, bytes 4–7 the packed time (the punch encoding), bytes 8–15 parameters
+(the user ID acted on first). Codes seen and their meaning per the vendor's list: 0 start-up, 3 alarm,
+4 menu opened, 6 fingerprint enrolled, 8 card enrolled, 9 user deleted, 12 card deleted, 13 clear data,
+21 time set, 30 new user, 36 user details changed, 37 holiday, 70 name changed, 71 permission changed,
+78 network gateway changed, 79 DNS changed, 150 restart sent over the network.
+
+**What it does not record (CONFIRMED on Gems, F18, 2026-11-10):** a punch clear sent over the network —
+this system's own clear of 64,272 punches left no entry. So the log can prove a clear was NOT made at the
+terminal; it cannot rule out one made by software. Not a capability and not offered in the app; a probe
+for investigations (casebook DC-049).
+
 ## The UA300 (Catering, 192.168.7.120) — its own set since 2.17.0, no write offered
 
 Identified 2026-10-26 by `device.info` (read-only): **UA300/ID**, "Ver 6.60 May 14 2018",

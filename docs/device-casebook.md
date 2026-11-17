@@ -143,20 +143,38 @@ Template:
   - The terminal's own record counter (`attendanceRecordCount`) says **7**; its clock is right. So nothing is
     lost in the transfer: **the terminal holds only today's punches since about noon.**
   - Our system never sent a clear or wipe to any City One entry (no `clear_attendance` / `wipe_device`).
-- **Root cause:** not yet known. Most likely the terminal's punch log was emptied at the hotel around midday
+  - **Operation log read, read-only** (`tools/zkprobe/oplog-read.php`, traces `traces-2026-11-17/oplog-read-*.json`;
+    research: pyzk const.py FCT_OPLOG = 4, openzk protocol reference). Layout found from the bytes and checked
+    against known events: 16-byte records, byte 2 = operation code, bytes 4–7 = packed time (as punches),
+    bytes 8–15 = parameters (the user ID acted on in the first). Control IT ROOM: 1,729 records, all in order,
+    first = code 13 "clear data" (its set-up, 2023-06-25).
+  - City One: **1,675 events, 2023-07-20 → 2026-11-17, and no clear of any kind** — no code 13 (clear data),
+    23 (delete entry/exit records), 35, 38, 41, 43 (USB download and delete) or 56. Today (local time):
+    10:24 menu; **10:25:38 code 78 and 10:25:52 code 79 — network gateway and DNS changed** (the hotel's fix
+    that let us connect); 10:57 restart; 10:58 user 12's permission (71) and details (36) edited; 15:55:11
+    code 150 + 15:55:41 start-up = **our** restart (command 57760). Codes from the vendor's operation list.
+  - **Control: a clear sent over the network is NOT in the operation log.** Gems (#22, F18) was cleared by
+    this system on 2026-11-10 11:39 UTC (command 35928, 64,272 punches, DC-043); its log's last entry is a
+    menu visit on 2026-11-09 16:52, nothing after. (Gems' table also fits a 32-byte reading, which hid half
+    its events; read with `--stride=16`.)
+- **Root cause:** not proven. The punches were not cleared at City One's terminal (menu or USB): its operation
+  log would show it, and shows nothing since 2023. A clear sent over the network by a program would leave no
+  trace there (shown on Gems), so the likeliest cause is a PC program on the hotel's network that downloads
+  and clears (ZKTime / BioTime / ZKAccess "delete after download"); the old punches would be in that
+  program's database. Earlier note kept for context:  Most likely the terminal's punch log was emptied at the hotel around midday
   on 2026-11-17, before we connected: by someone at the terminal (Data Mgt → Delete attendance), during the
   network set-up, or by other software that downloads and clears (e.g. ZKTime/BioTime "clear after
   download"). Or the staff the hotel means punch on a different terminal.
-- **Fix:** none on our side yet. Questions for the hotel (owner): how many terminals they have; whether a
-  PC program also reads this terminal and clears it; what the terminal's own screen shows for the record
-  count (Menu → System Info). Possible next step: read the terminal's operation log (CMD_OPLOG_RRQ, not
-  implemented; research first, rule 17), which records a clear with its time.
+- **Fix:** none on our side. **(owner, hotel)**: which PC program reads this terminal; if it deletes after
+  download, its database has the old punches (they can be exported and imported here), and it should stop
+  deleting, or this system will keep missing whatever it takes first.
 - **Verified:** n/a.
 - **Evidence:** sync runs 1134–1137; commands 57735–57761; audit log for devices #20, #24, #25
-  (2026-11-03 → 2026-11-17); read-only info read 2026-11-17 13:01 UTC (`/tmp/cityone-info.php`).
+  (2026-11-03 → 2026-11-17); read-only info read 2026-11-17 13:01 UTC (`/tmp/cityone-info.php`);
+  operation-log traces `tools/zkprobe/traces-2026-11-17/oplog-read-*.json` (IT ROOM, City One, Gems).
 - **Status:** OPEN
 - **Keywords:** City One Hotel, only 7 punches, few punches, missing punches, cleared, attendance log empty,
-  record count, 46.184.207.245, CQQC221460518, ZKTime, clear after download
+  record count, 46.184.207.245, CQQC221460518, ZKTime, clear after download, operation log, oplog, FCT_OPLOG, code 78, code 150
 
 ### DC-048 — Gems WorkShop: a terminal-ID change deleted the only copy of a fingerprint
 
