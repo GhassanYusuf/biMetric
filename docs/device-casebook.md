@@ -157,11 +157,19 @@ Template:
     this system on 2026-11-10 11:39 UTC (command 35928, 64,272 punches, DC-043); its log's last entry is a
     menu visit on 2026-11-09 16:52, nothing after. (Gems' table also fits a 32-byte reading, which hid half
     its events; read with `--stride=16`.)
-- **Root cause:** not proven. The punches were not cleared at City One's terminal (menu or USB): its operation
-  log would show it, and shows nothing since 2023. A clear sent over the network by a program would leave no
-  trace there (shown on Gems), so the likeliest cause is a PC program on the hotel's network that downloads
-  and clears (ZKTime / BioTime / ZKAccess "delete after download"); the old punches would be in that
-  program's database. Earlier note kept for context:  Most likely the terminal's punch log was emptied at the hotel around midday
+  - **The hotel's ZKTime export** (owner, 2026-11-17 ~17:00 local; `draft/`, not committed — real names):
+    "Transactions Report" 22-10-2026 → 17-11-2026, **2,428 punches, 68 people**, minute precision, all "Normal".
+    All 7 punches the terminal held are in it (same user IDs and minutes), so it is this terminal. It also has
+    **35 punches from 2026-11-17 00:05 → 10:58** that the terminal no longer held, and **none between 10:58
+    and 12:44**. After the owner's ZKTime pull (~17:00) the terminal held **9** (7 + 2 new): that pull did not
+    delete. (City One was deleted as #24 at 16:35 local and re-added as **#29** at 16:54; deleting #24 removed
+    its 7 punches here; #29 read them again.)
+- **Root cause:** the terminal's punch log was emptied over the network **between 10:58 and 12:44 local on
+  2026-11-17** — after the hotel's network change (10:25) and the restart (10:57), before we first connected
+  (12:34 UTC = 15:34 local). Not at the terminal (no menu/USB clear in the operation log since 2023); a network
+  clear leaves no trace there (shown on Gems). The punches were not lost: the hotel's **ZKTime** has them
+  (it downloaded them before the clear). A later ZKTime pull did not clear, so this was a one-off or a
+  scheduled clear in ZKTime, not "delete after every download". Earlier note kept for context:  Most likely the terminal's punch log was emptied at the hotel around midday
   on 2026-11-17, before we connected: by someone at the terminal (Data Mgt → Delete attendance), during the
   network set-up, or by other software that downloads and clears (e.g. ZKTime/BioTime "clear after
   download"). Or the staff the hotel means punch on a different terminal.
