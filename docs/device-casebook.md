@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-049 | 2026-11-17 | City One Hotel (F18/ID, 46.184.207.245) | First read gets only 7 punches; the hotel says there are many — the terminal itself holds only 7 | OPEN |
 | DC-048 | 2026-11-16 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | A terminal-ID change deleted Harichandra's only fingerprint: the save-before-delete stored nothing, and 753 fingers there had no system copy | OPEN |
 | DC-047 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Full reads get all 16,276 punches but decode as few as 409: a slow window asked for twice makes the F18 serve the rest shifted | FIXED |
 | DC-046 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Import staff fails: a user name in a firmware code page ("DIRISAM<0xA0>PRADEEP") stops the whole roster read | OPEN |
@@ -123,6 +124,39 @@ Template:
 ---
 
 ## Entries
+
+### DC-049 — City One Hotel: the first read gets only 7 punches
+
+- **Date:** 2026-11-17
+- **Devices:** City One Hotel (#24, F18/ID, 46.184.207.245:4370, internet; serial CQQC221460518, firmware
+  Ver 6.60 Oct 12 2021, ZMM210_TFT, MAC 00:17:61:12:3b:84)
+- **Direction:** device → software
+- **Symptom:** owner, 2026-11-17: "I have just added City One Hotel device, I read it, it has only 7 punches;
+  I called the hotel, they said there should be a lot."
+- **What was done:** reads only (database, audit log, one read-only info read of the terminal).
+  - History: the hotel was entered on 2026-11-03/12 under three internet addresses (#20, #24, #25); none ever
+    answered. 2026-11-17 12:34 UTC #24 was pointed at 46.184.207.245, which answered; #20 and #25 were
+    deleted at 12:44. Import staff read 149 users (command 57735). **This is the first time any City One
+    terminal was read; no earlier data exists here.**
+  - Every read (runs 1134–1137, commands 57737–57761, before and after a restart) got **7 records, all
+    decoded**, dated 2026-11-17 09:44–12:45 UTC (12:44–15:45 local).
+  - The terminal's own record counter (`attendanceRecordCount`) says **7**; its clock is right. So nothing is
+    lost in the transfer: **the terminal holds only today's punches since about noon.**
+  - Our system never sent a clear or wipe to any City One entry (no `clear_attendance` / `wipe_device`).
+- **Root cause:** not yet known. Most likely the terminal's punch log was emptied at the hotel around midday
+  on 2026-11-17, before we connected: by someone at the terminal (Data Mgt → Delete attendance), during the
+  network set-up, or by other software that downloads and clears (e.g. ZKTime/BioTime "clear after
+  download"). Or the staff the hotel means punch on a different terminal.
+- **Fix:** none on our side yet. Questions for the hotel (owner): how many terminals they have; whether a
+  PC program also reads this terminal and clears it; what the terminal's own screen shows for the record
+  count (Menu → System Info). Possible next step: read the terminal's operation log (CMD_OPLOG_RRQ, not
+  implemented; research first, rule 17), which records a clear with its time.
+- **Verified:** n/a.
+- **Evidence:** sync runs 1134–1137; commands 57735–57761; audit log for devices #20, #24, #25
+  (2026-11-03 → 2026-11-17); read-only info read 2026-11-17 13:01 UTC (`/tmp/cityone-info.php`).
+- **Status:** OPEN
+- **Keywords:** City One Hotel, only 7 punches, few punches, missing punches, cleared, attendance log empty,
+  record count, 46.184.207.245, CQQC221460518, ZKTime, clear after download
 
 ### DC-048 — Gems WorkShop: a terminal-ID change deleted the only copy of a fingerprint
 
