@@ -845,7 +845,7 @@ class EmployeeController extends Controller
      */
     public function readFingerprints(Request $request, Employee $employee, FingerprintVault $vault): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('enrollFingerprint', $employee);
 
         $data = $request->validate([
             'device_ids' => ['sometimes', 'array'],
@@ -918,7 +918,7 @@ class EmployeeController extends Controller
      */
     public function enrollment(Employee $employee, Device $device): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('enrollFingerprint', $employee);
 
         set_time_limit(60);
 
@@ -940,7 +940,7 @@ class EmployeeController extends Controller
      */
     public function enrollFingerprint(Request $request, Employee $employee, Device $device): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('enrollFingerprint', $employee);
 
         $data = $request->validate([
             'finger_index' => ['required', 'integer', 'min:0', 'max:9'],

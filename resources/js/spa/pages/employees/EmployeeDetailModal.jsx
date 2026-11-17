@@ -25,7 +25,7 @@ import { EmploymentBadges, orgOf } from './employeeLabels';
 // Very likely this firmware family's empty card field; unproven. See AccessCard::SENTINEL.
 const CARD_EMPTY_MARKER = 4294967295;
 
-export default function EmployeeDetailModal({ employee, devices, canEnroll, onClose, onEnroll, onRefreshed }) {
+export default function EmployeeDetailModal({ employee, devices, canEnroll, canFingerprint = false, onClose, onEnroll, onRefreshed }) {
     /*
      * The terminals they are ON RIGHT NOW come first, and the dialog opens on one of
      * them. Opening on whichever terminal happened to be first in the list showed
@@ -640,7 +640,8 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, onCl
                     )}
 
                     <div className="mt-5 flex justify-end gap-2">
-                        {canEnroll && eligible.length > 0 && (
+                        {/* Taking a finger (2026-11-17): employees.fingerprint is enough. */}
+                        {(canEnroll || canFingerprint) && eligible.length > 0 && (
                             <Button variant="soft" onClick={() => onEnroll(employee)}>
                                 Enroll or replace
                             </Button>

@@ -56,25 +56,68 @@ class User extends Authenticatable
     public const DELETE_PERMISSIONS = ['employees.delete', 'devices.delete', 'users.delete'];
 
     /**
-     * Spatie's check, with the per-user delete switch on top. Every can()/authorize() and
-     * policy goes through here (spatie's Gate::before calls checkPermissionTo → this).
+     * Spatie's check, with three things on top (in this order):
+     *
+     *   1. The per-user delete switch (can_delete) takes the delete permissions away.
+     *   2. Permissions removed from THIS user (removed_permissions, owner 2026-11-17: "I can add or
+     *      remove any permission to everyone") are refused even when their level holds them.
+     *   3. The Administrator level holds every company permission, new ones included, without a
+     *      list to keep up to date. Permissions given to this user directly (spatie's direct
+     *      permissions) count as well as their level's.
+     *
+     * Every can()/authorize() and policy goes through here (spatie's Gate::before calls
+     * checkPermissionTo → this).
      */
     public function hasPermissionTo($permission, $guardName = null): bool
     {
         $name = $permission instanceof \Spatie\Permission\Contracts\Permission ? $permission->name : $permission;
-        if ($this->can_delete === false && is_string($name) && in_array($name, self::DELETE_PERMISSIONS, true)) {
-            return false;
+        if (is_string($name)) {
+            if ($this->can_delete === false && in_array($name, self::DELETE_PERMISSIONS, true)) {
+                return false;
+            }
+            if (in_array($name, $this->removedPermissions(), true)) {
+                return false;
+            }
+            if ($this->isAdministrator() && in_array($name, \App\Support\PermissionCatalogue::tenantPermissions(), true)) {
+                return true;
+            }
         }
 
         return $this->traitHasPermissionTo($permission, $guardName);
     }
 
-    /** What this user may actually do: the level's permissions, less delete when switched off. */
+    /** What this user may actually do: level + given to them, less removed, less delete when switched off. */
     public function effectivePermissionNames(): \Illuminate\Support\Collection
     {
-        $names = $this->getAllPermissions()->pluck('name');
+        $names = $this->isAdministrator()
+            ? collect(\App\Support\PermissionCatalogue::tenantPermissions())
+            : $this->getAllPermissions()->pluck('name');
+        $removed = $this->removedPermissions();
 
-        return $this->can_delete === false ? $names->reject(fn ($n) => in_array($n, self::DELETE_PERMISSIONS, true))->values() : $names;
+        return $names->unique()
+            ->reject(fn ($n) => in_array($n, $removed, true))
+            ->reject(fn ($n) => $this->can_delete === false && in_array($n, self::DELETE_PERMISSIONS, true))
+            ->values();
+    }
+
+    /** @return list<string> permissions taken away from this user although their level holds them */
+    public function removedPermissions(): array
+    {
+        $raw = $this->getAttribute('removed_permissions');
+        $list = is_string($raw) ? json_decode($raw, true) : $raw;
+
+        return is_array($list) ? array_values(array_filter($list, 'is_string')) : [];
+    }
+
+    /** @return list<string> permissions given to this user on top of their level */
+    public function grantedPermissionNames(): array
+    {
+        return $this->getDirectPermissions()->pluck('name')->sort()->values()->all();
+    }
+
+    public function isAdministrator(): bool
+    {
+        return $this->hasRole(\App\Support\PermissionCatalogue::ADMIN);
     }
 
     /** The companies this user may see, as ids; null = every company (CompanyAccess). */

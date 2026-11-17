@@ -97,6 +97,8 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
     // Users and permission levels (2026-10-19). Self-lockout and privilege-climb guards
     // are in the controllers.
     Route::put('users/{user}/password', [UserController::class, 'password']);
+    // Permissions given to or taken from one user, on top of their level (2026-11-17).
+    Route::put('users/{user}/permissions', [UserController::class, 'permissions']);
     Route::apiResource('users', UserController::class)->except('show')->names('api.users');
     Route::apiResource('roles', RoleController::class)->except('show')->names('api.roles');
 

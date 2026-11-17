@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Contracts\BiometricDeviceDriver;
 use App\Models\Concerns\BelongsToTenant;
+use App\Models\Concerns\LimitedToUserCompanies;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -13,7 +14,12 @@ use Promoseven\Biometric\Capability\CapabilitySet;
 
 class Device extends Model
 {
-    use BelongsToTenant, HasFactory;
+    /*
+     * LimitedToUserCompanies (2026-11-17): a user limited to some companies sees and uses only
+     * those companies' terminals (devices.company_id), so a GEMS-only account cannot read or enrol
+     * on Camelot. No effect for an unlimited user or a queued job (no signed-in user).
+     */
+    use BelongsToTenant, HasFactory, LimitedToUserCompanies;
 
     /*
      * ADOPTION — a device is read-only until somebody has looked at who is on it.

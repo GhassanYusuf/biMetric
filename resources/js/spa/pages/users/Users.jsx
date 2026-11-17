@@ -7,7 +7,7 @@ import { useConfirm } from '../../shared/confirm';
 import { useToast } from '../../shared/toast';
 import UsersDesktop from './UsersDesktop';
 import UsersMobile from './UsersMobile';
-import { LevelModal, PasswordModal, UserFormModal } from './parts';
+import { LevelModal, PasswordModal, UserFormModal, UserPermissionsModal } from './parts';
 
 /*
 | Users and permission levels (owner, 2026-10-19: "add users tab that has permissions
@@ -87,6 +87,13 @@ export default function Users() {
         }
         toast.success(res.message);
         setEditing(null);
+    }
+
+    async function savePermissions(payload) {
+        const res = await api.put(`/users/${editing.row.id}/permissions`, payload);
+        toast.success(res.message);
+        setEditing(null);
+        load();
     }
 
     async function toggleActive(row) {
@@ -171,6 +178,8 @@ export default function Users() {
         onAddUser: () => setEditing({ kind: 'user' }),
         onEdit: (row) => setEditing({ kind: 'user', row }),
         onPassword: (row) => setEditing({ kind: 'password', row }),
+        // Needs the levels list to know what the person's level already gives them.
+        onPermissions: levels.length > 0 ? (row) => setEditing({ kind: 'permissions', row }) : null,
         onToggleActive: toggleActive,
         onDelete: removeUser,
         onAddLevel: () => setEditing({ kind: 'level' }),
@@ -188,6 +197,16 @@ export default function Users() {
             )}
             {editing?.kind === 'password' && (
                 <PasswordModal user={editing.row} onSubmit={setPassword} onClose={() => setEditing(null)} />
+            )}
+            {editing?.kind === 'permissions' && (
+                <UserPermissionsModal
+                    user={editing.row}
+                    level={levels.find((l) => l.name === editing.row.role) ?? null}
+                    groups={groups}
+                    myPermissions={me?.permissions}
+                    onSubmit={savePermissions}
+                    onClose={() => setEditing(null)}
+                />
             )}
             {editing?.kind === 'level' && (
                 <LevelModal level={editing.row ?? null} groups={groups} canManage={can('roles.manage')} myPermissions={me?.permissions} onSubmit={saveLevel} onClose={() => setEditing(null)} />

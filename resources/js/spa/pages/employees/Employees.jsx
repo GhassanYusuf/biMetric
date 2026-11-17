@@ -896,6 +896,8 @@ export default function Employees() {
         canUpdate: can('employees.update'),
         canDelete: can('employees.delete'),
         canEnroll: can('employees.push'),
+        // Taking fingerprints only (2026-11-17), or everything push allows.
+        canFingerprint: can('employees.fingerprint') || can('employees.push'),
         canReadDevice: can('devices.sync') && devices.some((d) => d.protocol === 'binary' && d.is_active),
         readingDevice,
         total,
@@ -1125,8 +1127,9 @@ export default function Employees() {
             {viewing && !enrolling && (
                 <EmployeeDetailModal
                     employee={rows.find((r) => r.id === viewing.id) ?? viewing}
-                    devices={devices}
+                    devices={devices.length > 0 ? devices : filterDevices}
                     canEnroll={can('employees.push')}
+                    canFingerprint={can('employees.fingerprint')}
                     onClose={() => setViewing(null)}
                     onEnroll={(employee) => setEnrolling(employee)}
                     // An on-demand device read is persisted server-side, so pull
@@ -1137,7 +1140,10 @@ export default function Employees() {
             {enrolling && (
                 <EnrollModal
                     employee={rows.find((r) => r.id === enrolling.id) ?? enrolling}
-                    devices={devices}
+                    // Without the Devices permission the terminal list is the light one, which
+                    // carries protocol and on/off for someone who may take fingerprints.
+                    devices={devices.length > 0 ? devices : filterDevices}
+                    canPush={can('employees.push')}
                     onClose={() => setEnrolling(null)}
                     // A capture changes fingerprint_count / has_card server-side,
                     // so refetch rather than guessing the new values locally.

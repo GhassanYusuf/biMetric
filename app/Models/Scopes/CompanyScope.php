@@ -5,6 +5,7 @@ namespace App\Models\Scopes;
 use App\Models\AttendanceLog;
 use App\Models\Company;
 use App\Models\Department;
+use App\Models\Device;
 use App\Models\Employee;
 use App\Support\CompanyAccess;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,7 +37,8 @@ class CompanyScope implements Scope
 
         match (true) {
             $model instanceof Company => $builder->whereIn("{$table}.id", $ids),
-            $model instanceof Department, $model instanceof Employee => $builder->whereIn("{$table}.company_id", $ids),
+            // A terminal in no company is hidden from a limited user too: it is nobody's to them.
+            $model instanceof Department, $model instanceof Employee, $model instanceof Device => $builder->whereIn("{$table}.company_id", $ids),
             $model instanceof AttendanceLog => $builder->whereIn("{$table}.employee_id", fn ($q) => $q
                 ->select('id')->from('employees')->whereIn('company_id', $ids)),
             default => null,

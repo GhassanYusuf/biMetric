@@ -20,7 +20,7 @@ import { SelectBox, SelectionBar } from './BulkSelection';
 */
 export default function EmployeesMobile({
     rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, treeCountKind, departmentsLoaded, devices, filterDevices,
-    canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
+    canCreate, canDelete, canEnroll, canFingerprint, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
     onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, highlightNoPunches, onToggleHighlightNoPunches, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
@@ -243,7 +243,7 @@ export default function EmployeesMobile({
                             open
                             initialFocus={menuFocus}
                             onOpenChange={(next) => !next && setMenuFor(null)}
-                            items={employeeRowActions(menuRow, { canUpdate, canEnroll, canDelete, onReport, onView, onEdit, onPush, onEnroll, onReadFingerprints, onPushFingerprints, onMerge, onScan, onDelete })}
+                            items={employeeRowActions(menuRow, { canUpdate, canEnroll, canFingerprint, canDelete, onReport, onView, onEdit, onPush, onEnroll, onReadFingerprints, onPushFingerprints, onMerge, onScan, onDelete })}
                         />
                     )}
                 </div>

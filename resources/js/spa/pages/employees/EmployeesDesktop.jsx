@@ -14,7 +14,7 @@ import { SelectBox, SelectionBar } from './BulkSelection';
 // Desktop employees: toolbar + wide data table.
 export default function EmployeesDesktop({
     rows, search, onSearch, filters, onFilters, companies, departments, unassignedCount, treeCountKind, departmentsLoaded, devices, filterDevices,
-    canCreate, canDelete, canEnroll, canUpdate, canReadDevice,
+    canCreate, canDelete, canEnroll, canFingerprint, canUpdate, canReadDevice,
     readingDevice, total, loading, pagination, onPage,
     autoPush, savingAutoPush, canManageSettings, onToggleAutoPush,
     onAdd, onDelete, onEdit, onPush, onMerge, onScan, onMoveTerminal, highlightNoPunches, onToggleHighlightNoPunches, onEnroll, onReadFingerprints, onPushFingerprints, onView, onReadFromDevice, onReport, exportItems,
@@ -300,7 +300,7 @@ export default function EmployeesDesktop({
                     open
                     initialFocus={menuFocus}
                     onOpenChange={(next) => !next && setMenuFor(null)}
-                    items={employeeRowActions(menuRow, { canUpdate, canEnroll, canDelete, onReport, onView, onEdit, onPush, onEnroll, onReadFingerprints, onPushFingerprints, onMerge, onScan, onDelete })}
+                    items={employeeRowActions(menuRow, { canUpdate, canEnroll, canFingerprint, canDelete, onReport, onView, onEdit, onPush, onEnroll, onReadFingerprints, onPushFingerprints, onMerge, onScan, onDelete })}
                 />
             )}
 

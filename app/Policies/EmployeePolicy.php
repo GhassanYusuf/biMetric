@@ -42,4 +42,14 @@ class EmployeePolicy
     {
         return $user->can('employees.push');
     }
+
+    /**
+     * Take a fingerprint on a terminal, see the person's enrollment, copy their fingerprints into
+     * the system (2026-11-17). Granted by employees.fingerprint, or by employees.push which does all
+     * that and more. Deleting fingerprints or cards, moving or removing people stays on push.
+     */
+    public function enrollFingerprint(User $user, Employee $employee): bool
+    {
+        return $user->can('employees.fingerprint') || $user->can('employees.push');
+    }
 }

@@ -161,6 +161,62 @@ class UserController extends Controller
         return ApiResponse::success(null, "{$user->name}'s password changed. Tell them the new one.");
     }
 
+    /**
+     * This user's own permissions on top of their level (owner, 2026-11-17: "keep all permissions,
+     * I can add or remove any permission to everyone — make it flexible"):
+     *
+     *   granted  given to this user although their level does not hold it (spatie direct permission)
+     *   removed  taken from this user although their level holds it (users.removed_permissions)
+     *
+     * Not for yourself (so nobody locks themselves out) and not for an Administrator (that level
+     * always holds everything). You cannot give a permission you do not hold yourself; taking one
+     * away is always allowed. Audited with what was added and removed.
+     */
+    public function permissions(Request $request, User $user): JsonResponse
+    {
+        $this->authorize('update', $user);
+        $all = PermissionCatalogue::tenantPermissions();
+        $data = $request->validate([
+            'granted' => ['present', 'array'],
+            'granted.*' => ['string', 'in:'.implode(',', $all)],
+            'removed' => ['present', 'array'],
+            'removed.*' => ['string', 'in:'.implode(',', $all)],
+        ]);
+
+        if ($request->user()->id === $user->id) {
+            return ApiResponse::error('You cannot change your own permissions.', [], 422);
+        }
+        if ($user->isAdministrator()) {
+            return ApiResponse::error('An Administrator always has every permission. Give them another level to adjust theirs.', [], 422);
+        }
+
+        $granted = array_values(array_unique($data['granted']));
+        $removed = array_values(array_diff(array_unique($data['removed']), $granted));
+        $beforeGranted = $user->grantedPermissionNames();
+        $beforeRemoved = $user->removedPermissions();
+
+        $newlyGiven = array_diff($granted, $beforeGranted);
+        $beyond = array_values(array_filter($newlyGiven, fn ($p) => ! $request->user()->can($p)));
+        if ($beyond !== []) {
+            $message = 'You cannot give permissions you do not have yourself: '.implode(', ', $beyond).'.';
+
+            return ApiResponse::error($message, ['granted' => [$message]], 403);
+        }
+
+        DB::transaction(function () use ($user, $granted, $removed) {
+            $user->syncPermissions($granted);
+            $user->forceFill(['removed_permissions' => $removed === [] ? null : json_encode($removed)])->save();
+        });
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->audit($user->fresh(), 'user.permissions_changed', [
+            'granted' => ['added' => array_values(array_diff($granted, $beforeGranted)), 'removed' => array_values(array_diff($beforeGranted, $granted))],
+            'removed' => ['added' => array_values(array_diff($removed, $beforeRemoved)), 'removed' => array_values(array_diff($beforeRemoved, $removed))],
+        ]);
+
+        return ApiResponse::success($this->present($user->fresh()), "{$user->name}'s permissions saved.");
+    }
+
     public function destroy(Request $request, User $user): JsonResponse
     {
         $this->authorize('delete', $user);

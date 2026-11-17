@@ -6,7 +6,7 @@ use App\Models\Scopes\CompanyScope;
 
 /**
  * A user limited to some companies sees only theirs (owner, 2026-11-05). On Company,
- * Department, Employee and AttendanceLog, beside BelongsToTenant. See CompanyScope.
+ * Department, Employee, AttendanceLog and Device (2026-11-17), beside BelongsToTenant. See CompanyScope.
  */
 trait LimitedToUserCompanies
 {

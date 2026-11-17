@@ -65,9 +65,14 @@ export function lastActive(iso) {
 }
 
 /** The menu items for one user row — identical on both layouts (rule 5). */
-export function userActions(user, { can, onEdit, onPassword, onToggleActive, onDelete }) {
+export function userActions(user, { can, onEdit, onPermissions, onPassword, onToggleActive, onDelete }) {
     return [
         can('users.update') && { key: 'edit', label: 'Edit', onSelect: () => onEdit(user) },
+        // This person's own permissions on top of their level (2026-11-17). Not for yourself, and
+        // not for an Administrator, who always has everything.
+        can('users.update') && onPermissions && !user.is_self && user.role !== 'tenant-admin' && {
+            key: 'permissions', label: 'Permissions', description: 'Add or remove permissions for this person only.', onSelect: () => onPermissions(user),
+        },
         can('users.update') && { key: 'password', label: 'Set new password', onSelect: () => onPassword(user) },
         can('users.update') && !user.is_self && { key: 'active', label: user.is_active ? 'Deactivate' : 'Reactivate', onSelect: () => onToggleActive(user) },
         can('users.delete') && !user.is_self && { key: 'delete', label: 'Delete', tone: 'danger', onSelect: () => onDelete(user) },
@@ -469,6 +474,104 @@ export function LevelModal({ level, groups, canManage, myPermissions, onSubmit, 
                     <div className="flex gap-2">
                         <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>{readOnly ? 'Close' : 'Cancel'}</Button>
                         {!readOnly && <Button type="submit" loading={submitting}>{isEdit ? 'Save level' : 'Create level'}</Button>}
+                    </div>
+                </div>
+            </form>
+        </Dialog>
+    );
+}
+
+/*
+| One person's permissions on top of their level (owner, 2026-11-17: "keep all permissions, I can add
+| or remove any permission to everyone, make it flexible"). Each permission is ticked when this person
+| has it. Ticking one their level lacks GIVES it to them; unticking one their level holds REMOVES it
+| from them only. The level itself, and everyone else on it, are untouched. A permission you do not
+| hold yourself cannot be given (taking away is always allowed).
+| PUT /users/{id}/permissions {granted, removed}.
+*/
+export function UserPermissionsModal({ user, level, groups, myPermissions, onSubmit, onClose }) {
+    const fromLevel = useMemo(() => new Set(level?.permissions ?? []), [level]);
+    const mine = useMemo(() => new Set(myPermissions ?? []), [myPermissions]);
+    const [granted, setGranted] = useState(() => new Set(user.granted_permissions ?? []));
+    const [removed, setRemoved] = useState(() => new Set(user.removed_permissions ?? []));
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState(null);
+    const originallyGranted = useMemo(() => new Set(user.granted_permissions ?? []), [user]);
+
+    const has = (p) => (fromLevel.has(p) && !removed.has(p)) || granted.has(p);
+    const canGive = (p) => mine.has(p) || originallyGranted.has(p);
+
+    function toggle(p) {
+        if (fromLevel.has(p)) {
+            setRemoved((prev) => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
+            setGranted((prev) => { const n = new Set(prev); n.delete(p); return n; });
+        } else {
+            if (!granted.has(p) && !canGive(p)) return;
+            setGranted((prev) => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
+        }
+    }
+
+    async function submit(e) {
+        e.preventDefault();
+        setSubmitting(true);
+        setError(null);
+        try {
+            await onSubmit({ granted: [...granted], removed: [...removed].filter((p) => fromLevel.has(p)) });
+        } catch (err) {
+            setError(err instanceof ApiError ? (err.errors?.granted?.[0] ?? err.message) : 'Could not save the permissions.');
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    const extra = [...granted].filter((p) => !fromLevel.has(p)).length;
+    const taken = [...removed].filter((p) => fromLevel.has(p)).length;
+
+    return (
+        <Dialog title={`Permissions for ${user.name}`} submitting={submitting} onClose={onClose} wide labelledBy="user-perms-title">
+            <form onSubmit={submit} className="flex max-h-[90vh] flex-col" noValidate>
+                <div className="border-b border-slate-100 p-5">
+                    <p id="user-perms-title" className="text-lg font-semibold text-slate-900">Permissions for {user.name}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                        Level: <span className="font-medium text-slate-800">{level?.label ?? user.role_label ?? 'none'}</span>.
+                        Tick or untick to change what <span className="font-medium">this person</span> may do; their level and everyone else on it stay as they are.
+                    </p>
+                    {error && <p className="mt-2 text-sm font-medium text-rose-700" role="alert">{error}</p>}
+                </div>
+                <div className="grid flex-1 gap-4 overflow-y-auto p-5 sm:grid-cols-2">
+                    {groups.map((g) => (
+                        <fieldset key={g.group} className="rounded-xl p-3 ring-1 ring-slate-200">
+                            <legend className="mb-1 text-sm font-semibold text-slate-900">{g.group}</legend>
+                            {g.permissions.map((p) => {
+                                const checked = has(p.name);
+                                const blocked = !checked && !fromLevel.has(p.name) && !canGive(p.name);
+                                const note = fromLevel.has(p.name)
+                                    ? (removed.has(p.name) ? 'removed for this person' : 'from level')
+                                    : (granted.has(p.name) ? 'added for this person' : null);
+                                return (
+                                    <label key={p.name} className={`flex min-h-[36px] items-center gap-2.5 rounded-lg px-1 text-sm ${blocked ? 'cursor-default' : 'cursor-pointer hover:bg-slate-50'}`} title={blocked ? 'You do not have this permission yourself.' : p.name}>
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => toggle(p.name)}
+                                            disabled={blocked || submitting}
+                                            className={`h-4 w-4 rounded border-slate-400 text-violet-600 ${FOCUS}`}
+                                        />
+                                        <span className={`flex-1 ${blocked ? 'text-slate-500' : 'text-slate-800'}`}>{p.label}</span>
+                                        {note && (
+                                            <span className={`shrink-0 text-xs ${note === 'from level' ? 'text-slate-500' : note.startsWith('removed') ? 'font-medium text-rose-700' : 'font-medium text-violet-700'}`}>{note}</span>
+                                        )}
+                                    </label>
+                                );
+                            })}
+                        </fieldset>
+                    ))}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 p-4">
+                    <span className="text-sm text-slate-600">{extra} added, {taken} removed for this person</span>
+                    <div className="flex gap-2">
+                        <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>Cancel</Button>
+                        <Button type="submit" loading={submitting}>Save permissions</Button>
                     </div>
                 </div>
             </form>

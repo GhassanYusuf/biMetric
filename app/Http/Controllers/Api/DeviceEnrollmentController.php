@@ -84,7 +84,7 @@ class DeviceEnrollmentController extends Controller
      */
     public function fingerprint(Request $request, Employee $employee, Device $device): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('enrollFingerprint', $employee);
 
         $data = $request->validate([
             'finger_slot' => ['required', 'integer', 'min:0', 'max:9'],
@@ -150,7 +150,7 @@ class DeviceEnrollmentController extends Controller
      */
     public function cancel(EnrollmentSession $session): JsonResponse
     {
-        $this->authorize('pushToDevice', $session->employee);
+        $this->authorize('enrollFingerprint', $session->employee);
 
         if ($session->isFinished()) {
             return ApiResponse::error(

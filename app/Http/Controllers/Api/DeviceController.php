@@ -66,8 +66,15 @@ class DeviceController extends Controller
         $user = $request->user();
         abort_unless($user->can('devices.view') || $user->can('employees.view'), 403, 'This action is unauthorized.');
 
+        // Someone who may take fingerprints also needs to know which terminals can capture one
+        // (2026-11-17): protocol and on/off, still no address or settings.
+        $forEnrolling = $user->can('employees.fingerprint') || $user->can('employees.push');
+
         return ApiResponse::success(
-            Device::query()->orderBy('name')->get(['id', 'name'])->map(fn ($d) => ['id' => (int) $d->id, 'name' => $d->name])->values(),
+            Device::query()->orderBy('name')->get(['id', 'name', 'protocol', 'is_active'])
+                ->map(fn ($d) => ['id' => (int) $d->id, 'name' => $d->name]
+                    + ($forEnrolling ? ['protocol' => $d->protocol, 'is_active' => (bool) $d->is_active] : []))
+                ->values(),
             'Terminals retrieved.',
         );
     }

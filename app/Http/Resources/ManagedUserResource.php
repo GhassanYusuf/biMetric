@@ -38,6 +38,9 @@ class ManagedUserResource extends JsonResource
             // Owner, 2026-11-05: may this user delete at all, and which companies they see
             // (null = every company).
             'can_delete' => $this->can_delete !== false,
+            // This user's own adjustments on top of their level (2026-11-17).
+            'granted_permissions' => $this->grantedPermissionNames(),
+            'removed_permissions' => $this->removedPermissions(),
             'company_ids' => $this->companyIds(),
         ];
     }

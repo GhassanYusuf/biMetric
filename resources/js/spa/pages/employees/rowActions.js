@@ -17,21 +17,23 @@
 | it has no place in that order — it goes where it does the job, immediately
 | before Merge, because finding the duplicates is the first half of merging them.
 */
-export function employeeRowActions(employee, { canUpdate, canEnroll, canDelete, onReport, onView, onEdit, onPush, onEnroll, onReadFingerprints, onPushFingerprints, onMerge, onDelete, onScan }) {
+export function employeeRowActions(employee, { canUpdate, canEnroll, canFingerprint = false, canDelete, onReport, onView, onEdit, onPush, onEnroll, onReadFingerprints, onPushFingerprints, onMerge, onDelete, onScan }) {
     return [
         // What the ROW used to do on click (2026-10-05): the row now opens this
         // menu, so the per-finger/per-terminal detail is an item in it. Read-only,
         // so it needs no permission beyond seeing the roster.
         onView && { key: 'view', label: 'Enrollment', description: 'Fingerprints, card and which terminals hold them.', onSelect: () => onView(employee) },
-        onView && (canUpdate || canEnroll || canDelete || onReport) && { key: 'sep-view', separator: true },
+        onView && (canUpdate || canEnroll || canFingerprint || canDelete || onReport) && { key: 'sep-view', separator: true },
         // Read-only, so it needs no permission beyond seeing the roster (2026-09-27).
         onReport && { key: 'report', label: 'Report', description: 'Attendance dashboard for this person.', onSelect: () => onReport(employee) },
-        onReport && (canUpdate || canEnroll || canDelete) && { key: 'sep-report', separator: true },
+        onReport && (canUpdate || canEnroll || canFingerprint || canDelete) && { key: 'sep-report', separator: true },
         canUpdate && { key: 'edit', label: 'Edit', description: 'Profile, details and access levels.', onSelect: () => onEdit(employee) },
         canEnroll && { key: 'push', label: 'Push', description: 'Write them onto terminals as they are.', onSelect: () => onPush(employee) },
-        canEnroll && { key: 'enroll', label: 'Enroll', description: 'Fingerprint or card, on a terminal.', onSelect: () => onEnroll(employee) },
+        // Taking a finger needs only employees.fingerprint (2026-11-17); the card half of the
+        // dialog stays on employees.push and is hidden without it.
+        (canEnroll || canFingerprint) && { key: 'enroll', label: 'Enroll', description: 'Fingerprint or card, on a terminal.', onSelect: () => onEnroll(employee) },
         // Read-only on the terminals: copies their fingerprints into the system (2026-09-24).
-        canEnroll && onReadFingerprints && { key: 'read-fingers', label: 'Read fingerprints to system', description: 'Copy them from the terminals. Changes nothing there.', onSelect: () => onReadFingerprints(employee) },
+        (canEnroll || canFingerprint) && onReadFingerprints && { key: 'read-fingers', label: 'Read fingerprints to system', description: 'Copy them from the terminals. Changes nothing there.', onSelect: () => onReadFingerprints(employee) },
         // Writes stored copies to terminals they are on that lack those fingers (2026-09-24):
         // how a finger enrolled on the F18 reaches a C3 door panel. Add-only.
         canEnroll && onPushFingerprints && { key: 'push-fingers', label: 'Push fingerprints to terminals', description: 'Copy stored fingers to terminals missing them. Never overwrites.', onSelect: () => onPushFingerprints(employee) },

@@ -17,6 +17,9 @@ class RolesAndPermissionsSeeder extends Seeder
      */
     public const PERMISSIONS = [
         'employees.view', 'employees.create', 'employees.update', 'employees.delete', 'employees.push',
+        // Take a fingerprint on a terminal and copy fingerprints into the system — nothing that
+        // deletes or moves anyone (owner, 2026-11-17: a GEMS HR account that views and enrols).
+        'employees.fingerprint',
         'devices.view', 'devices.create', 'devices.update', 'devices.delete', 'devices.sync', 'devices.enroll',
         'attendance.view', 'attendance.view.self', 'attendance.sync', 'attendance.waive',
         'holidays.view', 'holidays.manage',
@@ -78,10 +81,18 @@ class RolesAndPermissionsSeeder extends Seeder
             fn (string $p) => ! str_starts_with($p, 'tenants.'),
         ));
 
+        /*
+         * The starting permissions of a NEW company's built-in levels only (owner, 2026-11-17:
+         * "I can add or remove any permission to everyone, don't hardcode permissions to any
+         * roles"). A level that already exists keeps whatever was set on the Users screen;
+         * re-running this never resets it. Administrator needs no list at all: it always holds
+         * every permission (User::hasPermissionTo), new ones included.
+         */
         foreach (self::TENANT_ROLES as $roleName => $permissions) {
             $role = Role::findOrCreate($roleName, 'web');
-            $grant = $permissions === '*' ? $tenantPermissions : $permissions;
-            $role->syncPermissions($grant);
+            if ($role->wasRecentlyCreated) {
+                $role->syncPermissions($permissions === '*' ? $tenantPermissions : $permissions);
+            }
         }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
