@@ -87,12 +87,22 @@ class EmployeeEmploymentTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors('employment_type');
     }
 
-    public function test_a_resignation_makes_the_employee_inactive_and_cannot_be_in_the_future(): void
+    /**
+     * A reached resignation makes them inactive. A FUTURE date is allowed since 2026-11-17 (owner:
+     * "will the access be removed on 29 Nov?"): they stay active, with access, until that day, when
+     * employees:end-access takes them off (AccessExpiry, AccessExpiryTest).
+     */
+    public function test_a_resignation_makes_the_employee_inactive_and_a_future_one_waits_for_its_day(): void
     {
         $e = $this->employee('Omar', '102');
+        $later = now(config('attendance.timezone'))->addDays(5)->toDateString();
 
-        $this->as()->putJson("/api/employees/{$e->id}", $this->body($e, ['resigned_at' => now()->addDay()->toDateString()]))
-            ->assertStatus(422)->assertJsonValidationErrors('resigned_at');
+        $this->as()->putJson("/api/employees/{$e->id}", $this->body($e, ['resigned_at' => $later, 'is_active' => true]))
+            ->assertOk()
+            ->assertJsonPath('data.resigned_at', $later)
+            ->assertJsonPath('data.is_active', true)
+            ->assertJsonPath('data.resigned', false)
+            ->assertJsonPath('data.resigns_later', true);
 
         $this->as()->putJson("/api/employees/{$e->id}", $this->body($e, ['resigned_at' => '2026-10-01', 'is_active' => true]))
             ->assertOk()

@@ -54,7 +54,7 @@ class EmployeeRoster
                 'name' => $employee->fullName(),
                 'initials' => $this->initials($employee->fullName()),
                 'photo' => $this->photo($employee),
-                'resigned' => $employee->resigned_at !== null,
+                'resigned' => $employee->isResigned(),
                 'active' => (bool) $employee->is_active,
                 'company' => $company,
                 'department' => $department,
@@ -133,8 +133,11 @@ class EmployeeRoster
 
     private function status(Employee $employee): string
     {
-        if ($employee->resigned_at !== null) {
+        if ($employee->isResigned()) {
             return 'Resigned '.$employee->resigned_at->format('j M Y');
+        }
+        if ($employee->resignsLater()) {
+            return 'Active · resigns '.$employee->resigned_at->format('j M Y');
         }
 
         return $employee->is_active ? 'Active' : 'Inactive';

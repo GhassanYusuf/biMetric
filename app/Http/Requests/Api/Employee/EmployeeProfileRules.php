@@ -42,7 +42,8 @@ trait EmployeeProfileRules
              * them during their notice period. Nothing runs later to do it on the day.
              */
             'employment_type' => ['sometimes', Rule::in(Employee::EMPLOYMENT_TYPES)],
-            'resigned_at' => ['nullable', 'date', 'before_or_equal:today'],
+            // A future date is allowed (2026-11-17): they keep access until that day.
+            'resigned_at' => ['nullable', 'date'],
 
             'job_title' => ['nullable', 'string', 'max:255'],
             'office' => ['nullable', 'string', 'max:255'],
@@ -89,7 +90,6 @@ trait EmployeeProfileRules
             'employee_code.regex' => 'The employee code must be digits only, up to 9.',
             'device_password.regex' => 'The device password must be 1 to 8 digits.',
             'access_valid_to.after' => 'The end date must be after the start date.',
-            'resigned_at.before_or_equal' => 'Enter the resignation date once it has been reached — saving it takes them off the terminals straight away.',
             'employment_type.in' => 'Choose full-time or part-time.',
             'mobile_phone.regex' => 'Use digits only, after the country code.',
             'home_phone.regex' => 'Use digits only, after the country code.',

@@ -120,3 +120,23 @@ Schedule::call(fn () => app(\App\Services\Integration\PunchWebhookRelay::class)-
 */
 Schedule::call(fn () => \App\Services\Reports\EmployeeReportsExport::prune())
     ->dailyAt('03:15')->name('report-exports-prune')->withoutOverlapping();
+
+/*
+ * End terminal access on the day it is due (owner, 2026-11-17): resignations whose date has arrived,
+ * and valid periods that have ended. Just after midnight office time, so a resignation dated 29 Nov
+ * takes them off the terminals early on the 29th. Idempotent: whoever is still on a terminal (offline
+ * that night, a refusal) is taken again the next night. See App\Services\Employees\AccessExpiry.
+ */
+Artisan::command('employees:end-access', function () {
+    $r = app(\App\Services\Employees\AccessExpiry::class)->run();
+    $this->info("Resigned today or earlier: {$r['resigned']}; valid period ended: {$r['expired']}; removal jobs queued: {$r['jobs']}.");
+    foreach ($r['skipped'] as $terminal => $why) {
+        $this->warn("Not writable: {$terminal} ({$why})");
+    }
+})->purpose('Take people off the terminals once their resignation date or valid period end is reached');
+
+Schedule::command('employees:end-access')
+    ->dailyAt('00:05')
+    ->timezone(config('attendance.timezone'))
+    ->name('employees-end-access')
+    ->withoutOverlapping();

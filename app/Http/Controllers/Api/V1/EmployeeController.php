@@ -63,8 +63,8 @@ class EmployeeController extends Controller
             ->when($request->filled('department_id'), fn ($q) => $q->where('department_id', $request->integer('department_id')))
             ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
             ->when($request->filled('resigned') && Employee::hasEmploymentColumns(), fn ($q) => $request->boolean('resigned')
-                ? $q->whereNotNull('resigned_at')
-                : $q->whereNull('resigned_at'))
+                ? $q->resignedNow()
+                : $q->notResignedNow())
             ->when($request->filled('employment_type') && Employee::hasEmploymentColumns(), fn ($q) => $q->where('employment_type', $request->string('employment_type')))
             ->when($request->filled('device_id'), fn ($q) => $q->whereHas(
                 'deviceMaps',

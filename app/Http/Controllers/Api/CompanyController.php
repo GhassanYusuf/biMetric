@@ -28,7 +28,7 @@ class CompanyController extends Controller
         // beside PROMOSEVEN while its list said 111).
         $companies = Company::query()
             ->withCount([
-                'departments', 'employees', 'employees as current_count' => fn ($q) => $q->whereNull('resigned_at'),
+                'departments', 'employees', 'employees as current_count' => fn ($q) => $q->notResignedNow(),
                 // Its terminals by their Active switch (owner, 2026-11-11: "the number of devices
                 // that are active and inactive in the company card").
                 'devices as devices_active_count' => fn ($q) => $q->where('is_active', true),
@@ -41,7 +41,7 @@ class CompanyController extends Controller
         // The tree's "Unassigned" node: people in no company.
         return ApiResponse::success(CompanyResource::collection($companies), 'Companies retrieved.', [
             'unassigned_count' => Employee::query()->whereNull('company_id')->count(),
-            'unassigned_current_count' => Employee::query()->whereNull('company_id')->whereNull('resigned_at')->count(),
+            'unassigned_current_count' => Employee::query()->whereNull('company_id')->notResignedNow()->count(),
         ]);
     }
 

@@ -602,10 +602,10 @@ class EmployeeController extends Controller
     {
         $this->authorize('pushToDevice', $employee);
 
-        // A resigned employee is kept off the terminals (2026-10-12). Clear the
-        // resignation date first to put them back.
-        if ($employee->isResigned()) {
-            return ApiResponse::error("{$employee->name} has resigned, so is not put on terminals. Clear the resignation date first.", [], 409);
+        // A resigned employee is kept off the terminals (2026-10-12), and so is one whose valid
+        // period has ended (2026-11-17).
+        if ($reason = $employee->accessEndedReason()) {
+            return ApiResponse::error($reason, [], 409);
         }
 
         $data = $request->validate([
@@ -748,10 +748,10 @@ class EmployeeController extends Controller
     {
         $this->authorize('pushToDevice', $employee);
 
-        // A resigned employee is kept off the terminals (2026-10-12). Clear the
-        // resignation date first to put them back.
-        if ($employee->isResigned()) {
-            return ApiResponse::error("{$employee->name} has resigned, so is not put on terminals. Clear the resignation date first.", [], 409);
+        // A resigned employee is kept off the terminals (2026-10-12), and so is one whose valid
+        // period has ended (2026-11-17).
+        if ($reason = $employee->accessEndedReason()) {
+            return ApiResponse::error($reason, [], 409);
         }
 
         if ($refusal = $device->userWriteRefusal()) {

@@ -110,7 +110,9 @@ class Employee extends Model
                 unset($employee->employment_type, $employee->resigned_at);
             }
 
-            if ($employee->resigned_at !== null) {
+            // Inactive once the resignation date is REACHED (2026-11-17: a future date keeps them
+            // active, with access, until then — employees:end-access acts on the day).
+            if ($employee->resigned_at !== null && $employee->resigned_at->toDateString() <= static::officeToday()) {
                 $employee->is_active = false;
             }
 
@@ -160,9 +162,52 @@ class Employee extends Model
         return $ready ??= \Illuminate\Support\Facades\Schema::hasColumn('employees', 'resigned_at');
     }
 
+    /** Resigned AS OF TODAY: a date that has been reached. A future date is a resignation still to come. */
     public function isResigned(): bool
     {
-        return $this->resigned_at !== null;
+        return $this->resigned_at !== null && $this->resigned_at->toDateString() <= static::officeToday();
+    }
+
+    /**
+     * Why this person must not be on a terminal now, or null (2026-11-17): resigned as of today, or a
+     * valid period whose end date has passed. Used to refuse a push; employees:end-access removes them.
+     */
+    public function accessEndedReason(): ?string
+    {
+        if ($this->isResigned()) {
+            return "{$this->name} has resigned, so is not put on terminals. Clear the resignation date first.";
+        }
+        if ($this->valid_period_enabled && $this->access_valid_to !== null && $this->access_valid_to->toDateString() < static::officeToday()) {
+            return "{$this->name}'s access ended on {$this->access_valid_to->format('j M Y')} (valid period), so is not put on terminals. Extend or turn off the valid period first.";
+        }
+
+        return null;
+    }
+
+    /** A resignation date still in the future (2026-11-17): active, with access, until that day. */
+    public function resignsLater(): bool
+    {
+        return $this->resigned_at !== null && $this->resigned_at->toDateString() > static::officeToday();
+    }
+
+    /** Today's date at the office (attendance.timezone), as Y-m-d — the day a resignation takes effect on. */
+    public static function officeToday(): string
+    {
+        return now(config('attendance.timezone'))->toDateString();
+    }
+
+    /** Resigned as of today (the date has been reached). */
+    public function scopeResignedNow(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        // whereDate: a date column may come back with a time part (SQLite), and '2026-11-29 00:00:00'
+        // is not <= '2026-11-29' as text.
+        return $query->whereNotNull($query->qualifyColumn('resigned_at'))->whereDate($query->qualifyColumn('resigned_at'), '<=', static::officeToday());
+    }
+
+    /** Still employed as of today: no resignation, or one still to come. */
+    public function scopeNotResignedNow(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query->where(fn ($q) => $q->whereNull($query->qualifyColumn('resigned_at'))->orWhereDate($query->qualifyColumn('resigned_at'), '>', static::officeToday()));
     }
 
     /**

@@ -79,9 +79,11 @@ class EmployeeRosterQuery
             ->when($request->filled('is_active'), fn ($q) => $q->where('is_active', $request->boolean('is_active')))
             // Resigned (2026-10-12): `1` only them, `0` everyone still employed. Absent =
             // both, so other callers (search, merge) still find a resigned person.
+            // A resignation counts once its date is reached (2026-11-17): someone resigning on a
+            // future date is still current staff until then.
             ->when($request->filled('resigned') && Employee::hasEmploymentColumns(), fn ($q) => $request->boolean('resigned')
-                ? $q->whereNotNull('resigned_at')
-                : $q->whereNull('resigned_at'))
+                ? $q->resignedNow()
+                : $q->notResignedNow())
             // Enrolled on a specific terminal, via the live mapping — not the flat
             // snapshot columns, which cannot say WHICH device once there are two.
             ->when($request->filled('device_id'), fn ($q) => $q->whereHas(

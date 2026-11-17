@@ -171,6 +171,17 @@ is deleted once its person is off every terminal queued for them (`deleteIfOffAl
 each person re-read the whole terminal: ~10 s a person on Gems WorkShop (719 users, 801 fingerprints,
 internet). The single-person Delete still queues one `REMOVE_USER`.
 
+#### Access that ends on a date (2026-11-17)
+
+`employees:end-access`, nightly at 00:05 office time (`App\Services\Employees\AccessExpiry`): people
+whose **resignation date** has been reached are made inactive and taken off every terminal; people
+whose **valid period** has ended (`access_valid_to` < today; valid through that date) are taken off,
+their record otherwise unchanged. A resignation dated in the future keeps them active and on the
+terminals until that day. Removal is the batch removal (`takeManyOffTerminals` → `REMOVE_USERS`), so
+every rule above holds; nothing is deleted from the system. Whoever is still on a terminal the next
+night is taken again; a terminal that cannot be written is notified to the users who may edit
+employees. A push refuses anyone whose access has ended (`Employee::accessEndedReason`).
+
 ### 3. Restore on every add — automatically
 
 Every way a person is put on a terminal ends in `DeviceUserSyncService::pushEmployee()`

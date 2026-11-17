@@ -40,6 +40,8 @@ class ScheduledJobController extends Controller
         'expire-stale-enrollments' => ['* * * * *', 'Expire stuck enrollments', 'Ends a fingerprint enrollment whose worker died, so the person can start again.'],
         'fingerprint-copies-nightly' => ['30 2 * * *', 'Nightly copy of fingerprints and cards', 'Every terminal\'s users, fingers and cards stored in the system, so removing someone never loses them (rule 19).'],
         'webhooks:relay-punches' => ['* * * * *', 'Send punches to webhooks', 'Hands new punches to integration subscribers.'],
+        // 00:05 OFFICE time (->timezone(attendance.timezone)), not UTC like the others.
+        'employees-end-access' => ['5 0 * * *', 'End access on the day', 'Takes people off the terminals once their resignation date or valid period end is reached (00:05 office time).'],
         'report-exports-prune' => ['15 3 * * *', 'Clear old report files', 'Deletes employee report files after 7 days.'],
     ];
 

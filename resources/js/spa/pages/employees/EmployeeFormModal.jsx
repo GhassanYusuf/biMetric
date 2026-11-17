@@ -227,7 +227,8 @@ export default function EmployeeFormModal({
 
     // A resigned person still on a terminal (the removal was declined, or failed) opens
     // with those terminals already moved off, so the next save offers it again.
-    const [onTerminals, setOnTerminals] = useState(() => (employee?.resigned_at ? lockedIds : enrolledIds));
+    const today = new Date().toLocaleDateString('en-CA');
+    const [onTerminals, setOnTerminals] = useState(() => (employee?.resigned_at && employee.resigned_at <= today ? lockedIds : enrolledIds));
     /*
      * A panel that takes no names (a C3) but can move a user to a new ID is pushed to
      * when the Personnel ID differs from its user ID there — the server then does only
@@ -245,7 +246,10 @@ export default function EmployeeFormModal({
      * card and fingers in the system first (rule 19). Nothing is pushed to a resigned
      * person.
      */
-    const resigned = form.resigned_at !== '';
+    // A resignation counts once its date is reached (2026-11-17). A future date keeps them on the
+    // terminals, active, until that day; employees:end-access takes them off early on the day.
+    const resigned = form.resigned_at !== '' && form.resigned_at <= today;
+    const resignsLater = form.resigned_at !== '' && form.resigned_at > today;
     const wanted = resigned ? [] : onTerminals.filter((id) => writableIds.includes(id) || renumberOnly.includes(id));
     /*
      * PUSH ONLY WHAT IS OUT OF DATE (2026-10-12, owner: "if nothing changed you don't
@@ -366,16 +370,19 @@ export default function EmployeeFormModal({
         if (key === 'employee_code') codeTouched.current = true;
         if (key === 'device_password') passwordTouched.current = true;
         if (key === 'resigned_at') {
-            // Entered: off every terminal this app can write to. Cleared again: back as they were.
-            if (value !== '' && form.resigned_at === '') setOnTerminals(lockedIds);
-            if (value === '' && form.resigned_at !== '') setOnTerminals(enrolledIds);
+            // Reached (today or earlier): off every terminal this app can write to. Empty or a future
+            // date: back as they were — a future resignation is acted on that day, not now.
+            const nowResigned = value !== '' && value <= today;
+            const wasResigned = form.resigned_at !== '' && form.resigned_at <= today;
+            if (nowResigned && !wasResigned) setOnTerminals(lockedIds);
+            if (!nowResigned && wasResigned) setOnTerminals(enrolledIds);
         }
         // A new company empties the department: it belonged to the old one.
         if (key === 'company_id') {
             setForm((f) => ({ ...f, company_id: value, unit_id: '' }));
             return;
         }
-        setForm((f) => ({ ...f, [key]: value, ...(key === 'resigned_at' && value !== '' ? { is_active: false } : {}) }));
+        setForm((f) => ({ ...f, [key]: value, ...(key === 'resigned_at' && value !== '' && value <= today ? { is_active: false } : {}) }));
     }
 
     async function createCompany(name) {
@@ -870,13 +877,14 @@ export default function EmployeeFormModal({
                                         <Row label="Resigned on" htmlFor="employee-resigned">
                                             <DateField
                                                 id="employee-resigned"
-                                                max={new Date().toLocaleDateString('en-CA')}
                                                 value={form.resigned_at}
                                                 onChange={(e) => set('resigned_at', e.target.value)}
                                                 error={err('resigned_at')}
                                                 hint={resignRemoves.length > 0
                                                     ? `Saving takes them off ${resignRemoves.join(', ')}. Their card and fingerprints are kept here and put back if they are added again.`
-                                                    : resigned ? 'Inactive, and kept off every terminal. Clear the date to bring them back.' : 'Leave empty while they work here.'}
+                                                    : resigned ? 'Inactive, and kept off every terminal. Clear the date to bring them back.'
+                                                        : resignsLater ? `They keep working and keep their access until then. Early on ${form.resigned_at} the system takes them off every terminal automatically, card and fingerprints kept here.`
+                                                            : 'Leave empty while they work here. A future date takes them off the terminals on that day.'}
                                             />
                                         </Row>
                                     )}
@@ -1062,12 +1070,22 @@ export default function EmployeeFormModal({
                                     <DateField id="employee-valid-from" disabled={!form.valid_period_enabled} value={form.access_valid_from} onChange={(e) => set('access_valid_from', e.target.value)} error={err('access_valid_from')} />
                                 </Row>
                                 <Row label="End date" htmlFor="employee-valid-to">
-                                    <DateField id="employee-valid-to" disabled={!form.valid_period_enabled} value={form.access_valid_to} min={form.access_valid_from || undefined} onChange={(e) => set('access_valid_to', e.target.value)} error={err('access_valid_to')} />
+                                    <DateField
+                                        id="employee-valid-to"
+                                        disabled={!form.valid_period_enabled}
+                                        value={form.access_valid_to}
+                                        min={form.access_valid_from || undefined}
+                                        onChange={(e) => set('access_valid_to', e.target.value)}
+                                        error={err('access_valid_to')}
+                                        hint={form.valid_period_enabled && form.access_valid_to ? `Valid through ${form.access_valid_to}; the next night they are taken off every terminal.` : undefined}
+                                    />
                                 </Row>
                             </div>
 
                             <p className="text-xs text-slate-500">
-                                The group and the valid period are saved here only. Nothing is written to the door panels yet.
+                                The day after the end date, the system takes them off every terminal (card and fingerprints kept here) and
+                                will not put them back until the period is extended or turned off. The group and the start date are saved
+                                here only.
                             </p>
                         </div>
                     </fieldset>

@@ -101,6 +101,11 @@ class EmployeeResource extends JsonResource
             // Employment (2026-10-12). A label and a date; resigned ⇒ inactive.
             'employment_type' => $this->employment_type ?? 'full_time',
             'resigned_at' => $this->resigned_at?->toDateString(),
+            // As of today (2026-11-17): a future resignation date is not yet a resignation.
+            'resigned' => $this->isResigned(),
+            'resigns_later' => $this->resignsLater(),
+            // Valid period over and not resigned: kept off the terminals (employees:end-access).
+            'access_ended' => ! $this->isResigned() && $this->accessEndedReason() !== null,
             'office' => $this->office,
             'education' => $this->education,
             'country' => $this->country,

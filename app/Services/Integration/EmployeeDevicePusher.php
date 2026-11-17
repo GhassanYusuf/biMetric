@@ -37,9 +37,10 @@ class EmployeeDevicePusher
         $skipped = [];
 
         foreach ($devices as $device) {
-            // A resigned employee is kept OFF the terminals (2026-10-12).
-            if ($employee->isResigned()) {
-                $skipped[] = ['device_id' => $device->id, 'device_name' => $device->name, 'reason' => "{$employee->name} has resigned, so is not put on terminals."];
+            // A resigned employee is kept OFF the terminals (2026-10-12), and so is one whose valid
+            // period has ended (2026-11-17).
+            if ($reason = $employee->accessEndedReason()) {
+                $skipped[] = ['device_id' => $device->id, 'device_name' => $device->name, 'reason' => $reason];
 
                 continue;
             }
