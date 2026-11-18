@@ -82,11 +82,7 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 ### Open at the end of 2026-11-10 (resume here)
 
 Committed on `main` here but **not pushed**: everything since `7da1d96` (owner runs
-`git push origin main`). **NOT committed (owner stopped the commit on 2026-11-09, then moved
-on):** the audit log's before → after change — `app/Observers/AuditObserver.php`,
-`AuditLogController.php`, `AuditLogResource.php`, `resources/js/spa/pages/audit/*`,
-`tests/Feature/Api/AuditAndErrorLogsTest.php`. It is LIVE (the working tree is production) and
-tested (836 passed then); ask the owner before committing. Owner owes the answers marked **(owner)**.
+`git push origin main`). The audit log's before → after change, left uncommitted on 2026-11-09, was committed on 2026-11-18 (`9e0f8c5`) at the owner's request. `docs/database-diagram.md` stays uncommitted (owner, 2026-11-18). Owner owes the answers marked **(owner)**.
 
 0000. **Open from 2026-11-16/17 (resume here).**
    - **DC-048 OPEN — fingerprints lost on Gems WorkShop.** Three people lost their only fingerprint when
