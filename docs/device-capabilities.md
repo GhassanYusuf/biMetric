@@ -42,6 +42,20 @@ what was observed on the reference F18, not a datasheet.
 > gets its own file rather than a branch inside the F18 path, and a level confirmed
 > on the F18 is `unknown` on another model until that model has been read.
 
+## Doors — what each model can tell us (2026-11-18, library 2.25.0)
+
+| Model | Door events | Live door status | Evidence |
+|---|---|---|---|
+| F18 / F18/ID | CONFIRMED — operation log: exit button (code 3, type 53), alarm (55), start-ups, menu visits | NOT_IMPLEMENTED — CMD 75 answered 01 through 40 s of exit-button presses and door openings (DC-035) | oplog-read traces 2026-11-17/18 |
+| F22/ID, UA300/ID, unidentified | UNKNOWN (never read) | UNKNOWN | — |
+| inBIO460 (Glass Door) | IMPLEMENTED — RTLOG events (0 valid user, 202 exit button) | IMPLEMENTED — RTLOG status record: doors 1–2 read **open, open too long** at 2026-11-18 ~12:00 local, steady over 4 polls; not yet checked at the doors | `tools/zkprobe/c3-rtlog.php`, traces `traces-2026-11-18/c3-rtlog-*.json` |
+| TF1700 (Entrance) | IMPLEMENTED — RTLOG answered once with events (202 exit button, punches) | UNKNOWN — no status record; later polls timed out with nothing new (two runs) | same |
+
+The lock (relay) state itself is reported by no model. RTLOG hands each event out once per panel (the
+transaction table — the punches the sync reads — is separate and untouched). The F18's lock settings
+(`LockOn` 10 s, `DoorSensorTimeout` 30 s on IT ROOM, Camelot, Good Wheels) are read with the door events.
+IT ROOM has no door sensor wired (no type-54 event ever).
+
 ## Capacities — read with "Read info", kept only when the reply checks itself (2026-11-18)
 
 `ZktecoDriver::info()` adds `user_capacity`, `fingerprint_capacity` and `log_capacity` from GET_FREE_SIZES

@@ -1,0 +1,159 @@
+{
+    "label": "c3-rtlog",
+    "host": "192.168.7.61:4370,192.168.7.60:4370",
+    "started_at": "2026-11-18T09:03:06+00:00",
+    "question": "Does RTLOG (0x0B) report live door state on our C3 panels?",
+    "panels": [
+        {
+            "id": 13,
+            "name": "Glass Door",
+            "model": "inBIO460",
+            "polls": [
+                {
+                    "n": 1,
+                    "reply": 200,
+                    "bytes": 16,
+                    "records": [
+                        {
+                            "raw": "0202000002020000c800ff00faef7e33",
+                            "event": 255,
+                            "meaning": "door/alarm status",
+                            "doors": {
+                                "1": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "2": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "3": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                },
+                                "4": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "n": 2,
+                    "reply": 200,
+                    "bytes": 16,
+                    "records": [
+                        {
+                            "raw": "0202000002020000c800ff00fbef7e33",
+                            "event": 255,
+                            "meaning": "door/alarm status",
+                            "doors": {
+                                "1": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "2": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "3": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                },
+                                "4": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "n": 3,
+                    "reply": 200,
+                    "bytes": 16,
+                    "records": [
+                        {
+                            "raw": "0202000002020000c800ff00fcef7e33",
+                            "event": 255,
+                            "meaning": "door/alarm status",
+                            "doors": {
+                                "1": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "2": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "3": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                },
+                                "4": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "n": 4,
+                    "reply": 200,
+                    "bytes": 16,
+                    "records": [
+                        {
+                            "raw": "0202000002020000c800ff00fdef7e33",
+                            "event": 255,
+                            "meaning": "door/alarm status",
+                            "doors": {
+                                "1": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "2": {
+                                    "sensor": "open",
+                                    "alarm": false,
+                                    "open_too_long": true
+                                },
+                                "3": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                },
+                                "4": {
+                                    "sensor": "unknown",
+                                    "alarm": false,
+                                    "open_too_long": false
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": 14,
+            "name": "Entrance",
+            "model": "TF1700",
+            "polls": [],
+            "error": "busy"
+        }
+    ],
+    "finished_at": "2026-11-18T09:03:10+00:00"
+}

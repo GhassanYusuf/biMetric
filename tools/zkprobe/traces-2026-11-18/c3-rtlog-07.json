@@ -1,0 +1,16 @@
+{
+    "label": "c3-rtlog",
+    "host": "192.168.7.60:4370",
+    "started_at": "2026-11-18T09:05:43+00:00",
+    "question": "Does RTLOG (0x0B) report live door state on our C3 panels?",
+    "panels": [
+        {
+            "id": 14,
+            "name": "Entrance",
+            "model": "TF1700",
+            "polls": [],
+            "error": "Promoseven\\Biometric\\Exception\\TimeoutException: No C3 reply to command 0x0B from 192.168.7.60 within 6.0s."
+        }
+    ],
+    "finished_at": "2026-11-18T09:05:52+00:00"
+}
