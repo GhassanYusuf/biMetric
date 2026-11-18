@@ -124,6 +124,36 @@ class ZktecoDriver implements BiometricDeviceDriver
     }
 
     /**
+     * An F18's door information (2026-11-18, library 2.25.0): the door and alarm events from its
+     * operation log, newest first, and its lock settings. No live status — the F18 reports none
+     * (CMD 75 does not reflect the door, casebook DC-035). Read-only.
+     */
+    public function door(Device $device): array
+    {
+        $this->capabilities($device)->require(Capability::DOOR_EVENTS);
+
+        return $this->run($device, function (ProtocolDevice $d) {
+            $events = [];
+            foreach (array_reverse($d->operationLog()) as $r) {
+                if ($r['code'] !== 3 && $r['code'] !== 0) {
+                    continue; // door and alarm events, and start-ups (an alarm follows each)
+                }
+                $events[] = [
+                    'time' => $r['time'],
+                    'what' => $r['code'] === 3 ? $r['alarm'] : 'terminal started',
+                    'door' => null,
+                    'pin' => null,
+                ];
+                if (count($events) >= 40) {
+                    break;
+                }
+            }
+
+            return ['status' => null, 'events' => $events, 'settings' => $d->doorSettings()];
+        });
+    }
+
+    /**
      * The terminal's capacities from its GET_FREE_SIZES reply (owner, 2026-11-18: "why are Log
      * capacity and User capacity not read yet"), for the Identity panel.
      *

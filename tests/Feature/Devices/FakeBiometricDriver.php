@@ -79,6 +79,18 @@ class FakeBiometricDriver implements BiometricDeviceDriver
         return [];
     }
 
+    /** @var array{status:?array, events:list<array>, settings:array}|null what door() returns; null = unsupported */
+    public ?array $door = null;
+
+    public function door(Device $device): array
+    {
+        if ($this->door === null) {
+            throw new \Promoseven\Biometric\Exception\UnsupportedCommandException('No door here.');
+        }
+
+        return $this->door;
+    }
+
     public function readAttendance(Device $device, ?callable $onProgress = null): array
     {
         return $this->punchLog;

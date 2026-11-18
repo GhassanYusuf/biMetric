@@ -186,6 +186,11 @@ class DeviceDriverManager implements BiometricDeviceDriver
         return $this->exclusive($device, fn () => $this->driverFor($device)->info($device));
     }
 
+    public function door(Device $device): array
+    {
+        return $this->exclusive($device, fn () => $this->driverFor($device)->door($device));
+    }
+
     public function readAttendance(Device $device, ?callable $onProgress = null): array
     {
         return $this->exclusive($device, fn () => $this->driverFor($device)->readAttendance($device, $onProgress));

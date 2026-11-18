@@ -107,6 +107,12 @@ class CslHttpDriver implements BiometricDeviceDriver
      * found. Everything unknown is returned as null rather than omitted, so callers
      * can tell "this device does not report it" from "we did not ask".
      */
+    /** The CSL web firmware reports nothing about its door (2026-11-18). */
+    public function door(Device $device): array
+    {
+        throw new UnsupportedCommandException("{$device->name} does not report its door.");
+    }
+
     public function info(Device $device): array
     {
         $uids = $this->attempt($device, fn (CslWebPortalClient $c) => $c->fetchEnrolledUids());

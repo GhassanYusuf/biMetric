@@ -128,6 +128,33 @@ class C3Driver implements BiometricDeviceDriver
     }
 
     /** @return array<string,mixed> */
+    /**
+     * A C3 panel's door information (2026-11-18, library 2.25.0): its real-time log — the events it had
+     * not yet handed out and, on the inBIO460, the live status of each door. Read-only; the punches the
+     * sync reads are a separate table and untouched.
+     */
+    public function door(Device $device): array
+    {
+        $caps = $this->capabilities($device);
+        if (! $caps->supports(Capability::DOOR_EVENTS) && ! $caps->supports(Capability::DOOR_STATUS)) {
+            throw new UnsupportedCommandException("{$device->name} does not report its door.");
+        }
+
+        $rt = $this->attempt($device, fn (Panel $panel) => $panel->realtime(\App\Support\Timezone::forDevice($device)));
+        $events = array_map(fn (array $e) => [
+            'time' => $e['time'],
+            'what' => $e['meaning'],
+            'door' => $e['door'],
+            'pin' => $e['pin'] > 0 ? (string) $e['pin'] : null,
+        ], array_reverse($rt['events']));
+
+        return [
+            'status' => $caps->supports(Capability::DOOR_STATUS) ? $rt['status'] : null,
+            'events' => $events,
+            'settings' => [],
+        ];
+    }
+
     public function info(Device $device): array
     {
         $info = $this->attempt($device, fn (Panel $panel) => $panel->info());

@@ -50,6 +50,9 @@ export default function DeviceDetail() {
     const { flash, resultOf } = useActionResult();
     const [rangeOpen, setRangeOpen] = useState(false);
     const [rebuildOpen, setRebuildOpen] = useState(false);
+    // The door, read on demand (2026-11-18): it talks to the terminal, so not on every page load.
+    const [door, setDoor] = useState(null);
+    const [doorLoading, setDoorLoading] = useState(false);
 
     const load = useCallback(async () => {
         try {
@@ -136,6 +139,18 @@ export default function DeviceDetail() {
     }
 
     /** Save every punch, then erase them from the terminal — see Devices.jsx clearPunches(). */
+    async function readDoor() {
+        setDoorLoading(true);
+        try {
+            const res = await api.get(`/devices/${device.id}/door`);
+            setDoor(res.data);
+        } catch (err) {
+            toast.error(err instanceof ApiError ? err.message : 'Could not read the door.');
+        } finally {
+            setDoorLoading(false);
+        }
+    }
+
     async function clearPunches() {
         if (!(await confirm(clearPunchesConfirm(device)))) return;
 
@@ -249,6 +264,9 @@ export default function DeviceDetail() {
             onRetryCommand={retryCommand}
             onCancelCommand={cancelCommand}
             onBack={() => navigate('/devices')}
+            door={door}
+            doorLoading={doorLoading}
+            onReadDoor={readDoor}
         />
         {rangeOpen && (
             <SyncRangeModal

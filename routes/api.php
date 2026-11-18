@@ -221,6 +221,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'password.changed'])->group(functio
     Route::get('devices/options', [DeviceController::class, 'options']);
     Route::apiResource('devices', DeviceController::class)->names('api.devices');
     Route::post('devices/{device}/test-connection', [DeviceController::class, 'testConnection']);
+    // The door as the terminal reports it; read-only (2026-11-18).
+    Route::get('devices/{device}/door', [DeviceController::class, 'door']);
     Route::post('devices/{device}/sync-attendance', [DeviceController::class, 'syncAttendance']);
     // Polled roughly once a second by a progress bar while a sync is running.
     // Kept read-only and deliberately cheap — see DeviceSyncController::syncProgress.

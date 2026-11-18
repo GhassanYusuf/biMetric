@@ -67,6 +67,21 @@ interface BiometricDeviceDriver
     public function info(Device $device): array;
 
     /**
+     * What the terminal can tell about its door (2026-11-18), read-only — never opens one:
+     *
+     *   status    live door state per door: ['doors' => [n => [sensor open|closed|unknown, alarm,
+     *             open_too_long]], 'time' => ?DateTimeImmutable], or null when the model reports none
+     *   events    door and alarm events, newest first: time, what, door (?int), pin (?string)
+     *   settings  the lock settings it holds, by name (an F18's LockOn, DoorSensorTimeout, …)
+     *
+     * Gated by door.events / door.status; a driver that cannot read any of it throws
+     * UnsupportedCommandException.
+     *
+     * @return array{status:?array<string,mixed>, events:list<array<string,mixed>>, settings:array<string,string>}
+     */
+    public function door(Device $device): array;
+
+    /**
      * Transfers and decodes the device's attendance table.
      *
      * VENDOR-NEUTRAL ON PURPOSE. Transfer and decoding are both vendor-specific —

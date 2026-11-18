@@ -178,6 +178,57 @@ class DeviceController extends Controller
      * not answer must not return 200, or the SPA shows a success toast for a
      * terminal that is offline.
      */
+    /**
+     * The terminal's door, as it reports it (owner, 2026-11-18: "can we see if the door is locked and the
+     * status of the lock"). Read-only — nothing here can open a door. An F18 gives its door and alarm events
+     * and lock settings (no live state: it reports none); a C3 panel its latest events and, on the inBIO460,
+     * each door open / closed and its alarms. Terminal user numbers are shown with the employee's name.
+     * Each part carries its capability level, so the screen can say when a reading is not yet confirmed.
+     */
+    public function door(Device $device, \App\Contracts\BiometricDeviceDriver $driver): JsonResponse
+    {
+        $this->authorize('view', $device);
+
+        $caps = $driver->capabilities($device);
+        $events = \Promoseven\Biometric\Capability\Capability::DOOR_EVENTS;
+        $status = \Promoseven\Biometric\Capability\Capability::DOOR_STATUS;
+        if (! $caps->supports($events) && ! $caps->supports($status)) {
+            return ApiResponse::error("{$device->name} does not report its door.", [], 422);
+        }
+
+        try {
+            $door = $driver->door($device);
+        } catch (DeviceException $e) {
+            return ApiResponse::error($e->getMessage(), [], $e instanceof \App\Exceptions\DeviceBusyException ? 409 : 502);
+        }
+
+        $pins = collect($door['events'])->pluck('pin')->filter()->unique()->values();
+        $names = $pins->isEmpty() ? collect() : \App\Models\EmployeeDeviceMap::query()
+            ->where('device_id', $device->id)->whereIn('device_user_id', $pins)
+            ->with('employee:id,name,last_name')->get()
+            ->mapWithKeys(fn ($m) => [(string) $m->device_user_id => $m->employee?->fullName()]);
+        $iso = fn (?\DateTimeInterface $t) => $t?->format('Y-m-d\TH:i:sP');
+
+        return ApiResponse::success([
+            'status' => $door['status'] === null ? null : [
+                'doors' => collect($door['status']['doors'])
+                    ->filter(fn ($d) => $d['sensor'] !== 'unknown' || $d['alarm'] || $d['open_too_long'])
+                    ->map(fn ($d, $n) => ['door' => (int) $n] + $d)->values(),
+                'time' => $iso($door['status']['time'] ?? null),
+            ],
+            'events' => array_map(fn ($e) => [
+                'time' => $iso($e['time']),
+                'what' => $e['what'],
+                'door' => $e['door'],
+                'pin' => $e['pin'],
+                'name' => $e['pin'] !== null ? ($names[$e['pin']] ?? null) : null,
+            ], $door['events']),
+            'settings' => array_filter($door['settings'], fn ($v) => $v !== ''),
+            'levels' => ['events' => $caps->level($events), 'status' => $caps->level($status)],
+            'read_at' => now()->toIso8601String(),
+        ], 'Door read.');
+    }
+
     public function testConnection(Device $device): JsonResponse
     {
         $this->authorize('sync', $device);

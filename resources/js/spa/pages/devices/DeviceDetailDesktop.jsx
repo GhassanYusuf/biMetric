@@ -1,3 +1,4 @@
+import DoorSection from './DoorSection';
 import { Badge, Button, Card, EmptyState, PageHeader, ProgressBar, SectionCard, TableShell, Thead } from '../../shared/ui';
 import { describeProgress } from '../../shared/useSyncProgress';
 import { PROTOCOL_LABELS, SyncBadge, describeRunMode, relativeTime } from './parts';
@@ -17,6 +18,7 @@ export default function DeviceDetailDesktop({
     device, runs, commands, history, dispatching, watching = {}, resultOf = () => null,
     syncRunning, syncProgress, syncStalled,
     canSync, canUpdate, onRefresh, onDispatch, onFullResync, onRangeSync, onRebuild, onClearPunches, onRetryCommand, onCancelCommand, onBack,
+    door = null, doorLoading = false, onReadDoor,
 }) {
     const caps = device.capabilities ?? {};
     const busy = !!dispatching;
@@ -226,6 +228,7 @@ export default function DeviceDetailDesktop({
 
                 {/* ---- State: identity, health trail, capabilities. */}
                 <div className="space-y-5">
+                    <DoorSection device={device} door={door} loading={doorLoading} onRead={onReadDoor} />
                     <SectionCard
                         title="Identity"
                         subtitle={device.info_read_at ? `Read from the terminal ${relativeTime(device.info_read_at)}` : 'Run "Read info" to fill this in'}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import DoorSection from './DoorSection';
 import { Badge, Button, Card, EmptyState, PageHeader, SectionCard } from '../../shared/ui';
 import { FOCUS } from '../../shared/theme';
 import { PROTOCOL_LABELS, SyncBadge, describeRunMode, relativeTime } from './parts';
@@ -28,6 +29,7 @@ export default function DeviceDetailMobile({
     device, runs, commands, history, dispatching, watching = {}, resultOf = () => null,
     syncRunning, syncProgress, syncStalled,
     canSync, canUpdate, onRefresh, onDispatch, onFullResync, onRangeSync, onRebuild, onClearPunches, onRetryCommand, onCancelCommand, onBack,
+    door = null, doorLoading = false, onReadDoor,
 }) {
     const [tab, setTab] = useState('runs');
     const caps = device.capabilities ?? {};
@@ -183,6 +185,7 @@ export default function DeviceDetailMobile({
 
             {tab === 'info' && (
                 <div className="space-y-4">
+                    <DoorSection device={device} door={door} loading={doorLoading} onRead={onReadDoor} />
                     <SectionCard
                         title="Identity"
                         subtitle={device.info_read_at ? `Read ${relativeTime(device.info_read_at)}` : 'Run "Read info" to fill this in'}
