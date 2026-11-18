@@ -15,6 +15,7 @@ use Promoseven\Biometric\Capability\CapabilityResolver;
 use Promoseven\Biometric\Client\Device as ProtocolDevice;
 use Promoseven\Biometric\Model\TerminalModelFactory;
 use Promoseven\Biometric\Codec\AttendanceCodec;
+use Promoseven\Biometric\Codec\FreeSizesCodec;
 use Promoseven\Biometric\Codec\RecordBuffer;
 use Promoseven\Biometric\Contracts\ProgressListener;
 use Promoseven\Biometric\Exception\DeviceException;
@@ -103,7 +104,57 @@ class ZktecoDriver implements BiometricDeviceDriver
 
     public function info(Device $device): array
     {
-        return $this->run($device, fn (ProtocolDevice $d) => $d->info());
+        return $this->run($device, function (ProtocolDevice $d) {
+            $info = $d->info();
+            /*
+             * The raw GET_FREE_SIZES reply, asked for here: the library's info() passes it through
+             * RecordBuffer::cString, which cuts at the first NUL, and the reply starts with zeros —
+             * so its `free_sizes` is always '' (found 2026-11-18). Owed: return the raw bytes there
+             * (library), then this can read $info['free_sizes'] again. A failure here costs only the
+             * capacities, never the info read.
+             */
+            try {
+                $sizes = $d->client()->send(\Promoseven\Biometric\Protocol\Command::GET_FREE_SIZES)->data;
+            } catch (DeviceException) {
+                $sizes = '';
+            }
+
+            return $info + self::capacities($sizes);
+        });
+    }
+
+    /**
+     * The terminal's capacities from its GET_FREE_SIZES reply (owner, 2026-11-18: "why are Log
+     * capacity and User capacity not read yet"), for the Identity panel.
+     *
+     * Kept only when the reply checks itself: for users, fingerprints and punches, capacity minus
+     * used must equal the free count the terminal also reports. CONFIRMED that way on the F18 (IT
+     * ROOM, Camelot), F18/ID (Good Wheels) and F22/ID (On The Road) — traces 2026-10-18/free-sizes-*:
+     * users 5,000, fingerprints 3,000, punches 100,000 on the F18s and 30,000 on the F22. A model whose
+     * reply does not check (never traced: the UA300) gets nothing rather than a guess (rule 10/21).
+     *
+     * @return array{user_capacity?:int, fingerprint_capacity?:int, log_capacity?:int}
+     */
+    private static function capacities(string $reply): array
+    {
+        $s = $reply === '' ? null : FreeSizesCodec::decode($reply);
+        if ($s === null) {
+            return [];
+        }
+        $i = array_values(unpack('V*', substr($reply, 0, intdiv(strlen($reply), 4) * 4)) ?: []);
+        // Free counts sit after the capacities: users [18], fingers [17], records [19] (same reply).
+        $free = ['users' => $i[18] ?? null, 'fingers' => $i[17] ?? null, 'records' => $i[19] ?? null];
+        $checks = $free['users'] !== null && $free['fingers'] !== null && $free['records'] !== null
+            && $s['users_capacity'] - $s['users'] === $free['users']
+            && $s['fingers_capacity'] - $s['fingers'] === $free['fingers']
+            && $s['records_capacity'] - $s['records'] === $free['records']
+            && $s['users_capacity'] > 0 && $s['records_capacity'] > 0;
+
+        return $checks ? [
+            'user_capacity' => $s['users_capacity'],
+            'fingerprint_capacity' => $s['fingers_capacity'],
+            'log_capacity' => $s['records_capacity'],
+        ] : [];
     }
 
     /**

@@ -192,7 +192,12 @@ export default function DeviceDetailMobile({
                             <Fact label="Firmware">{device.firmware_version}</Fact>
                             <Fact label="Serial" mono>{device.serial_number}</Fact>
                             <Fact label="Platform">{device.platform}</Fact>
-                            <Fact label="Device timezone">{device.timezone}</Fact>
+                            <Fact label="Timezone">
+                                {/* A setting here, not a reading: the F18 reports no timezone (2026-11-18). */}
+                                {device.timezone_effective
+                                    ? `${device.timezone_effective} · ${device.timezone_is_own ? 'set for this terminal' : 'office time'}`
+                                    : null}
+                            </Fact>
                             <Fact label="Sync position">{shortTime(device.attendance_watermark)}</Fact>
                         </dl>
                     </SectionCard>

@@ -108,6 +108,9 @@ class DeviceHealthService
             'platform' => $info['platform'] ?: null,
             'serial_number' => $info['serial'] ?: null,
             'mac_address' => $info['mac'] ?: null,
+            // Only when the terminal's own counters checked out (ZktecoDriver::capacities, 2026-11-18).
+            'user_capacity' => $info['user_capacity'] ?? null,
+            'log_capacity' => $info['log_capacity'] ?? null,
         ], fn ($v) => $v !== null) + [
             'info_read_at' => now(),
         ])->save();

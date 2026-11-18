@@ -42,6 +42,18 @@ what was observed on the reference F18, not a datasheet.
 > gets its own file rather than a branch inside the F18 path, and a level confirmed
 > on the F18 is `unknown` on another model until that model has been read.
 
+## Capacities — read with "Read info", kept only when the reply checks itself (2026-11-18)
+
+`ZktecoDriver::info()` adds `user_capacity`, `fingerprint_capacity` and `log_capacity` from GET_FREE_SIZES
+(50) — int32 [15], [14], [16] — only when capacity − used = free for users ([4]/[18]), fingerprints
+([6]/[17]) and punches ([8]/[19]). Checked on four traces (2026-10-18) and read live 2026-11-18:
+F18 / F18/ID users 5,000, fingerprints 3,000, punches 100,000; F22/ID 5,000 / 3,000 / **30,000**;
+UA300/ID **10,000** / 3,000 / 100,000. Stored on the device row by Read info (DeviceHealthService) and
+shown in the Identity panel. **Library bug, owed:** `DeviceClient::getDeviceInfo()` passes the binary reply
+through `RecordBuffer::cString`, so its `free_sizes` is always `''`; the driver sends GET_FREE_SIZES itself
+until the library returns the raw bytes. The Identity panel's "Timezone" is this system's setting (the
+device's override, else office time), not something the terminal reports.
+
 ## The operation log (F18) — read-only, EXPERIMENTAL in a probe only (2026-11-17)
 
 Read as table 4 (`DB_RRQ` + `FCT_OPLOG`, pyzk; openzk) through the windowed read, read-only

@@ -71,6 +71,10 @@ class DeviceResource extends JsonResource
             'log_capacity' => $this->log_capacity,
             'info_read_at' => $this->info_read_at?->toIso8601String(),
             'timezone' => $this->timezone,
+            // The zone its punches are read in: its own override, or office time (2026-11-18 —
+            // the F18 does not report a timezone; this is a setting here, not a reading).
+            'timezone_effective' => \App\Support\Timezone::forDevice($this->resource),
+            'timezone_is_own' => \App\Support\Timezone::deviceOverrides($this->resource),
 
             /*
              * --- Health.

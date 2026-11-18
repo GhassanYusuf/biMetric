@@ -236,7 +236,12 @@ export default function DeviceDetailDesktop({
                             <Fact label="Platform">{device.platform}</Fact>
                             <Fact label="Serial" mono>{device.serial_number}</Fact>
                             <Fact label="MAC" mono>{device.mac_address}</Fact>
-                            <Fact label="Device timezone">{device.timezone}</Fact>
+                            <Fact label="Timezone">
+                                {/* A setting here, not a reading: the F18 reports no timezone (2026-11-18). */}
+                                {device.timezone_effective
+                                    ? `${device.timezone_effective} · ${device.timezone_is_own ? 'set for this terminal' : 'office time'}`
+                                    : null}
+                            </Fact>
                             <Fact label="User capacity">
                                 {device.user_capacity != null ? device.user_capacity.toLocaleString() : null}
                             </Fact>
