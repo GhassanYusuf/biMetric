@@ -8,6 +8,7 @@ import { FOCUS } from './shared/theme';
 import { useDeployedVersion } from './shared/useDeployedVersion';
 import AppLayout from './layouts/AppLayout';
 import Login from './pages/Login';
+import ForcePasswordChange from './pages/ForcePasswordChange';
 import Dashboard from './pages/dashboard/Dashboard';
 import Employees from './pages/employees/Employees';
 import EmployeeReport from './pages/employees/report/EmployeeReport';
@@ -48,7 +49,11 @@ function Protected({ children }) {
             </div>
         );
     }
-    return user ? children : <Navigate to="/login" replace />;
+    if (!user) return <Navigate to="/login" replace />;
+    // Must choose their own password first (2026-11-18): nothing else until then; the server
+    // refuses every other request meanwhile.
+    if (user.must_change_password) return <ForcePasswordChange />;
+    return children;
 }
 
 /**

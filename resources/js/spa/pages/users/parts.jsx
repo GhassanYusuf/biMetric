@@ -175,6 +175,7 @@ function PasswordField({ value, onChange, error, label = 'Password' }) {
 export function accessSummary(user, companies) {
     const parts = [];
     if (user.can_delete === false) parts.push('Cannot delete');
+    if (user.must_change_password) parts.push('Must change password');
     if (Array.isArray(user.company_ids) && user.company_ids.length) {
         const names = user.company_ids.map((id) => companies.find((c) => c.id === id)?.name).filter(Boolean);
         parts.push(names.length && names.length <= 3 ? `Only ${names.join(', ')}` : `Only ${user.company_ids.length} companies`);
@@ -194,6 +195,9 @@ export function UserFormModal({ user, levels, myPermissions, companies = [], me,
     // new users on their own companies and someone who may not delete cannot give it.
     const meLimited = Array.isArray(me?.company_ids) && me.company_ids.length > 0;
     const [canDelete, setCanDelete] = useState(user ? user.can_delete !== false : me?.can_delete !== false);
+    // Force a password change at the next sign-in (2026-11-18). On by default for a new user: the
+    // starting password is one somebody else chose.
+    const [mustChange, setMustChange] = useState(user ? !!user.must_change_password : true);
     const [onlySome, setOnlySome] = useState(user ? Array.isArray(user.company_ids) && user.company_ids.length > 0 : meLimited);
     const [companyIds, setCompanyIds] = useState(user?.company_ids ?? (meLimited ? me.company_ids : []));
     const [errors, setErrors] = useState({});
@@ -219,6 +223,7 @@ export function UserFormModal({ user, levels, myPermissions, companies = [], me,
             payload.role = role;
             payload.can_delete = canDelete;
             payload.company_ids = onlySome ? companyIds : [];
+            payload.must_change_password = mustChange;
         }
         if (!isEdit) payload.password = password;
         try {
@@ -262,6 +267,23 @@ export function UserFormModal({ user, levels, myPermissions, companies = [], me,
                         error={errors.employee_id?.[0]}
                     />
                     <p className="-mt-1 text-xs text-slate-500">Needed for the Employee level: it is whose attendance they see.</p>
+
+                    {!ownLevel && (
+                        <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-sm text-slate-700">
+                            <input
+                                type="checkbox"
+                                checked={mustChange}
+                                onChange={(e) => setMustChange(e.target.checked)}
+                                className={`mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 ${FOCUS}`}
+                            />
+                            <span>
+                                {isEdit ? 'Must change password at next sign-in' : 'Must change password at first sign-in'}
+                                <span className="block text-xs text-slate-500">
+                                    They can do nothing else until they choose their own password.
+                                </span>
+                            </span>
+                        </label>
+                    )}
 
                     <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-sm text-slate-700">
                         <input
@@ -325,6 +347,8 @@ export function UserFormModal({ user, levels, myPermissions, companies = [], me,
 /** Set a new password for someone (or oneself). */
 export function PasswordModal({ user, onSubmit, onClose }) {
     const [password, setPassword] = useState('');
+    // Someone else's password you set: they choose their own at the next sign-in (2026-11-18).
+    const [mustChange, setMustChange] = useState(!user.is_self);
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
 
@@ -337,7 +361,7 @@ export function PasswordModal({ user, onSubmit, onClose }) {
         setSubmitting(true);
         setErrors({});
         try {
-            await onSubmit(password);
+            await onSubmit(password, user.is_self ? false : mustChange);
         } catch (err) {
             if (err instanceof ApiError && err.errors) setErrors(err.errors);
         } finally {
@@ -353,6 +377,20 @@ export function PasswordModal({ user, onSubmit, onClose }) {
                     {user.is_self ? 'Your other sessions will be signed out.' : `${user.name} is signed out everywhere and signs in again with this password.`}
                 </p>
                 <PasswordField value={password} onChange={setPassword} error={errors.password?.[0]} label="New password" />
+                {!user.is_self && (
+                    <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-sm text-slate-700">
+                        <input
+                            type="checkbox"
+                            checked={mustChange}
+                            onChange={(e) => setMustChange(e.target.checked)}
+                            className={`mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 ${FOCUS}`}
+                        />
+                        <span>
+                            Must change it at next sign-in
+                            <span className="block text-xs text-slate-500">They sign in with this one, then must choose their own.</span>
+                        </span>
+                    </label>
+                )}
                 <div className="mt-5 flex justify-end gap-2">
                     <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>Cancel</Button>
                     <Button type="submit" loading={submitting}>Set password</Button>

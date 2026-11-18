@@ -65,6 +65,44 @@ class AuthController extends Controller
         return ApiResponse::success(new UserResource($user), 'OK');
     }
 
+    /**
+     * Change my own password (owner, 2026-11-18). Needs the current one; the new one must be at least
+     * 8 characters and differ from it. Clears "must change password", and signs out every OTHER
+     * session — this one stays signed in.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'confirmed', \Illuminate\Validation\Rules\Password::min(8)],
+        ]);
+
+        if (! Hash::check($data['current_password'], $user->password)) {
+            return ApiResponse::error('That is not your current password.', ['current_password' => ['That is not your current password.']], 422);
+        }
+        if (Hash::check($data['password'], $user->password)) {
+            return ApiResponse::error('Choose a password different from the current one.', ['password' => ['Choose a password different from the current one.']], 422);
+        }
+
+        $user->forceFill(['password' => $data['password'], 'must_change_password' => false])->save();
+        $keep = $user->currentAccessToken()?->id;
+        $user->tokens()->when($keep, fn ($q) => $q->where('id', '!=', $keep))->delete();
+
+        \App\Models\AuditLog::create([
+            'tenant_id' => $user->tenant_id,
+            'user_id' => $user->id,
+            'action' => 'user.password_changed',
+            'auditable_type' => \App\Models\User::class,
+            'auditable_id' => $user->id,
+            'changes' => null,
+            'ip_address' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 255),
+        ]);
+
+        return ApiResponse::success(new UserResource($user->fresh()->load('tenant')), 'Password changed.');
+    }
+
     public function logout(Request $request): JsonResponse
     {
         // Revoke only the token used for this request.

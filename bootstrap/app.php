@@ -42,6 +42,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // auth; `permission`/`role` are spatie's authorization gates.
         $middleware->alias([
             'tenant' => ResolveTenant::class,
+            // Nothing but changing the password until a forced change is done (2026-11-18).
+            'password.changed' => \App\Http\Middleware\RequirePasswordChange::class,
             // Sanctum token abilities (integration API) and the Idempotency-Key replay.
             'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
             'ability' => \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class,

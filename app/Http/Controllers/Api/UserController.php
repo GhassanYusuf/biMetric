@@ -76,13 +76,20 @@ class UserController extends Controller
                 'can_delete' => $data['can_delete'] ?? true,
                 'email_verified_at' => now(),
             ]);
+            // Forced change at first sign-in (2026-11-18): set apart from create() so a
+            // database without the column yet still creates the user.
+            if (! empty($data['must_change_password'])) {
+                $user->forceFill(['must_change_password' => true])->save();
+            }
             $user->syncRoles([$data['role']]);
             $this->syncCompanies($user, $data['company_ids'] ?? null);
 
             return $user;
         });
 
-        return ApiResponse::created($this->present($user), "{$user->name} can now sign in.");
+        return ApiResponse::created($this->present($user), $user->must_change_password
+            ? "{$user->name} can now sign in, and must choose a new password the first time."
+            : "{$user->name} can now sign in.");
     }
 
     public function update(UpdateUserRequest $request, User $user): JsonResponse
@@ -121,6 +128,9 @@ class UserController extends Controller
 
         DB::transaction(function () use ($user, $data, $newRole, $currentRole, $deactivating, $accessChanged, $beforeAccess) {
             $user->fill(array_intersect_key($data, array_flip(['name', 'email', 'employee_id', 'is_active', 'can_delete'])))->save();
+            if (array_key_exists('must_change_password', $data)) {
+                $user->forceFill(['must_change_password' => (bool) $data['must_change_password']])->save();
+            }
             if (array_key_exists('company_ids', $data)) {
                 $this->syncCompanies($user, $data['company_ids']);
             }
@@ -147,9 +157,16 @@ class UserController extends Controller
     {
         $this->authorize('update', $user);
 
-        $data = $request->validate(['password' => ['required', 'string', Password::min(8)]]);
+        $data = $request->validate([
+            'password' => ['required', 'string', Password::min(8)],
+            // They choose their own at the next sign-in (2026-11-18). Not for yourself.
+            'must_change_password' => ['sometimes', 'boolean'],
+        ]);
 
         $user->update(['password' => $data['password']]);
+        if ($request->user()->id !== $user->id) {
+            $user->forceFill(['must_change_password' => (bool) ($data['must_change_password'] ?? false)])->save();
+        }
 
         // Everywhere else they were signed in now needs the new password. The caller's
         // own session survives resetting their own.

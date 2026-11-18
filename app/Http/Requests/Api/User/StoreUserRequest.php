@@ -35,6 +35,8 @@ class StoreUserRequest extends FormRequest
             // Owner, 2026-11-05: per-user delete switch, and the companies they may see
             // (null or [] = every company). UserController refuses giving more than one has.
             'can_delete' => ['sometimes', 'boolean'],
+            // Force a password change at the next sign-in (2026-11-18).
+            'must_change_password' => ['sometimes', 'boolean'],
             'company_ids' => ['sometimes', 'nullable', 'array'],
             'company_ids.*' => ['integer', 'distinct', Rule::exists('companies', 'id')->where('tenant_id', Tenancy::id())->whereNull('deleted_at')],
         ];

@@ -55,7 +55,8 @@ export function AuthProvider({ children }) {
     );
 
     const value = useMemo(
-        () => ({ user, loading, login, logout, can, refresh: loadMe }),
+        // setCurrentUser: the forced password change hands back the updated user (2026-11-18).
+        () => ({ user, loading, login, logout, can, refresh: loadMe, setCurrentUser: setUser }),
         [user, loading, login, logout, can, loadMe],
     );
 

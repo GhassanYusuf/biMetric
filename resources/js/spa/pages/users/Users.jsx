@@ -78,10 +78,10 @@ export default function Users() {
         load();
     }
 
-    async function setPassword(password) {
+    async function setPassword(password, mustChange = false) {
         let res;
         try {
-            res = await api.put(`/users/${editing.row.id}/password`, { password });
+            res = await api.put(`/users/${editing.row.id}/password`, { password, must_change_password: mustChange });
         } catch (err) {
             failed(err, 'Could not change the password.');
         }

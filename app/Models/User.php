@@ -46,6 +46,7 @@ class User extends Authenticatable
             'is_super_admin' => 'boolean',
             'is_active' => 'boolean',
             'can_delete' => 'boolean',
+            'must_change_password' => 'boolean',
         ];
     }
 

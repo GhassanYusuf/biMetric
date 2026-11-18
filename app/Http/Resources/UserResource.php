@@ -31,6 +31,8 @@ class UserResource extends JsonResource
             // Less delete when this user's "Can delete" is off (2026-11-05).
             'permissions' => $this->effectivePermissionNames(),
             'can_delete' => $this->can_delete !== false,
+            // Must choose their own password before anything else (2026-11-18).
+            'must_change_password' => (bool) $this->getAttribute('must_change_password'),
             // The companies they may see; null = every company (CompanyAccess).
             'company_ids' => $this->companyIds(),
         ];

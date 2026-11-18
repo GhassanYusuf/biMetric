@@ -65,6 +65,8 @@ Route::prefix('auth')->group(function () {
     Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('logout', [AuthController::class, 'logout']);
+        // Change my own password; the only thing allowed while a change is required (2026-11-18).
+        Route::put('password', [AuthController::class, 'changePassword'])->middleware('throttle:10,1');
     });
 });
 
@@ -84,7 +86,7 @@ Route::middleware(['auth:sanctum', 'throttle:20,1'])
 // All tenant-scoped domain endpoints live behind auth + tenant resolution.
 // Per-route `permission:` middleware is a fast first gate; controllers/policies
 // enforce the same permissions again (defence in depth).
-Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
+Route::middleware(['auth:sanctum', 'tenant', 'password.changed'])->group(function () {
 
     // Departments
     // Companies have their own table since 2026-11-03; departments belong to one.
