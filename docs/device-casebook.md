@@ -85,7 +85,7 @@ Template:
 | DC-038 | 2026-11-03 | Entrance, Glass Door | Suji cannot be moved to his CPR on the door panels: "Pin 711247579 is already used", a duplicate left by a merge | FIXED |
 | DC-037 | 2026-11-02 | JJs | A new terminal: Import staff brought no fingerprints, and the first fingerprint read would not decode | FIXED |
 | DC-036 | 2026-10-29 | Camelot | No Camelot punch imported since 2026-10-22: every read undecodable or crashing, and a crash leaves the screen "importing" forever | WORKAROUND |
-| DC-035 | 2026-10-27 | IT ROOM | IT ROOM's door does not lock: open to anyone | OPEN |
+| DC-035 | 2026-10-27 | IT ROOM | IT ROOM's door does not lock: open to anyone | FIXED |
 | DC-034 | 2026-10-25 to 2026-10-26 | Camelot | Every new user pushed to Camelot is refused: reply 4995, "Error inserting database", always at uid 17 | FIXED |
 | DC-033 | 2026-10-26 | IT ROOM | Scan card for Test User on IT ROOM returns no card number ("9811" or 0xFFFFFFFF) | FIXED |
 | DC-032 | 2026-10-25 to 2026-10-26 | Catering | Catering missing from an employee's Access levels; it is a UA300, a model with no write proven | FIXED |
@@ -859,9 +859,17 @@ Template:
   - First theory (ruled out below): the lock is not powered (a fail-safe magnetic lock is free without power,
     and a valid punch then has nothing to release, so no click). Owner to check the lock's LED
     and power supply. A second restart is the other cheap test, after the power check.
-- **Root cause:** —
-- **Fix:** —
-- **Verified:** —
+- **Root cause:** physical — on the lock side (relay, wiring or the lock), not the terminal: the F18 kept
+  registering every exit-button press throughout (operation log below), its settings matched the working
+  F18s, and two restarts changed nothing.
+- **Fix:** physical repair at the door, reported fixed by the owner on 2026-11-18 (what exactly was done:
+  owner to add — electrician / installer).
+- **Verified:** owner at the door, 2026-11-18: the lock works again. The operation log (read-only,
+  `tools/zkprobe/oplog-read.php 15 --stride=16`, trace `traces-2026-11-18/oplog-read-01.json`) shows the
+  terminal registered exit-button presses (code 3, type 53) all through the fault — ~1,070 since set-up,
+  the last 2026-11-16 15:44 — and alarms (type 55) after each start-up; never a door-sensor event (type 54):
+  IT ROOM has no door sensor wired. No press logged on 2026-11-17/18 yet, so the log does not itself show
+  the repair.
 - **Evidence:** device_commands for device 15 since 2026-10-26.
   - Owner, at the door: the lock's LED is on and its power supply looks fine; the F18 outside
     flashes green slowly (normal standby); there is an exit button inside. **Test: with the
@@ -883,7 +891,7 @@ Template:
     valid finger, which always pushes, in the same run); not yet run.
   - Owner moved on to other work; the fix is physical (the F18's NO/NC/COM and exit-button
     terminals, or the lock).
-- **Status:** OPEN — software ruled out (settings identical to the working F18s; a second
+- **Status:** FIXED — physical repair (owner, 2026-11-18). Earlier status for context: software ruled out (settings identical to the working F18s; a second
   restart, command 10505 at 13:40 UTC, changed nothing; no lock click from finger or exit
   button). An electrician or the installer to check the F18's lock and exit-button wiring and
   the lock itself. Until then the IT ROOM door does not lock.
