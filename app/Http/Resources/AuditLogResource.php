@@ -23,6 +23,8 @@ class AuditLogResource extends JsonResource
             'actor_id' => $this->user_id,
             'user_agent' => $this->user_agent,
             'changes' => $this->changes,
+            // Field by field with before / after and how the before is known (2026-11-09).
+            'diff' => $this->getAttribute('diff') ?? [],
             'ip_address' => $this->ip_address,
             'created_at' => $this->created_at?->toIso8601String(),
         ];

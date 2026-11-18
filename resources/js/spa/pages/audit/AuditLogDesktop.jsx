@@ -51,7 +51,7 @@ export default function AuditLogDesktop({ rows, pagination, users, actions, load
                                     {open.has(r.id) && (
                                         <tr className="bg-slate-50/60">
                                             <td colSpan={5} className="px-5 py-3">
-                                                <ChangesView changes={r.changes} />
+                                                <ChangesView log={r} />
                                                 {r.user_agent && <p className="mt-2 truncate text-xs text-slate-500" title={r.user_agent}>Browser: {r.user_agent}</p>}
                                             </td>
                                         </tr>

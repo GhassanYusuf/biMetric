@@ -42,7 +42,7 @@ export default function AuditLogMobile({ rows, pagination, users, actions, loadi
                             </div>
                             {open.has(r.id) && (
                                 <div className="mt-2 border-t border-slate-100 pt-2">
-                                    <ChangesView changes={r.changes} />
+                                    <ChangesView log={r} />
                                     {r.ip_address && <p className="mt-2 font-mono text-xs text-slate-500">From {r.ip_address}</p>}
                                 </div>
                             )}

@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Auth;
 
 /**
  * Records create/update/delete of audited models to the immutable audit trail.
+ * Since 2026-11-09 an update records each field as [before, after] and a delete the whole
+ * record as it was; earlier rows hold the new values only (AuditLogController infers the
+ * old ones from the trail, and says so).
  * Registered for specific models in AppServiceProvider. Secrets are stripped
  * from the recorded diff so the trail never stores credentials.
  */
@@ -23,19 +26,33 @@ class AuditObserver
         $this->record('created', $model, $this->clean($model->getAttributes()));
     }
 
+    /**
+     * Each changed field as [before, after] (owner, 2026-11-09: "you did not show what the
+     * record was before updating"). Until then only the new values were kept. The `updated`
+     * event fires before Eloquent syncs its originals, so getRawOriginal() is still the value
+     * that was in the database.
+     */
     public function updated(Model $model): void
     {
-        $changes = $this->clean($model->getChanges());
-        unset($changes['updated_at']);
-        if ($changes === []) {
+        $after = $this->clean($model->getChanges());
+        unset($after['updated_at']);
+        if ($after === []) {
             return;
+        }
+        $before = $this->clean(array_intersect_key($model->getRawOriginal(), $after));
+        $changes = [];
+        foreach ($after as $field => $value) {
+            $changes[$field] = [$before[$field] ?? null, $value];
         }
         $this->record('updated', $model, $changes);
     }
 
+    /** The whole record as it was, each field as [value, null] (2026-11-09; was nothing). */
     public function deleted(Model $model): void
     {
-        $this->record('deleted', $model, null);
+        $was = $this->clean($model->getRawOriginal() ?: $model->getAttributes());
+        unset($was['updated_at']);
+        $this->record('deleted', $model, array_map(fn ($v) => [$v, null], $was));
     }
 
     private function record(string $verb, Model $model, ?array $changes): void

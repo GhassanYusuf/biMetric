@@ -57,36 +57,90 @@ export function AuditFilters({ filters, onFilter, users, actions, stacked = fals
 
 function show(value) {
     if (value === null || value === undefined || value === '') return '—';
+    if (typeof value === 'boolean') return value ? 'yes' : 'no';
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
 }
 
+/** Column names as people say them; anything not here is shown with its underscores as spaces. */
+const FIELD_LABELS = {
+    employee_code: 'Personnel ID', external_id: 'External ID', name: 'First name', last_name: 'Last name',
+    company_id: 'Company', department_id: 'Department', device_id: 'Terminal', employee_id: 'Employee',
+    manager_id: 'Manager', user_id: 'User', card_number: 'Card number', is_active: 'Active',
+    employment_status: 'Employment status', resigned_at: 'Resigned on', joined_at: 'Joined on',
+    fingerprint_count: 'Fingerprints', fingerprint_slots: 'Fingers (slots)', enrollment_synced_at: 'Read from terminals at',
+    photo_path: 'Photo', phone: 'Phone', email: 'E-mail', gender: 'Gender', birthday: 'Birthday',
+    device_user_id: 'Terminal user ID', ip_address: 'IP address', last_seen_at: 'Last seen',
+};
+const fieldLabel = (f) => FIELD_LABELS[f] ?? f.replace(/_/g, ' ');
+
+function Value({ value, name }) {
+    if (name) return <>{name} <span className="text-slate-400">#{show(value)}</span></>;
+    return show(value);
+}
+
 /**
- * What changed. The observer writes { field: [before, after] } or { before, after }; explicit
- * rows write any shape. Each field on its own line, before → after when both are known.
+ * What changed, field by field (owner, 2026-11-09: "show what the record was before updating").
+ * `diff` comes from AuditLogController: before, after, and how the before is known —
+ * recorded with the change, inferred from the record's earlier entries ("from history"),
+ * unknown, or none for a new record. The two kinds are kept visibly apart (rule 3).
  */
-export function ChangesView({ changes }) {
-    if (!changes || (typeof changes === 'object' && Object.keys(changes).length === 0)) {
-        return <p className="text-sm text-slate-500">No details were recorded.</p>;
+export function ChangesView({ log }) {
+    const diff = log?.diff ?? [];
+    if (diff.length === 0) {
+        return <p className="text-sm text-slate-500">{/deleted$/.test(log?.action ?? '') ? 'Deleted before records were kept in full (2026-11-09): what it held was not recorded.' : 'No details were recorded.'}</p>;
     }
-    let rows = [];
-    if (changes.before || changes.after) {
-        const keys = [...new Set([...Object.keys(changes.before ?? {}), ...Object.keys(changes.after ?? {})])];
-        rows = keys.map((k) => [k, changes.before?.[k], changes.after?.[k], true]);
-    } else {
-        rows = Object.entries(changes).map(([k, v]) => (Array.isArray(v) && v.length === 2 ? [k, v[0], v[1], true] : [k, null, v, false]));
+    const plain = diff.every((r) => r.before_known === 'none');
+    const isNew = diff.every((r) => r.before_known === 'new');
+    const deleted = /deleted$/.test(log?.action ?? '');
+    const inferred = diff.some((r) => r.before_known === 'from_history');
+
+    if (plain || isNew) {
+        return (
+            <dl className="divide-y divide-slate-100 text-sm">
+                {diff.map((r) => (
+                    <div key={r.field} className="grid grid-cols-1 gap-1 py-1.5 sm:grid-cols-[12rem_minmax(0,1fr)]">
+                        <dt className="font-medium text-slate-600">{fieldLabel(r.field)}</dt>
+                        <dd className="min-w-0 break-words font-mono text-xs text-slate-800"><Value value={r.after} name={r.after_name} /></dd>
+                    </div>
+                ))}
+            </dl>
+        );
     }
+
     return (
-        <dl className="divide-y divide-slate-100 text-sm">
-            {rows.map(([k, before, after, pair]) => (
-                <div key={k} className="grid grid-cols-1 gap-1 py-1.5 sm:grid-cols-[12rem_minmax(0,1fr)]">
-                    <dt className="font-medium text-slate-600">{k.replace(/_/g, ' ')}</dt>
-                    <dd className="min-w-0 break-words font-mono text-xs text-slate-800">
-                        {pair ? <><span className="text-rose-700 line-through decoration-rose-300">{show(before)}</span>{' → '}<span className="text-emerald-800">{show(after)}</span></> : show(after)}
-                    </dd>
-                </div>
-            ))}
-        </dl>
+        <div className="space-y-2">
+            <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                    <thead className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <tr>
+                            <th className="py-1.5 pr-4">Field</th>
+                            <th className="py-1.5 pr-4">{deleted ? 'It held' : 'Before'}</th>
+                            {!deleted && <th className="py-1.5">After</th>}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 align-top">
+                        {diff.map((r) => (
+                            <tr key={r.field}>
+                                <td className="py-1.5 pr-4 font-medium text-slate-600">{fieldLabel(r.field)}</td>
+                                <td className="max-w-xs break-words py-1.5 pr-4 font-mono text-xs">
+                                    {r.before_known === 'unknown'
+                                        ? <span className="font-sans italic text-slate-500">not recorded</span>
+                                        : <span className={deleted ? 'text-slate-800' : 'text-rose-700'}><Value value={r.before} name={r.before_name} /></span>}
+                                    {r.before_known === 'from_history' && <span className="ml-1.5 font-sans text-[11px] text-amber-700">from history</span>}
+                                </td>
+                                {!deleted && <td className="max-w-xs break-words py-1.5 font-mono text-xs text-emerald-800"><Value value={r.after} name={r.after_name} /></td>}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {inferred && (
+                <p className="text-xs text-slate-500">
+                    “From history”: this change was saved before the audit log kept old values (2026-11-09), so the value before is taken from this record’s previous entry. It is right unless something changed it outside the system.
+                </p>
+            )}
+        </div>
     );
 }
 

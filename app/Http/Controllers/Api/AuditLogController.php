@@ -69,12 +69,123 @@ class AuditLogController extends Controller
             ->paginate((int) ($f['per_page'] ?? 30));
 
         $this->attachSubjectNames($logs->getCollection());
+        $this->attachDiffs($logs->getCollection());
 
         return ApiResponse::success(AuditLogResource::collection($logs), 'Audit log retrieved.', [
             // For the screen's filters: who has ever acted, and every action recorded.
             'users' => User::query()->where('is_super_admin', false)->orderBy('name')->get(['id', 'name']),
             'actions' => AuditLog::query()->select('action')->distinct()->orderBy('action')->pluck('action'),
         ]);
+    }
+
+    /**
+     * Each entry as a field list: before, after, and how the "before" is known (owner,
+     * 2026-11-09: "show what the record was before updating").
+     *
+     *   recorded      written with the change ({field: [before, after]}, since 2026-11-09)
+     *   from_history  an older row kept only the new value; the value before is the latest
+     *                 earlier row of the same record that set that field. Right as long as
+     *                 nothing changed it outside the system, which is why it is labelled.
+     *   unknown       nothing earlier in the trail
+     *   new           a created record has no before
+     *
+     * A *_id field also gets the name it pointed at (company, department, …), at both ends.
+     */
+    private function attachDiffs($logs): void
+    {
+        $refs = ['company_id' => 'companies', 'department_id' => 'departments', 'employee_id' => 'employees', 'device_id' => 'devices', 'manager_id' => 'employees', 'user_id' => 'users'];
+        $wanted = [];
+        $diffs = [];
+
+        foreach ($logs as $log) {
+            $changes = is_array($log->changes) ? $log->changes : [];
+            $verb = substr((string) strrchr($log->action, '.'), 1);
+            $paired = $changes !== [] && collect($changes)->every(fn ($v) => is_array($v) && array_is_list($v) && count($v) === 2);
+            $rows = [];
+
+            if ($paired) {
+                foreach ($changes as $field => [$before, $after]) {
+                    $rows[] = ['field' => $field, 'before' => $before, 'after' => $after, 'before_known' => 'recorded'];
+                }
+            } elseif ($verb === 'created') {
+                foreach ($changes as $field => $value) {
+                    $rows[] = ['field' => $field, 'before' => null, 'after' => $value, 'before_known' => 'new'];
+                }
+            } elseif ($verb === 'updated' && $log->auditable_id && $changes !== []) {
+                $history = $this->earlier($log, array_keys($changes));
+                foreach ($changes as $field => $value) {
+                    $known = array_key_exists($field, $history);
+                    $rows[] = ['field' => $field, 'before' => $known ? $history[$field] : null, 'after' => $value, 'before_known' => $known ? 'from_history' : 'unknown'];
+                }
+            } else {
+                // Explicit rows with their own shape (counts, scopes, file names): as they are.
+                foreach ($changes as $field => $value) {
+                    $rows[] = ['field' => $field, 'before' => null, 'after' => $value, 'before_known' => 'none'];
+                }
+            }
+
+            foreach ($rows as $r) {
+                if (isset($refs[$r['field']])) {
+                    foreach ([$r['before'], $r['after']] as $id) {
+                        if (is_numeric($id)) {
+                            $wanted[$refs[$r['field']]][(int) $id] = true;
+                        }
+                    }
+                }
+            }
+            $diffs[$log->id] = $rows;
+        }
+
+        $names = [];
+        foreach ($wanted as $table => $ids) {
+            $names[$table] = DB::table($table)->whereIn('id', array_keys($ids))
+                ->when(\App\Support\Tenancy::id(), fn ($q, $t) => $q->where('tenant_id', $t))
+                ->pluck('name', 'id')->all();
+        }
+
+        foreach ($logs as $log) {
+            $rows = array_map(function ($r) use ($refs, $names) {
+                if (isset($refs[$r['field']])) {
+                    $t = $refs[$r['field']];
+                    $r['before_name'] = is_numeric($r['before']) ? ($names[$t][(int) $r['before']] ?? null) : null;
+                    $r['after_name'] = is_numeric($r['after']) ? ($names[$t][(int) $r['after']] ?? null) : null;
+                }
+
+                return $r;
+            }, $diffs[$log->id] ?? []);
+            $log->setAttribute('diff', $rows);
+        }
+    }
+
+    /**
+     * For an old-style row (new values only): each field's value just before it, from the
+     * latest earlier row of the same record that set the field.
+     *
+     * @return array<string, mixed>
+     */
+    private function earlier(AuditLog $log, array $fields): array
+    {
+        $found = [];
+        $earlier = AuditLog::query()
+            ->where('auditable_type', $log->auditable_type)
+            ->where('auditable_id', $log->auditable_id)
+            ->where('id', '<', $log->id)
+            ->latest('id')->limit(300)->get(['id', 'action', 'changes']);
+
+        foreach ($earlier as $row) {
+            foreach ((array) $row->changes as $field => $value) {
+                if (! in_array($field, $fields, true) || array_key_exists($field, $found)) {
+                    continue;
+                }
+                // A [before, after] row's "after", or an old row's plain new value.
+                $found[$field] = is_array($value) && array_is_list($value) && count($value) === 2 ? $value[1] : $value;
+            }
+            if (count($found) === count($fields)) {
+                break;
+            }
+        }
+
+        return $found;
     }
 
     /**
