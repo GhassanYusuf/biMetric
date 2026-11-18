@@ -240,6 +240,10 @@ Template:
   answering and every removal failed after 8 s ("could not be saved to the system first … timed out") —
   refused, nothing deleted, those people kept inactive. Added the batch removal (`REMOVE_USERS`, one read
   per terminal; `BulkRemovalTest`); `/tmp/gw-batch-removals.php` moves the unfinished ones onto it.
+- **Recovery, 2026-11-18:** ASLAM KHAN re-enrolled at Gems WorkShop on 2026-11-17 (~17:20 local, at the
+  terminal; first fingerprint punch as 860788580 at 17:24) and punches normally since; his finger 6 copied into
+  the system 2026-11-18 09:50 by the owner (Read fingerprints to system). HARICHANDRA and JINU SOBHA NAIR not
+  yet checked. Gems WorkShop vault copies: 211 (from 48); the full capture (`/tmp/gw-capture.php`) still owed.
 - **Verified:** read-only dry run of the guard's decision on ten terminals (IT ROOM, Glass Door, Entrance,
   Gems WorkShop, On The Road, Catering, Good Wheels, Camelot, JJs, Gems; 1,058 linked people): no false
   refusal; on Gems WorkShop the save-first fills the 635 missing copies before any delete
