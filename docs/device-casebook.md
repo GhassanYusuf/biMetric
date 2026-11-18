@@ -808,6 +808,13 @@ Template:
   - Fits the history: the DC-034 restart (2026-10-26 ~11:45) was followed by no read until
     2026-10-27 02:00, by which time reads were misaligned again (run 431: 115 of 138
     undecodable). So Camelot goes bad again within hours of a restart; how many is unknown.
+  - **Recurrence, 2026-11-18** (owner: "the Camelot last attendance records is from 11/11/2026, why?"). Nothing
+    imported since 2026-11-11 14:35 UTC. Every read since 2026-11-12 02:00 UTC (runs 825 → 1217) read all
+    records (501 → 643, growing) and called nearly all undecodable; the bytes are not shifted punches (as
+    DC-047) but another buffer (repeating 0x2C50xxxx words, like addresses). November's only good reads
+    followed restarts: restart 11-10 08:56 UTC → good 11:53 and 11-11 02:00; restart 11-11 13:48 → good
+    15:04; then nothing good. No restart since 11-11. Library 2.24.0 (DC-047) does not help: a different
+    fault. Owner asked to restart then read; offered a per-terminal "restart before reading" setting.
 - **Root cause:** a state inside Camelot (F18/ID, Ver 6.60 Apr 26 2016, over the internet)
   that makes its bulk reads come back misaligned, cleared by a restart and returning
   within hours. Why it builds up is not known. Two software faults made it worse: (1) the decoder's
