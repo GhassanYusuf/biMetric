@@ -212,6 +212,35 @@ class FingerprintPushTest extends TestCase
     }
 
     /**
+     * Owner, 2026-11-18 (Aslam Khan): re-enrolled at the terminal, "Read fingerprints to system" saved
+     * the copy, but the hands beside his name stayed empty until the nightly read. The read now also
+     * records what the terminal holds on his link, which is what the hands are drawn from.
+     */
+    public function test_reading_fingerprints_to_the_system_updates_what_the_terminal_shows(): void
+    {
+        EmployeeDeviceMap::where('employee_id', $this->employee->id)->where('device_id', $this->f18->id)->update(['fingerprint_slots' => json_encode([])]);
+        // Re-enrolled at the terminal: its template table holds finger 6 again.
+        $this->driver->templates = [['user_id' => '501', 'uid' => 1, 'slot' => 6, 'valid' => 1, 'size' => 606, 'sha1' => sha1($this->blob), 'template' => $this->blob]];
+
+        app(FingerprintVault::class)->captureEmployee($this->employee, [$this->f18->id]);
+
+        $map = EmployeeDeviceMap::where('employee_id', $this->employee->id)->where('device_id', $this->f18->id)->first();
+        $this->assertSame([6], $map->fingerprint_slots);
+        $this->assertNotNull($map->synced_at);
+    }
+
+    /** A template read that returned nothing at all is not "no fingers" (rule 10): the link is left as it was. */
+    public function test_an_empty_template_read_does_not_wipe_what_the_terminal_showed(): void
+    {
+        EmployeeDeviceMap::where('employee_id', $this->employee->id)->where('device_id', $this->f18->id)->update(['fingerprint_slots' => json_encode([6, 7])]);
+        $this->driver->templates = [];
+
+        app(FingerprintVault::class)->captureEmployee($this->employee, [$this->f18->id]);
+
+        $this->assertSame([6, 7], EmployeeDeviceMap::where('employee_id', $this->employee->id)->where('device_id', $this->f18->id)->first()->fingerprint_slots);
+    }
+
+    /**
      * DC-048, Gems WorkShop 2026-11-15/16: straight after a restart the template table came back
      * empty, nothing was saved, and the delete went ahead — three people lost their only finger.
      * The user table still listed the finger; the removal must refuse.

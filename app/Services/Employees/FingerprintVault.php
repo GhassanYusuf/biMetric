@@ -79,7 +79,9 @@ class FingerprintVault
             }
 
             try {
-                $counts = $this->capture($device, $this->driver->readTemplates($device), $employee->id);
+                $records = $this->driver->readTemplates($device);
+                $counts = $this->capture($device, $records, $employee->id);
+                $this->recordWhatTheTerminalHolds($map, $records);
                 $slots = BiometricTemplate::query()
                     ->where('employee_id', $employee->id)
                     ->where('device_id', $device->id)
@@ -106,6 +108,31 @@ class FingerprintVault
         }
 
         return $rows;
+    }
+
+    /**
+     * After reading a terminal's template table for one person, their link to that terminal shows
+     * what it holds now (owner, 2026-11-18: Aslam Khan re-enrolled at the terminal and "Read
+     * fingerprints to system" saved the copy, but the hands beside his name stayed empty until the
+     * nightly read). The Employees list draws the hands from the link's fingerprint_slots — what the
+     * terminal itself reported (rule 3) — so this is the terminal's answer, not the system's copies.
+     *
+     * A template table that returned NO records at all is not taken as "no fingers": that is also
+     * what an undecodable read gives (rule 10), so the link is left as it was.
+     *
+     * @param  list<array<string,mixed>>  $records
+     */
+    private function recordWhatTheTerminalHolds(EmployeeDeviceMap $map, array $records): void
+    {
+        if ($records === []) {
+            return;
+        }
+
+        $slots = collect($records)
+            ->filter(fn ($r) => (string) ($r['user_id'] ?? '') === (string) $map->device_user_id)
+            ->pluck('slot')->map(fn ($s) => (int) $s)->unique()->sort()->values()->all();
+
+        $map->update(['fingerprint_slots' => $slots, 'templates_read_at' => now(), 'synced_at' => now()]);
     }
 
     /**
