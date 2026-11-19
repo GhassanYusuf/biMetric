@@ -176,6 +176,19 @@ Template:
 - **Fix:** none on our side. **(owner, hotel)**: which PC program reads this terminal; if it deletes after
   download, its database has the old punches (they can be exported and imported here), and it should stop
   deleting, or this system will keep missing whatever it takes first.
+- **Recovery, 2026-11-19 — production data, owner ran it** (`/tmp/cityone-import.php --apply`, dry run checked
+  first). Sources, both from the hotel's ZKTime, in `draft/` (not committed, real names): the Transactions
+  Report 22-10 → 17-11 (every punch) and a Monthly Statement 01-09 → 19-11 (`att.xlsx`, first in / last out per
+  day; on the overlap every statement time is a real punch and it leaves out 23 of 2,380 = 1%). Merged: the
+  Transactions Report for its own span, the statement before and after it; same user + minute counted once.
+  (1) Linked the 149 employees from the 2026-11-17 Import staff (codes N / N-24) to City One #29 under terminal
+  number N (lost when #24 was deleted and the terminal re-added as #29), valid from 2026-09-01. (2) Attributed
+  #29's 7 existing punches. (3) Inserted **6,898 punches** (Sep 2,546, Oct 2,795, Nov 1,557), verify method
+  **210 "Imported (method not recorded)"**, office time → UTC. Result: 6,905 punches 2026-09-01 → 2026-11-19, all
+  attributed, 77 people. Undo: `storage/app/cityone-import-2026-11-19.json` lists the 149 link ids, the 7
+  attributed punch ids and the 6,898 inserted punch ids (delete those punches and links; set the 7 back to no
+  employee). Still to do: every punch for 01-09 → 21-10 needs the Transactions Report for that span; the
+  terminal itself offline since 2026-11-17 21:25 local.
 - **Verified:** n/a.
 - **Evidence:** sync runs 1134–1137; commands 57735–57761; audit log for devices #20, #24, #25
   (2026-11-03 → 2026-11-17); read-only info read 2026-11-17 13:01 UTC (`/tmp/cityone-info.php`);
