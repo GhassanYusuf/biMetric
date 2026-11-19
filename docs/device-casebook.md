@@ -189,6 +189,12 @@ Template:
   attributed punch ids and the 6,898 inserted punch ids (delete those punches and links; set the 7 back to no
   employee). Still to do: every punch for 01-09 → 21-10 needs the Transactions Report for that span; the
   terminal itself offline since 2026-11-17 21:25 local.
+- **Unreachable since 2026-11-17 21:25–21:30 local** (owner, 2026-11-19: "I can't reach it"). Health checks answered
+  in 14 ms every 5 min until 21:25, then none. Read-only test 2026-11-19 15:23 local: the hotel's address
+  46.184.207.245 answers ping (5 ms); the terminal is silent on UDP 4370 (4 CONNECTs, no reply, no refusal) and
+  TCP 4370. Nothing was sent from here between our restart at 15:55 that day and the stop. So the router is up and
+  nothing behind it answers: terminal off or hung, its address changed (DHCP) so the UDP 4370 forward misses it,
+  the forward changed, or a program at the hotel holding the connection. Questions sent to the hotel via the owner.
 - **Verified:** n/a.
 - **Evidence:** sync runs 1134–1137; commands 57735–57761; audit log for devices #20, #24, #25
   (2026-11-03 → 2026-11-17); read-only info read 2026-11-17 13:01 UTC (`/tmp/cityone-info.php`);
