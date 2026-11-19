@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-050 | 2026-11-19 | Entrance (TF1700, 192.168.7.60) | Stopped answering every C3 command after the door probe's RTLOG reads on 2026-11-18 | OPEN |
 | DC-049 | 2026-11-17 | City One Hotel (F18/ID, 46.184.207.245) | First read gets only 7 punches; the hotel says there are many — the terminal itself holds only 7 | OPEN |
 | DC-048 | 2026-11-16 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | A terminal-ID change deleted Harichandra's only fingerprint: the save-before-delete stored nothing, and 753 fingers there had no system copy | OPEN |
 | DC-047 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Full reads get all 16,276 punches but decode as few as 409: a slow window asked for twice makes the F18 serve the rest shifted | FIXED |
@@ -124,6 +125,33 @@ Template:
 ---
 
 ## Entries
+
+### DC-050 — Entrance stopped answering after the door probe
+
+- **Date:** 2026-11-19
+- **Devices:** Entrance (#14, TF1700, 192.168.7.60:4370, LAN)
+- **Direction:** software → device
+- **Symptom:** owner, 2026-11-19: "No C3 reply to command 0x06 from 192.168.7.60 within 8 s".
+- **What was done:** reads only; nothing written to the panel.
+  - Last success: 2026-11-18 09:00 UTC (12:00 local) — sync_attendance (23,077 read) and sync_time. Every command
+    since times out: reads at 15:05 UTC that day, then all of 2026-11-19 (05:00, 09:00, 10:00, 11:23, 12:00 UTC).
+  - That is exactly when `tools/zkprobe/c3-rtlog.php` (read-only, RTLOG 0x0B) ran against it: the first run
+    (~08:58 UTC) was cut off by the shell mid-session on Entrance — after it had answered RTLOG with events — so
+    its DISCONNECT and the lock release never ran; the following runs (09:04 UTC on) timed out on RTLOG. Glass Door
+    (inBIO460), probed the same way, kept answering.
+  - 2026-11-19 ~12:35 UTC: the panel answers ping and **accepts TCP on 4370**, but no C3 command; this server still
+    holds a half-closed connection to it (`FIN-WAIT-2`). Most likely the TF1700 still holds the abandoned session
+    and ignores new ones (it is strict about sessions; rule-15 notes in `Tf1700`).
+  - Library 2.25.1: the TF1700's `door.events` set to UNKNOWN, so the Door section is not offered on Entrance and
+    cannot repeat this. Owner to power-cycle the panel.
+- **Root cause:** probable — an abandoned C3 session from a probe run killed mid-way (my error: piping a probe to
+  `head` cut it off before its `finally`); the TF1700 does not recover by itself.
+- **Fix:** power-cycle (owner); 2.25.1 hides the door read on the TF1700. Lesson for probes: never pipe a probe
+  that holds a device session into `head`; write its output to a file.
+- **Verified:** pending the power-cycle.
+- **Evidence:** device_commands for device 14 from 2026-11-18 09:00 UTC; traces `tools/zkprobe/traces-2026-11-18/c3-rtlog-0{1..6}.json`.
+- **Status:** OPEN
+- **Keywords:** Entrance, TF1700, No C3 reply, command 0x06, timeout, RTLOG, session, FIN-WAIT-2, probe, door
 
 ### DC-049 — City One Hotel: the first read gets only 7 punches
 
