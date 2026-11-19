@@ -48,6 +48,9 @@ final class VerifyMethod
         28 => 'Palm + fingerprint',
         29 => 'Palm + face + fingerprint',
         200 => 'Other',
+        // Punches imported from another system's export that does not say how each was made
+        // (2026-11-19: City One's ZKTime export). Not a terminal code; never sent to one.
+        210 => 'Imported (method not recorded)',
     ];
 
     public static function label(?int $method): string
