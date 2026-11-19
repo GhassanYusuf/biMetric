@@ -226,6 +226,10 @@ Template:
   TCP 4370. Nothing was sent from here between our restart at 15:55 that day and the stop. So the router is up and
   nothing behind it answers: terminal off or hung, its address changed (DHCP) so the UDP 4370 forward misses it,
   the forward changed, or a program at the hotel holding the connection. Questions sent to the hotel via the owner.
+  - 2026-11-19 ~15:50 local the hotel power-cycled the terminal (owner). Still silent on UDP 4370 at 15:56 and on six
+    tries to 15:58 (the router answers ping, 5 ms). Two restart commands sent from the app at 15:13 and 15:22 could not
+    reach it. A power-cycle not helping points at the path: the terminal's IP (DHCP?) or the router's UDP 4370
+    forward. Hotel to read Menu → Comm. → Ethernet → IP and compare it with the forward.
 - **Verified:** n/a.
 - **Evidence:** sync runs 1134–1137; commands 57735–57761; audit log for devices #20, #24, #25
   (2026-11-03 → 2026-11-17); read-only info read 2026-11-17 13:01 UTC (`/tmp/cityone-info.php`);
