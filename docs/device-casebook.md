@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-050 | 2026-11-19 | Entrance (TF1700, 192.168.7.60) | Stopped answering every C3 command after the door probe's RTLOG reads on 2026-11-18 | OPEN |
+| DC-050 | 2026-11-19 | Entrance (TF1700, 192.168.7.60) | Stopped answering every C3 command after the door probe's RTLOG reads on 2026-11-18 | FIXED |
 | DC-049 | 2026-11-17 | City One Hotel (F18/ID, 46.184.207.245) | First read gets only 7 punches; the hotel says there are many — the terminal itself holds only 7 | OPEN |
 | DC-048 | 2026-11-16 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | A terminal-ID change deleted Harichandra's only fingerprint: the save-before-delete stored nothing, and 753 fingers there had no system copy | OPEN |
 | DC-047 | 2026-11-15 | gems workshop (F18, 95.84.64.159:4371, internet) | Full reads get all 16,276 punches but decode as few as 409: a slow window asked for twice makes the F18 serve the rest shifted | FIXED |
@@ -148,9 +148,12 @@ Template:
   `head` cut it off before its `finally`); the TF1700 does not recover by itself.
 - **Fix:** power-cycle (owner); 2.25.1 hides the door read on the TF1700. Lesson for probes: never pipe a probe
   that holds a device session into `head`; write its output to a file.
-- **Verified:** pending the power-cycle.
+- **Verified:** owner power-cycled the panel 2026-11-19; a read-only info read right after answered in 0.5 s
+  (TF1700, Ver 6.64.0013 Oct 16 2018, ESK5242000009) and the half-closed connection was gone — the abandoned
+  session was the cause. Library 2.25.1 installed (door read hidden on the TF1700). The first attendance read
+  after it, to bring in the punches since 2026-11-18 12:00 local, is the owner's (Read attendance).
 - **Evidence:** device_commands for device 14 from 2026-11-18 09:00 UTC; traces `tools/zkprobe/traces-2026-11-18/c3-rtlog-0{1..6}.json`.
-- **Status:** OPEN
+- **Status:** FIXED
 - **Keywords:** Entrance, TF1700, No C3 reply, command 0x06, timeout, RTLOG, session, FIN-WAIT-2, probe, door
 
 ### DC-049 — City One Hotel: the first read gets only 7 punches
