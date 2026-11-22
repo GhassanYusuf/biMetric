@@ -9,7 +9,6 @@ use App\Models\EmployeeDeviceMap;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\EmployeeReportService;
 use App\Services\Attendance\SummaryBatch;
-use App\Support\AttendanceRules;
 use App\Support\VerifyMethod;
 use Carbon\Carbon;
 
@@ -54,11 +53,6 @@ class PersonalReport
         $periodFrom = $fromDate->format('Y-m-d');
         $ids = $employees->pluck('id')->all();
 
-        $rules = AttendanceRules::current();
-        $shiftStart = $rules->startMinutes();
-        $leftEarlyBefore = $rules->leftEarlyBeforeMinutes();
-        $grace = $rules->lateGrace;
-        $shift = [...EmployeeReportService::shiftPayload($rules), 'timezone' => $tz];
 
         $deviceNames = Device::query()->pluck('name', 'id');
 
@@ -97,6 +91,12 @@ class PersonalReport
         foreach ($employees as $employee) {
             $trackingFrom = EmployeeReportService::trackingFromValues($employee->hired_date, $firstPunch[$employee->id] ?? null);
             $summary = $this->summaries->summary($employee, $prevFrom->format('Y-m-d'), $toDate->format('Y-m-d'), $batch);
+            // Their company's own shift, else the default (2026-11-22).
+            $rules = $batch->rulesFor($employee->id);
+            $shiftStart = $rules->startMinutes();
+            $leftEarlyBefore = $rules->leftEarlyBeforeMinutes();
+            $grace = $rules->lateGrace;
+            $shift = [...EmployeeReportService::shiftPayload($rules), 'timezone' => $tz];
             $mine = $punches[$employee->id] ?? [];
 
             $days = array_map(fn (array $d) => [

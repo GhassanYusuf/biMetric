@@ -335,6 +335,8 @@ Route::middleware(['auth:sanctum', 'tenant', 'password.changed'])->group(functio
     // Holidays (index/store/update/destroy — no individual show needed)
     Route::get('holidays/rules', [HolidayController::class, 'rules']);
     Route::put('holidays/rules', [HolidayController::class, 'updateRules']);
+    Route::put('holidays/rules/companies/{company}', [HolidayController::class, 'updateCompanyRules']);
+    Route::delete('holidays/rules/companies/{company}', [HolidayController::class, 'resetCompanyRules']);
     Route::apiResource('holidays', HolidayController::class)->except('show')->names('api.holidays');
 
     // Dashboard + reports

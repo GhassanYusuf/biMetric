@@ -2,27 +2,11 @@
 
 namespace App\Http\Requests\Api\Holiday;
 
-use App\Support\Tenancy;
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
-
-class UpdateHolidayRequest extends FormRequest
+/** Same rules as adding one; the holiday being edited does not clash with itself. */
+class UpdateHolidayRequest extends StoreHolidayRequest
 {
-    public function authorize(): bool
+    protected function ignoredId(): ?int
     {
-        return true;
-    }
-
-    public function rules(): array
-    {
-        return [
-            'date' => [
-                'required', 'date',
-                Rule::unique('holidays', 'date')
-                    ->where('tenant_id', Tenancy::id())
-                    ->ignore($this->route('holiday')->id),
-            ],
-            'name' => ['required', 'string', 'max:255'],
-        ];
+        return (int) $this->route('holiday')->id;
     }
 }

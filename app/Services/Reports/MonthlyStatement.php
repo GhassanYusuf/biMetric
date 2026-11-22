@@ -77,8 +77,9 @@ class MonthlyStatement
 
         $batch = SummaryBatch::for($employees, $fromDate, $toDate);
 
-        $rules = $batch->rules;
-        $timetable = $rules->shiftStart.'-'.$rules->shiftEnd;
+        // The header shift: the one rule set in use, else the default. Each block uses its person's own.
+        $inUse = $batch->rulesInUse();
+        $rules = count($inUse) === 1 ? $inUse[0] : AttendanceRules::current();
 
         // Every calendar day, not only work days: the ZKTeco statement lists them all,
         // and a gap in the dates reads as a missing page.
@@ -87,8 +88,10 @@ class MonthlyStatement
             $calendar[] = $date->format('Y-m-d');
         }
 
-        $blocks = $employees->map(function (Employee $employee) use ($from, $to, $batch, $calendar, $rules, $timetable) {
+        $blocks = $employees->map(function (Employee $employee) use ($from, $to, $batch, $calendar) {
             $summary = $this->summaries->summary($employee, $from, $to, $batch);
+            $rules = $batch->rulesFor($employee->id);
+            $timetable = $rules->shiftStart.'-'.$rules->shiftEnd;
             $workDays = array_column($summary['daily'], null, 'date');
             $offDays = array_column($summary['off_days'], null, 'date');
 
@@ -127,6 +130,7 @@ class MonthlyStatement
                 'leave_late_after' => $rules->leaveLateAfter,
                 'work_days' => $rules->workDays,
                 'length_minutes' => $rules->shiftLengthMinutes(),
+                'varies' => count($inUse) > 1,
             ],
             'employees' => $blocks,
         ];

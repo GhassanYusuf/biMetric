@@ -4,6 +4,7 @@ namespace App\Services\Attendance;
 
 use App\Models\AttendanceLog;
 use App\Models\AttendanceWaiver;
+use App\Models\CompanyAttendanceRule;
 use App\Models\Employee;
 use App\Models\Holiday;
 use App\Support\AttendanceRules;
@@ -46,28 +47,33 @@ final class SummaryBatch
 {
     /**
      * @param  array<int, Collection<int, AttendanceLog>>  $logsByEmployee
-     * @param  Collection<string, Holiday>  $holidays  keyed Y-m-d
+     * @param  Collection<string, Collection<int, Holiday>>  $holidays  keyed Y-m-d; a day may hold one holiday per company
      * @param  array<int, Collection<string, AttendanceWaiver>>  $waiversByEmployee  each keyed Y-m-d
-     * @param  list<array{key:string, expectedStart:Carbon, expectedEnd:Carbon, windowStart:Carbon, windowEnd:Carbon}>  $days
+     * @param  array<string, array{rules:AttendanceRules, days:list<array{key:string, expectedStart:Carbon, expectedEnd:Carbon, windowStart:Carbon, windowEnd:Carbon}>, hours:float}>  $profiles
+     *                                                                                                                                                                            keyed 'default' or 'company:N'
+     * @param  array<int, array{profile:string, company:?int}>  $employees  keyed employee id
      */
     private function __construct(
         private readonly array $logsByEmployee,
         private readonly Collection $holidays,
         private readonly array $waiversByEmployee,
-        public readonly array $days,
-        public readonly float $shiftLengthHours,
-        public readonly AttendanceRules $rules,
+        private readonly array $profiles,
+        private readonly array $employees,
     ) {}
 
     /**
      * Reads every employee's punches and waivers for the window in three queries,
-     * and works out the shift marks for each work day once.
+     * and works out the shift marks for each work day once PER RULE SET — the
+     * system default, plus one per company in the batch that keeps its own rules
+     * (company_attendance_rules, 2026-11-22). Still one calendar per rule set,
+     * never one per person.
      *
      * @param  iterable<Employee>  $employees
      */
     public static function for(iterable $employees, Carbon $fromDate, Carbon $toDate): self
     {
-        $ids = Collection::make($employees)->pluck('id')->all();
+        $employees = Collection::make($employees);
+        $ids = $employees->pluck('id')->all();
 
         $fromDay = $fromDate->format('Y-m-d');
         $toDay = $toDate->format('Y-m-d');
@@ -89,11 +95,13 @@ final class SummaryBatch
             ->groupBy('employee_id')
             ->all();
 
-        // Not per employee — it never was. It was simply re-read 357 times.
+        // Not per employee — read once with the companies each applies to (none = every company).
         $holidays = Holiday::query()
+            ->with('companies:id')
             ->whereBetween('date', [$fromDay, $toDay])
+            ->orderBy('id')
             ->get()
-            ->keyBy(fn (Holiday $h) => $h->date->format('Y-m-d'));
+            ->groupBy(fn (Holiday $h) => $h->date->format('Y-m-d'));
 
         $waiversByEmployee = AttendanceWaiver::query()
             ->whereIn('employee_id', $ids)
@@ -103,18 +111,37 @@ final class SummaryBatch
             ->map(fn (Collection $rows) => $rows->keyBy(fn (AttendanceWaiver $w) => $w->date->format('Y-m-d')))
             ->all();
 
-        // Read once: every day and every employee in this batch is judged by the same rules.
-        $rules = AttendanceRules::current();
-        [$days, $shiftLengthHours] = self::calendar($fromDate, $toDate, $rules);
+        // One rule set per company that has its own; everyone else is judged by the default.
+        $companyIds = $employees->pluck('company_id')->filter()->map(fn ($c) => (int) $c)->unique()->values()->all();
+        $own = $companyIds === [] ? collect() : CompanyAttendanceRule::query()->whereIn('company_id', $companyIds)->get()->keyBy('company_id');
 
-        return new self($logsByEmployee, $holidays, $waiversByEmployee, $days, $shiftLengthHours, $rules);
+        $profile = function (AttendanceRules $rules) use ($fromDate, $toDate): array {
+            [$days, $hours] = self::calendar($fromDate, $toDate, $rules);
+
+            return ['rules' => $rules, 'days' => $days, 'hours' => $hours];
+        };
+        $profiles = ['default' => $profile(AttendanceRules::current())];
+        foreach ($own as $companyId => $row) {
+            $profiles['company:'.$companyId] = $profile(AttendanceRules::fromCompanyRow($row));
+        }
+
+        $map = [];
+        foreach ($employees as $e) {
+            $company = $e->company_id === null ? null : (int) $e->company_id;
+            $map[(int) $e->id] = [
+                'profile' => $company !== null && isset($profiles['company:'.$company]) ? 'company:'.$company : 'default',
+                'company' => $company,
+            ];
+        }
+
+        return new self($logsByEmployee, $holidays, $waiversByEmployee, $profiles, $map);
     }
 
     /**
      * The work days in the window, each with its shift marks already resolved.
      *
-     * These depend only on the date and the configured shift, so they are the same
-     * for every employee in the report — which is exactly why recomputing them per
+     * These depend only on the date and the rule set, so they are the same for
+     * every employee judged by that set — which is exactly why recomputing them per
      * person cost more than every database query in the request put together.
      *
      * @return array{0:list<array{key:string, expectedStart:Carbon, expectedEnd:Carbon, windowStart:Carbon, windowEnd:Carbon}>, 1:float}
@@ -154,6 +181,44 @@ final class SummaryBatch
         return [$days, $shiftLengthHours];
     }
 
+    /** @return array{rules:AttendanceRules, days:list<array<string,mixed>>, hours:float} */
+    private function profileOf(int $employeeId): array
+    {
+        // Someone summarised outside the batch's list (never by design) gets the default, not an error.
+        return $this->profiles[$this->employees[$employeeId]['profile'] ?? 'default'];
+    }
+
+    /** The rules this employee is judged by: their company's own, else the default. */
+    public function rulesFor(int $employeeId): AttendanceRules
+    {
+        return $this->profileOf($employeeId)['rules'];
+    }
+
+    /** @return list<array{key:string, expectedStart:Carbon, expectedEnd:Carbon, windowStart:Carbon, windowEnd:Carbon}> */
+    public function daysFor(int $employeeId): array
+    {
+        return $this->profileOf($employeeId)['days'];
+    }
+
+    public function shiftLengthHoursFor(int $employeeId): float
+    {
+        return $this->profileOf($employeeId)['hours'];
+    }
+
+    /**
+     * The distinct rule sets the employees in this batch are judged by — one when
+     * nobody's company keeps its own. A report printing "the shift" prints the one,
+     * or says it varies.
+     *
+     * @return list<AttendanceRules>
+     */
+    public function rulesInUse(): array
+    {
+        $used = array_unique(array_column($this->employees, 'profile')) ?: ['default'];
+
+        return array_values(array_map(fn (string $k) => $this->profiles[$k]['rules'], $used));
+    }
+
     /** @return Collection<int, AttendanceLog> */
     public function logsFor(int $employeeId): Collection
     {
@@ -162,9 +227,15 @@ final class SummaryBatch
         return $this->logsByEmployee[$employeeId] ?? Collection::make();
     }
 
-    public function holidayOn(string $day): ?Holiday
+    /**
+     * The holiday this employee has on $day: one for every company, or one ticked
+     * for their company. Someone in no company has only the every-company ones.
+     */
+    public function holidayOn(string $day, int $employeeId): ?Holiday
     {
-        return $this->holidays->get($day);
+        $company = $this->employees[$employeeId]['company'] ?? null;
+
+        return $this->holidays->get($day)?->first(fn (Holiday $h) => $h->appliesToCompany($company));
     }
 
     public function waiverOn(int $employeeId, string $day): ?AttendanceWaiver

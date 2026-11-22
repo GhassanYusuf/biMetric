@@ -13,7 +13,9 @@ use App\Services\Settings\TenantSettings;
  * `attendance.*` tenant settings. Before that they were fixed config values: 09:00–18:00,
  * Sun–Thu, one 15-minute grace for both ends — which is not how OTR works.
  *
- * EVERY reader of the shift goes through current(), so the summary, the screens, the
+ * PER COMPANY since 2026-11-22: forCompany() / forEmployee() give a company's own rules when it has them
+ * (company_attendance_rules), else these defaults. EVERY reader goes through them (or current() for the
+ * default itself), so the summary, the screens, the
  * reports and the Monthly Statement can never judge a day by different rules. Without a
  * resolved company (a console command, a test with no tenant) it is config('attendance').
  *
@@ -58,6 +60,40 @@ final class AttendanceRules
             $s['attendance.early_leave_grace_minutes'],
             $s['attendance.leave_late_after_minutes'],
             $s['attendance.work_days'],
+        );
+    }
+
+    /**
+     * The rules for someone in $companyId (2026-11-22): the company's own when it has them
+     * (company_attendance_rules), otherwise the system default (current()). Not cached: a queue worker
+     * outlives a request, and a rule changed between two jobs must be seen by the second.
+     */
+    public static function forCompany(?int $companyId): self
+    {
+        if ($companyId !== null && Tenancy::id() !== null) {
+            $row = \App\Models\CompanyAttendanceRule::query()->where('company_id', $companyId)->first();
+            if ($row !== null) {
+                return self::fromCompanyRow($row);
+            }
+        }
+
+        return self::current();
+    }
+
+    public static function forEmployee(\App\Models\Employee $employee): self
+    {
+        return self::forCompany($employee->company_id === null ? null : (int) $employee->company_id);
+    }
+
+    public static function fromCompanyRow(\App\Models\CompanyAttendanceRule $row): self
+    {
+        return new self(
+            $row->shift_start,
+            $row->shift_end,
+            (int) $row->late_grace_minutes,
+            (int) $row->early_leave_grace_minutes,
+            (int) $row->leave_late_after_minutes,
+            array_values(array_map('intval', (array) $row->work_days)),
         );
     }
 

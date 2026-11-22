@@ -53,7 +53,7 @@ class LiveController extends Controller
             'attendance' => $this->stamp(AttendanceLog::query(), AttendanceSyncRun::query()),
             'enrollment' => $this->stamp(EnrollmentSession::query()),
             // The attendance rules are settings, edited on the Holidays screen (2026-10-19).
-            'holidays' => $this->stamp(Holiday::query(), Setting::query()->where('key', 'like', 'attendance.%')),
+            'holidays' => $this->stamp(Holiday::query(), Setting::query()->where('key', 'like', 'attendance.%'), \App\Models\CompanyAttendanceRule::query()),
             // Background report files (2026-10-18): the Reports screen's export list.
             'reports' => $this->stamp(ReportExport::query()),
             // The Users screen (2026-10-19): users, and their levels (RoleController touches

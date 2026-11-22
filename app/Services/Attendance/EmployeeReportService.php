@@ -45,7 +45,7 @@ class EmployeeReportService
         $summary = $this->summary->summary($employee, $fromDate->format('Y-m-d'), $toDate->format('Y-m-d'));
         $firstPunch = $this->firstPunchOfEachDay($employee, $fromDate, $toDate);
 
-        $rules = AttendanceRules::current();
+        $rules = AttendanceRules::forEmployee($employee); // their company's own shift, else the default
         $shiftEnd = $rules->endMinutes();
         $leftEarlyBefore = $rules->leftEarlyBeforeMinutes();
         $trackingFrom = $this->trackingFrom($employee);
@@ -181,8 +181,12 @@ class EmployeeReportService
         $count = fn (string $o) => count(array_filter($days, fn ($d) => $d['outcome'] === $o));
         $present = array_values(array_filter($days, fn ($d) => $d['first_minutes'] !== null));
         $closed = array_values(array_filter($present, fn ($d) => $d['last_minutes'] !== null));
+        // A day may carry its own person's thresholds (shift_start_minutes, late_after_minutes): a roster
+        // report mixes companies with different shifts (2026-11-22). Without them, the arguments apply.
+        $start = fn (array $d) => $d['shift_start_minutes'] ?? $shiftStart;
+        $lateAfter = fn (array $d) => $d['late_after_minutes'] ?? $shiftStart + $grace;
         $late = array_values(array_filter($present, fn ($d) => $d['outcome'] === 'late'
-            || ($d['outcome'] === 'missed_punch_out' && $d['first_minutes'] > $shiftStart + $grace)));
+            || ($d['outcome'] === 'missed_punch_out' && $d['first_minutes'] > $lateAfter($d))));
         $excused = $count('excused');
         $expected = count($days) - $excused;
         $avg = fn (array $rows, string $k) => $rows === [] ? null : round(array_sum(array_column($rows, $k)) / count($rows), 1);
@@ -203,7 +207,7 @@ class EmployeeReportService
             'on_time_rate' => $present === [] ? null : round((count($present) - count($late)) / count($present), 4),
             'late_arrivals' => count($late),
             'average_minutes_late' => $late === [] ? null
-                : round(array_sum(array_map(fn ($d) => $d['first_minutes'] - $shiftStart, $late)) / count($late), 1),
+                : round(array_sum(array_map(fn ($d) => $d['first_minutes'] - $start($d), $late)) / count($late), 1),
             'average_arrival_minutes' => $avg($present, 'first_minutes'),
             'average_departure_minutes' => $avg($closed, 'last_minutes'),
             'payroll_hours' => round(array_sum(array_column($days, 'payroll_hours')), 1),

@@ -72,7 +72,7 @@ class AttendanceSummaryService
             $byDay[$day] = ['first' => $times[0], 'last' => end($times), 'count' => count($times)];
         }
 
-        $shiftLengthHours = $batch->shiftLengthHours;
+        $shiftLengthHours = $batch->shiftLengthHoursFor($employee->id);
 
         $categories = [
             'early' => 0, 'come_late' => 0, 'leave_on_time' => 0, 'leave_late' => 0,
@@ -83,14 +83,14 @@ class AttendanceSummaryService
 
         /*
          * The work days, and each day's shift marks, come from the batch. They
-         * depend only on the date and the configured shift — never on the employee
-         * — so recomputing them here meant four Carbon::parse() calls per person per
-         * day, which was the single largest cost in the payroll report.
+         * depend only on the date and the rule set (the employee's company's own,
+         * else the default) — so recomputing them here meant four Carbon::parse()
+         * calls per person per day, the largest cost in the payroll report.
          */
-        foreach ($batch->days as $day) {
+        foreach ($batch->daysFor($employee->id) as $day) {
             $key = $day['key'];
             $info = $byDay[$key] ?? null;
-            $holiday = $batch->holidayOn($key);
+            $holiday = $batch->holidayOn($key, $employee->id);
             $waiver = $batch->waiverOn($employee->id, $key);
 
             $arrival = null;
@@ -156,7 +156,7 @@ class AttendanceSummaryService
          * attendance, and a statement that printed only work days would show somebody
          * who came in on their day off as not having come in at all.
          */
-        $workDayKeys = array_flip(array_column($batch->days, 'key'));
+        $workDayKeys = array_flip(array_column($batch->daysFor($employee->id), 'key'));
         $offDays = [];
         foreach ($byDay as $key => $info) {
             if (isset($workDayKeys[$key])) {

@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Services\Attendance\AttendanceSummaryService;
 use App\Services\Attendance\EmployeeReportService;
 use App\Services\Attendance\SummaryBatch;
+use App\Support\AttendanceRules;
 use App\Support\OrgScope;
 use Carbon\Carbon;
 
@@ -66,10 +67,17 @@ class AttendanceReport
             ->pluck('first_punch', 'employee_id');
 
         $batch = SummaryBatch::for($employees, $prevFrom, $toDate);
-        $rules = $batch->rules;
+        /*
+         * Each person is judged by their company's rules (2026-11-22). The header shift is the one rule set in
+         * use, or the default with `varies` when companies differ; aggregates stay right because every day row
+         * carries its own person's thresholds (EmployeeReportService::stats reads them).
+         */
+        $inUse = $batch->rulesInUse();
+        $rules = count($inUse) === 1 ? $inUse[0] : AttendanceRules::current();
         $shiftStart = $rules->startMinutes();
-        $leftEarlyBefore = $rules->leftEarlyBeforeMinutes();
         $grace = $rules->lateGrace;
+        $workDaysInUse = array_values(array_unique(array_merge(...array_map(fn (AttendanceRules $r) => $r->workDays, $inUse))));
+        sort($workDaysInUse);
 
         $people = [];
         $neverTracked = [];
@@ -77,6 +85,8 @@ class AttendanceReport
         foreach ($employees as $employee) {
             $trackingFrom = EmployeeReportService::trackingFromValues($employee->hired_date, $firstPunch[$employee->id] ?? null);
             $summary = $this->summaries->summary($employee, $prevFrom->format('Y-m-d'), $toDate->format('Y-m-d'), $batch);
+            $own = $batch->rulesFor($employee->id);
+            $leftEarlyBefore = $own->leftEarlyBeforeMinutes();
 
             $days = array_map(fn (array $d) => [
                 'date' => $d['date'],
@@ -84,6 +94,8 @@ class AttendanceReport
                 'first_minutes' => $d['first_minutes'],
                 'last_minutes' => $d['last_minutes'],
                 'payroll_hours' => $d['payroll_hours'],
+                'shift_start_minutes' => $own->startMinutes(),
+                'late_after_minutes' => $own->lateAfterMinutes(),
             ], $summary['daily']);
 
             $mine = array_values(array_filter($days, fn ($d) => $d['date'] >= $periodFrom));
@@ -129,14 +141,14 @@ class AttendanceReport
             'days' => $spanDays,
             'previous' => ['from' => $prevFrom->format('Y-m-d'), 'to' => $prevTo->format('Y-m-d')],
             'scope' => $scope->name(),
-            'shift' => [...EmployeeReportService::shiftPayload($rules), 'timezone' => $tz],
+            'shift' => [...EmployeeReportService::shiftPayload($rules), 'timezone' => $tz, 'varies' => count($inUse) > 1],
             'headcount' => count($people),
             'punching' => count($punching),
             'stats' => EmployeeReportService::stats($current, $shiftStart, $grace),
             'all_in_stats' => EmployeeReportService::stats(array_merge([], ...array_column($people, 'days')), $shiftStart, $grace),
             'previous_stats' => EmployeeReportService::stats($previous, $shiftStart, $grace),
             'timeline' => self::timeline($punching),
-            'weekdays' => self::weekdays($current, $shiftStart, $grace, $rules->workDays),
+            'weekdays' => self::weekdays($current, $shiftStart, $grace, $workDaysInUse),
             'arrivals' => array_values(array_filter(array_column($current, 'first_minutes'), fn ($m) => $m !== null)),
             'departments' => self::departments($people, $shiftStart, $grace),
             'attention' => array_map($strip, self::attention($punching)) + ['no_show' => $strip($noShow)],

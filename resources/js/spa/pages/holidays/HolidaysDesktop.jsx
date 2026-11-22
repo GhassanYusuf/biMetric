@@ -1,9 +1,9 @@
 import { Button, Card, EmptyState, PageHeader, SectionCard } from '../../shared/ui';
-import { AttendanceRulesCard, DayBadge, formatDate, partition } from './parts';
+import { AttendanceRulesCard, CompanyRulesCard, DayBadge, companiesLabel, formatDate, partition } from './parts';
 
 // Desktop holidays: upcoming first (that's what anyone opening this page wants),
 // past collapsed underneath as reference.
-export default function HolidaysDesktop({ rows, canManage, onAdd, onEdit, onDelete, rulesProps }) {
+export default function HolidaysDesktop({ rows, canManage, onAdd, onEdit, onDelete, rulesProps, companyRulesProps }) {
     const { upcoming, past } = partition(rows);
 
     return (
@@ -13,6 +13,7 @@ export default function HolidaysDesktop({ rows, canManage, onAdd, onEdit, onDele
             </PageHeader>
 
             <AttendanceRulesCard {...rulesProps} />
+            <CompanyRulesCard {...companyRulesProps} />
 
             {rows.length === 0 ? (
                 <Card>
@@ -47,10 +48,10 @@ function HolidayList({ rows, canManage, onEdit, onDelete, emptyHint }) {
                 <li key={h.id} className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-slate-50/60">
                     <div className="min-w-0 flex-1">
                         <div className="truncate font-medium text-slate-800">{h.name}</div>
-                        <div className="text-xs text-slate-500">{formatDate(h.date)}</div>
+                        <div className="text-xs text-slate-500">{formatDate(h.date)} · {companiesLabel(h)}</div>
                     </div>
                     <DayBadge ymd={h.date} />
-                    {canManage && (
+                    {canManage && h.editable && (
                         <div className="flex shrink-0 items-center gap-1">
                             <button onClick={() => onEdit(h)} className="px-1.5 text-sm text-slate-500 hover:text-slate-700">Edit</button>
                             <button onClick={() => onDelete(h)} className="px-1.5 text-sm text-rose-600 hover:underline">Delete</button>
