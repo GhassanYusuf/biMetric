@@ -224,15 +224,16 @@ class EmployeeReportService
     {
         $tz = config('attendance.timezone');
         $names = Device::query()->pluck('name', 'id');
+        $rules = AttendanceRules::forEmployee($employee);
         $out = [];
 
         AttendanceLog::query()
             ->where('employee_id', $employee->id)
-            ->whereBetween('punched_at', [$from->copy()->setTimezone('UTC'), $to->copy()->setTimezone('UTC')])
+            ->whereBetween('punched_at', [$from->copy()->setTimezone('UTC'), $to->copy()->addDay()->setTimezone('UTC')])
             ->orderBy('punched_at')
             ->get(['punched_at', 'device_id', 'verify_method'])
-            ->each(function (AttendanceLog $log) use (&$out, $names, $tz) {
-                $day = $log->punched_at->copy()->setTimezone($tz)->format('Y-m-d');
+            ->each(function (AttendanceLog $log) use (&$out, $names, $tz, $rules) {
+                $day = $rules->workDayOf($log->punched_at->copy()->setTimezone($tz));
                 $out[$day] ??= [
                     'device' => $names[$log->device_id] ?? null,
                     'verify_method' => $log->verify_method,

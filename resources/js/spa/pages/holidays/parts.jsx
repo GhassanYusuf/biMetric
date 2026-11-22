@@ -6,7 +6,7 @@ export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday',
 /** "HH:MM" plus or minus some minutes, for the plain-language summary. */
 function shiftClock(hhmm, delta) {
     const [h, m] = hhmm.split(':').map(Number);
-    const t = h * 60 + m + delta;
+    const t = (((h * 60 + m + delta) % 1440) + 1440) % 1440; // wraps past midnight (overnight shifts)
     return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 }
 
@@ -104,7 +104,8 @@ export function AttendanceRulesCard({ rules, draft, errors, canManage, mayEditDe
 export function rulesSummary(r) {
     const off = r.weekend_days ?? [];
     const weekend = off.length === 0 ? 'no weekend' : `${off.map((d) => WEEKDAYS[d].slice(0, 3)).join(', ')} off`;
-    return `${r.shift_start}–${r.shift_end} · ${weekend} · late after ${r.late_grace_minutes} min`;
+    const overnight = r.shift_end < r.shift_start ? ' (next day)' : '';
+    return `${r.shift_start}–${r.shift_end}${overnight} · ${weekend} · late after ${r.late_grace_minutes} min`;
 }
 
 /*

@@ -2,6 +2,7 @@
 
 namespace App\Services\Attendance;
 
+use App\Support\AttendanceRules;
 use App\Models\Employee;
 use Carbon\Carbon;
 
@@ -61,10 +62,18 @@ class AttendanceSummaryService
 
         $logs = $batch->logsFor($employee->id);
 
+        // Grouped by WORK day: the calendar day for a day shift, and for an overnight one (17:00–02:00)
+        // the day its shift began — the 02:00 punch closes the evening before (AttendanceRules::workDayOf).
+        $rules = $batch->rulesFor($employee->id);
+        $firstDay = $fromDate->format('Y-m-d');
+        $lastDay = $toDate->format('Y-m-d');
         $punchesByDay = [];
         foreach ($logs as $log) {
             $local = $log->punched_at->copy()->setTimezone($tz);
-            $punchesByDay[$local->format('Y-m-d')][] = $local;
+            $day = $rules->workDayOf($local);
+            if ($day >= $firstDay && $day <= $lastDay) {
+                $punchesByDay[$day][] = $local;
+            }
         }
 
         $byDay = [];
@@ -142,8 +151,10 @@ class AttendanceSummaryService
                 'first' => $info ? $info['first']->format('g:i A') : null,
                 'last' => $info ? $info['last']->format('g:i A') : null,
                 // Minutes after local midnight, for charts that plot time of day.
-                'first_minutes' => $info ? $info['first']->hour * 60 + $info['first']->minute : null,
-                'last_minutes' => $info && $info['count'] > 1 ? $info['last']->hour * 60 + $info['last']->minute : null,
+                // Past 1440 for the small hours of an overnight shift (02:00 = 1560), so they compare with
+                // AttendanceRules::endMinutes() directly.
+                'first_minutes' => $info ? AttendanceRules::minutesInto($info['first'], $key) : null,
+                'last_minutes' => $info && $info['count'] > 1 ? AttendanceRules::minutesInto($info['last'], $key) : null,
                 'arrival' => $arrival,
                 'departure' => $departure,
                 'missed_punch_out' => $info !== null && $info['count'] === 1,
@@ -164,8 +175,8 @@ class AttendanceSummaryService
             }
             $offDays[] = [
                 'date' => $key,
-                'first_minutes' => $info['first']->hour * 60 + $info['first']->minute,
-                'last_minutes' => $info['count'] > 1 ? $info['last']->hour * 60 + $info['last']->minute : null,
+                'first_minutes' => AttendanceRules::minutesInto($info['first'], $key),
+                'last_minutes' => $info['count'] > 1 ? AttendanceRules::minutesInto($info['last'], $key) : null,
                 'missed_punch_out' => $info['count'] === 1,
             ];
         }

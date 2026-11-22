@@ -199,8 +199,9 @@ class HolidayController extends Controller
 
     private static function assertShiftOrder(string $start, string $end): void
     {
-        if (AttendanceRules::minutes($end) <= AttendanceRules::minutes($start)) {
-            throw ValidationException::withMessages(['shift_end' => ['The shift has to end after it starts. Overnight shifts are not supported yet.']]);
+        // An end before the start is an overnight shift (17:00–02:00, 2026-11-22). Only the same time is refused.
+        if (AttendanceRules::minutes($end) === AttendanceRules::minutes($start)) {
+            throw ValidationException::withMessages(['shift_end' => ['The shift cannot start and end at the same time.']]);
         }
     }
 

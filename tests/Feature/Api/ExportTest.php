@@ -340,10 +340,12 @@ class ExportTest extends TestCase
         $this->assertSame('left_early', \App\Services\Attendance\EmployeeReportService::outcome($daily['2026-09-15'], $leftEarlyBefore));
     }
 
-    public function test_a_shift_must_end_after_it_starts(): void
+    public function test_a_shift_cannot_end_when_it_starts(): void
     {
+        // An end before the start is an overnight shift since 2026-11-22 (Camelot, 17:00–02:00);
+        // only the same time is refused.
         $this->login('admin@acme.test')
-            ->putJson('/api/holidays/rules', ['shift_start' => '19:00'])
+            ->putJson('/api/holidays/rules', ['shift_start' => '18:00', 'shift_end' => '18:00'])
             ->assertStatus(422)
             ->assertJsonValidationErrors('shift_end');
 

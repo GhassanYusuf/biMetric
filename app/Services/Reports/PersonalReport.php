@@ -68,12 +68,15 @@ class PersonalReport
         $punches = [];
         AttendanceLog::query()
             ->whereIn('employee_id', $ids)
-            ->whereBetween('punched_at', [$fromDate->copy()->setTimezone('UTC'), $toDate->copy()->setTimezone('UTC')])
+            // A day further: an overnight shift's last work day ends the next morning. Rows filed under a
+            // work day outside the period are never looked up.
+            ->whereBetween('punched_at', [$fromDate->copy()->setTimezone('UTC'), $toDate->copy()->addDay()->setTimezone('UTC')])
             ->orderBy('punched_at')
             ->get(['employee_id', 'punched_at', 'device_id', 'verify_method'])
-            ->each(function (AttendanceLog $log) use (&$punches, $tz, $deviceNames) {
+            ->each(function (AttendanceLog $log) use (&$punches, $tz, $deviceNames, $batch) {
                 $local = $log->punched_at->copy()->setTimezone($tz);
-                $punches[$log->employee_id][$local->format('Y-m-d')][] = [
+                // Filed under the work day it belongs to (an overnight shift's 02:00 under the evening before).
+                $punches[$log->employee_id][$batch->rulesFor($log->employee_id)->workDayOf($local)][] = [
                     'minutes' => $local->hour * 60 + $local->minute,
                     'device' => $deviceNames[$log->device_id] ?? 'Unknown terminal',
                     'method' => $log->verify_method !== null ? VerifyMethod::label($log->verify_method) : null,

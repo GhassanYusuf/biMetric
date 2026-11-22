@@ -151,8 +151,6 @@ class CompanyAttendanceRulesTest extends TestCase
 
     public function test_company_rules_are_checked_like_the_default(): void
     {
-        $this->as($this->admin)->putJson("/api/holidays/rules/companies/{$this->gems->id}", $this->ownRules(['shift_end' => '06:00']))
-            ->assertStatus(422)->assertJsonValidationErrors('shift_end');
         $this->as($this->admin)->putJson("/api/holidays/rules/companies/{$this->gems->id}", ['shift_start' => '07:00'])
             ->assertStatus(422)->assertJsonValidationErrors(['shift_end', 'late_grace_minutes']);
     }
@@ -212,5 +210,47 @@ class CompanyAttendanceRulesTest extends TestCase
         $national = Holiday::withoutGlobalScopes()->where('name', 'National Day')->value('id');
         $this->as($hr)->getJson('/api/holidays')->assertOk()->assertJsonCount(2, 'data');
         $this->as($hr)->deleteJson("/api/holidays/{$national}")->assertForbidden();
+    }
+
+    public function test_an_overnight_shift_closes_the_day_it_began(): void
+    {
+        // Camelot (2026-11-22): 17:00 to 02:00 the next morning. Its work day runs 09:30 to 09:30.
+        $this->as($this->admin)->putJson("/api/holidays/rules/companies/{$this->gems->id}", $this->ownRules([
+            'shift_start' => '17:00', 'shift_end' => '02:00', 'weekend_days' => [], 'early_leave_grace_minutes' => 0,
+        ]))->assertOk()->assertJsonPath('data.companies.1.rules.shift_end', '02:00');
+
+        Tenancy::set($this->tenant->id);
+        AttendanceLog::query()->where('employee_id', $this->inGems->id)->delete();
+        $device = Device::query()->firstOrFail();
+        $tz = config('attendance.timezone');
+        foreach (['2026-08-03 17:10', '2026-08-04 02:05', '2026-08-04 16:55', '2026-08-05 01:30'] as $at) {
+            AttendanceLog::create(['device_id' => $device->id, 'device_user_id' => 'G1', 'employee_id' => $this->inGems->id,
+                'punched_at' => Carbon::parse($at, $tz)->utc(), 'verify_method' => 1, 'status' => 0]);
+        }
+        $gemma = Employee::query()->findOrFail($this->inGems->id);
+        $from = Carbon::parse('2026-08-03', $tz)->startOfDay();
+        $to = Carbon::parse('2026-08-04', $tz)->endOfDay();
+        $summary = app(AttendanceSummaryService::class)->summary($gemma, '2026-08-03', '2026-08-04', SummaryBatch::for([$gemma], $from, $to));
+        Tenancy::clear();
+
+        [$mon, $tue] = $summary['daily'];
+        $this->assertSame('2026-08-03', $mon['date']);
+        $this->assertSame('present', $mon['status']);
+        $this->assertSame('come_late', $mon['arrival'], '17:10 is after 17:00 with no grace');
+        $this->assertSame(17 * 60 + 10, $mon['first_minutes']);
+        $this->assertSame(1440 + 2 * 60 + 5, $mon['last_minutes'], '02:05 the next morning closes Monday');
+        $this->assertSame('leave_late', $mon['departure']);
+        $this->assertSame(8.8, $mon['payroll_hours'], '17:10 to 02:00');
+
+        $this->assertSame('early', $tue['arrival'], '16:55 is early for Tuesday\'s 17:00');
+        $this->assertSame('leave_on_time', $tue['departure'], '01:30 is before 02:00');
+        $this->assertSame([], $summary['off_days'], 'no punch is left over on a calendar day');
+    }
+
+    public function test_a_shift_cannot_start_and_end_at_the_same_time(): void
+    {
+        $this->as($this->admin)->putJson("/api/holidays/rules/companies/{$this->gems->id}", $this->ownRules(['shift_start' => '08:00', 'shift_end' => '08:00']))
+            ->assertStatus(422)->assertJsonValidationErrors('shift_end');
+        $this->as($this->admin)->putJson('/api/holidays/rules', ['shift_start' => '17:00', 'shift_end' => '02:00'])->assertOk();
     }
 }

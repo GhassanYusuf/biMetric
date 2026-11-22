@@ -102,9 +102,48 @@ final class AttendanceRules
         return self::minutes($this->shiftStart);
     }
 
+    /**
+     * Minutes after the work day's own midnight. An overnight shift (owner, 2026-11-22: Camelot works
+     * 17:00–02:00) ends the next day, so its end is past 1440 — 02:00 is 1560 — and every threshold below
+     * follows from that without a special case.
+     */
     public function endMinutes(): int
     {
-        return self::minutes($this->shiftEnd);
+        return self::minutes($this->shiftEnd) + ($this->isOvernight() ? 1440 : 0);
+    }
+
+    /** The shift ends on the day after it starts (end before start on the clock). */
+    public function isOvernight(): bool
+    {
+        return self::minutes($this->shiftEnd) < self::minutes($this->shiftStart);
+    }
+
+    /**
+     * When a work day begins, in minutes after midnight. A day shift's day is the calendar day (0), exactly
+     * as before. An overnight shift's day starts halfway through the hours off between its end and the next
+     * start — 17:00–02:00 gives 09:30 — so the 02:00 punch, and a late one at 04:00, belong to the shift that
+     * began the evening before, and an early arrival at 15:00 to the one about to begin.
+     */
+    public function dayStartsAtMinutes(): int
+    {
+        if (! $this->isOvernight()) {
+            return 0;
+        }
+        $end = self::minutes($this->shiftEnd);
+
+        return $end + intdiv(self::minutes($this->shiftStart) - $end, 2);
+    }
+
+    /** The work day (Y-m-d) a punch at $local office time belongs to. */
+    public function workDayOf(\Carbon\Carbon $local): string
+    {
+        return $local->copy()->subMinutes($this->dayStartsAtMinutes())->format('Y-m-d');
+    }
+
+    /** $local as minutes after the midnight of work day $day — past 1440 for the small hours of an overnight shift. */
+    public static function minutesInto(\Carbon\Carbon $local, string $day): int
+    {
+        return $local->hour * 60 + $local->minute + ($local->format('Y-m-d') > $day ? 1440 : 0);
     }
 
     /** The first minute that counts as Late. */

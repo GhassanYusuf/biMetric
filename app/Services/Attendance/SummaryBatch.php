@@ -87,9 +87,14 @@ final class SummaryBatch
          * receives, so one ORDER BY gives every group its chronological order, which
          * the first/last-punch logic depends on.
          */
+        // An overnight shift's last work day runs into the next morning: read that far too. Day shifts read
+        // exactly the window, as always. The summary drops any punch whose work day falls outside it.
+        $overnight = self::anyOvernight($employees);
+        $logsTo = $overnight ? $toDate->copy()->addDay() : $toDate;
+
         $logsByEmployee = AttendanceLog::query()
             ->whereIn('employee_id', $ids)
-            ->whereBetween('punched_at', [$fromDate->copy()->setTimezone('UTC'), $toDate->copy()->setTimezone('UTC')])
+            ->whereBetween('punched_at', [$fromDate->copy()->setTimezone('UTC'), $logsTo->copy()->setTimezone('UTC')])
             ->orderBy('punched_at')
             ->get(['employee_id', 'punched_at'])
             ->groupBy('employee_id')
@@ -162,23 +167,35 @@ final class SummaryBatch
 
             $key = $date->format('Y-m-d');
 
+            // An overnight shift (17:00–02:00) ends on the next calendar day.
+            $endDay = $rules->isOvernight() ? $date->copy()->addDay()->format('Y-m-d') : $key;
+
             $days[] = [
                 'key' => $key,
                 // The thresholds are part of "were they late / did they stay late",
                 // not part of the payroll window — keep the two pairs distinct.
                 'expectedStart' => Carbon::parse("{$key} {$shiftStart}", $tz)->addMinutes($rules->lateGrace),
-                'expectedEnd' => Carbon::parse("{$key} {$shiftEnd}", $tz)->addMinutes($rules->leaveLateAfter),
+                'expectedEnd' => Carbon::parse("{$endDay} {$shiftEnd}", $tz)->addMinutes($rules->leaveLateAfter),
                 'windowStart' => Carbon::parse("{$key} {$shiftStart}", $tz),
-                'windowEnd' => Carbon::parse("{$key} {$shiftEnd}", $tz),
+                'windowEnd' => Carbon::parse("{$endDay} {$shiftEnd}", $tz),
             ];
         }
 
-        $shiftLengthHours = round(
-            Carbon::parse($shiftStart)->diffInMinutes(Carbon::parse($shiftEnd)) / 60,
-            1,
-        );
+        $shiftLengthHours = round($rules->shiftLengthMinutes() / 60, 1);
 
         return [$days, $shiftLengthHours];
+    }
+
+    /** Whether the default, or the own rules of a company in $employees, is an overnight shift. */
+    private static function anyOvernight(Collection $employees): bool
+    {
+        if (AttendanceRules::current()->isOvernight()) {
+            return true;
+        }
+        $companyIds = $employees->pluck('company_id')->filter()->unique()->values()->all();
+
+        return $companyIds !== [] && CompanyAttendanceRule::query()->whereIn('company_id', $companyIds)->get()
+            ->contains(fn (CompanyAttendanceRule $r) => AttendanceRules::fromCompanyRow($r)->isOvernight());
     }
 
     /** @return array{rules:AttendanceRules, days:list<array<string,mixed>>, hours:float} */

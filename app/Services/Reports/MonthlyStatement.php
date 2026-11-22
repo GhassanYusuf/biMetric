@@ -233,7 +233,8 @@ class MonthlyStatement
 
     private static function clock(int $minutes): string
     {
-        return sprintf('%02d:%02d', intdiv($minutes, 60), $minutes % 60);
+        // A clock time: an overnight shift's 02:00 arrives as 1560 minutes into the work day.
+        return sprintf('%02d:%02d', intdiv($minutes, 60) % 24, $minutes % 60);
     }
 
     /** "199:12" — hours run past 24, the way the ZKTeco totals do. */
