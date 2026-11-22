@@ -220,27 +220,32 @@ class DuplicateScanTest extends TestCase
         $this->assertContains('Same name', $data['groups'][0]['signals']);
     }
 
-    public function test_a_read_only_user_can_scan_but_still_cannot_merge(): void
+    /**
+     * Owner, 2026-11-22: scanning is for the Administrator level only (permission employees.duplicates,
+     * which Administrator always holds). A user who may see employees but lacks it is refused the scan —
+     * it was open to everyone from 2026-10-06 — and still cannot merge.
+     */
+    public function test_a_user_without_the_scan_permission_cannot_scan_or_merge(): void
     {
         $a = $this->employee(['name' => 'Ali Jaafar', 'card_number' => '778899']);
         $b = $this->employee(['name' => 'Ali Jaafar', 'card_number' => '778899']);
 
-        // The operator holds employees.view (so they can see the roster) but
-        // neither employees.update nor employees.delete.
+        // The operator holds employees.view (so they can see the roster) but not employees.duplicates,
+        // nor employees.update or employees.delete.
         $this->withToken($this->operatorToken)
             ->getJson('/api/employees/duplicate-groups')
-            ->assertOk();
+            ->assertForbidden();
 
         $this->withToken($this->operatorToken)
             ->getJson("/api/employees/{$a->id}/duplicates")
-            ->assertOk();
+            ->assertForbidden();
 
         $this->withToken($this->operatorToken)
             ->postJson('/api/employees/merge/preview', [
                 'keep_id' => $a->id,
                 'merge_ids' => [$b->id],
             ])
-            ->assertOk();
+            ->assertForbidden();
 
         // ...and the write behind it is refused, as it was before Scan existed.
         $this->withToken($this->operatorToken)

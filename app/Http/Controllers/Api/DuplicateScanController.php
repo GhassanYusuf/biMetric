@@ -35,6 +35,7 @@ class DuplicateScanController extends Controller
     public function index(): JsonResponse
     {
         $this->authorize('viewAny', Employee::class);
+        $this->requireScanPermission();
 
         return ApiResponse::success($this->scan->scan(), 'Scan complete.');
     }
@@ -48,6 +49,7 @@ class DuplicateScanController extends Controller
     public function forEmployee(Employee $employee): JsonResponse
     {
         $this->authorize('view', $employee);
+        $this->requireScanPermission();
 
         return ApiResponse::success($this->scan->scan($employee->id), 'Scan complete.');
     }
@@ -87,6 +89,7 @@ class DuplicateScanController extends Controller
         }
 
         $this->authorize('view', $keeper);
+        $this->requireScanPermission();
         foreach ($folded as $employee) {
             $this->authorize('view', $employee);
         }
@@ -94,5 +97,15 @@ class DuplicateScanController extends Controller
         return ApiResponse::success(
             $this->merger->preview($keeper->id, $folded->pluck('id')->all()),
         );
+    }
+
+    /**
+     * Owner, 2026-11-22: "scan for duplicates … only for the administrator level". A permission rather
+     * than a level check (owner, 2026-11-17: nothing hardcoded to a level): the Administrator holds it
+     * automatically, anyone else only if it is given to them. Was open to everyone since 2026-10-06.
+     */
+    private function requireScanPermission(): void
+    {
+        abort_unless(request()->user()?->can('employees.duplicates'), 403, 'You do not have permission to scan for duplicates.');
     }
 }

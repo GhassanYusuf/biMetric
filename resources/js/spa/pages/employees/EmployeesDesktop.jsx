@@ -77,13 +77,9 @@ export default function EmployeesDesktop({
                     + ' · tap a row for its actions'
                 }
             >
-                {/*
-                  * No permission gate (2026-10-06, owner's request). Seeing that
-                  * the roster holds one person twice is not a privileged fact,
-                  * and the scan itself reads — it cannot write until the operator
-                  * picks a merge and the route's update+delete checks agree.
-                  */}
-                <Button variant="secondary" onClick={() => onScan()}>Scan for duplicates</Button>
+                {/* Administrator only by default (owner, 2026-11-22): needs employees.duplicates, which the
+                    Administrator level always holds. Was open to everyone from 2026-10-06. */}
+                {onScan && <Button variant="secondary" onClick={() => onScan()}>Scan for duplicates</Button>}
                 {onMoveTerminal && <Button variant="secondary" onClick={onMoveTerminal}>Move terminal to company</Button>}
                 {/* Exports the list as filtered: all employees, or the tree's company. */}
                 <ActionMenu label="Export" className="min-h-[42px] px-4 text-sm" items={exportItems} />

@@ -20,6 +20,9 @@ class RolesAndPermissionsSeeder extends Seeder
         // Take a fingerprint on a terminal and copy fingerprints into the system — nothing that
         // deletes or moves anyone (owner, 2026-11-17: a GEMS HR account that views and enrols).
         'employees.fingerprint',
+        // Scan the roster for duplicate records (owner, 2026-11-22: Administrator only — held by the
+        // Administrator level, which always has every permission, and by nobody else unless given).
+        'employees.duplicates',
         'devices.view', 'devices.create', 'devices.update', 'devices.delete', 'devices.sync', 'devices.enroll',
         'attendance.view', 'attendance.view.self', 'attendance.sync', 'attendance.waive',
         'holidays.view', 'holidays.manage',

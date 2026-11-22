@@ -37,10 +37,8 @@ export function employeeRowActions(employee, { canUpdate, canEnroll, canFingerpr
         // Writes stored copies to terminals they are on that lack those fingers (2026-09-24):
         // how a finger enrolled on the F18 reaches a C3 door panel. Add-only.
         canEnroll && onPushFingerprints && { key: 'push-fingers', label: 'Push fingerprints to terminals', description: 'Copy stored fingers to terminals missing them. Never overwrites.', onSelect: () => onPushFingerprints(employee) },
-        // OFFERED TO EVERYONE (2026-10-06, owner's request). Noticing that the
-        // roster holds two records for one person needs no permission, and this
-        // item only READS — the screen behind it cannot write until the operator
-        // picks a merge and the update+delete checks on that route say yes.
+        // Shown only with employees.duplicates (owner, 2026-11-22: Administrator only by
+        // default; Employees.jsx passes onScan only then). Offered to everyone 2026-10-06 → 11-22.
         // Placed beside Merge because it is the step before it: scan first, then
         // fold, rather than knowing the other record is there and hunting for it.
         onScan && { key: 'scan', label: 'Scan for duplicates', description: 'Find other records of this person.', onSelect: () => onScan(employee) },

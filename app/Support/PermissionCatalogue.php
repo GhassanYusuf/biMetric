@@ -38,6 +38,7 @@ final class PermissionCatalogue
             'employees.update' => 'Edit employees',
             'employees.delete' => 'Delete employees',
             'employees.fingerprint' => 'Take fingerprints on terminals and copy them into the system',
+            'employees.duplicates' => 'Scan for duplicate employee records',
             'employees.push' => 'Send to and remove from terminals, delete fingerprints and cards, set terminal admin',
         ],
         'Attendance' => [

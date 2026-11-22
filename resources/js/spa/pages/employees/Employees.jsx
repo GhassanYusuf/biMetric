@@ -924,7 +924,8 @@ export default function Employees() {
         onMerge: (employee) => setMerging(employee),
         // Opened from the toolbar (the whole roster) or from a row (that person
         // only) — same screen, different question.
-        onScan: (target) => setScanning(target ?? 'all'),
+        // Administrator only by default (2026-11-22): a permission the Administrator level always holds.
+        onScan: can('employees.duplicates') ? (target) => setScanning(target ?? 'all') : null,
         highlightNoPunches,
         onToggleHighlightNoPunches: setHighlightNoPunches,
         onMoveTerminal: can('employees.update') && companies.length > 0 ? () => setMovingTerminal(true) : null,

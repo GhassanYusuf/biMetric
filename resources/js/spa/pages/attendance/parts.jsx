@@ -54,6 +54,8 @@ const VERIFY_METHODS = {
     // The vendor's word. On the C3 panels it marks events with no credential behind
     // them — door sensor, exit button — not a person verifying.
     200: 'Other',
+    // Imported from another system's export that does not say how (2026-11-19, City One).
+    210: 'Imported (method not recorded)',
 };
 
 export function verifyLabel(method) {

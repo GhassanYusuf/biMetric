@@ -99,11 +99,12 @@ export default function EmployeesMobile({
                 stacked
             />
 
-            {/* Offered to everyone (2026-10-06, owner's request): the scan reads,
-                and noticing a duplicate needs no permission. */}
-            <Button variant="secondary" className="w-full" onClick={() => onScan()}>
-                Scan for duplicates
-            </Button>
+            {/* Administrator only by default (owner, 2026-11-22): needs employees.duplicates. */}
+            {onScan && (
+                <Button variant="secondary" className="w-full" onClick={() => onScan()}>
+                    Scan for duplicates
+                </Button>
+            )}
 
             {onMoveTerminal && (
                 <Button variant="secondary" className="w-full" onClick={onMoveTerminal}>
