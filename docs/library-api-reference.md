@@ -488,7 +488,7 @@ panel**: nothing stored changes, but its readers and locks are out while it rebo
 `false` = timeout or dropped link (the reference does not say the panel answers before rebooting);
 REPLY_ERROR throws. No DISCONNECT afterwards. Neither return value proves a restart — confirm by the
 panel going away and answering again (the app's `DeviceRestartService`). `device.restart`: IMPLEMENTED on
-the inBIO460, UNKNOWN on the TF1700 and other C3 models. The relay operations (1 output, 4 normal-open)
+the inBIO460 and the TF1700 (2.26.1), UNKNOWN on other C3 models. The relay operations (1 output, 4 normal-open)
 are not built.
 
 ### The staged read — `C3\Protocol\BufferedReader`

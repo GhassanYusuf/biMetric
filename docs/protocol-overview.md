@@ -680,8 +680,9 @@ param3 seconds, 255 = normal open), 2 cancel alarm, **3 restart device** (`03 00
 on/off. Session-less frame as the inBIO460 and TF1700 are spoken to: `AA 01 05 05 00 03 00 00 00 00 <crc> 55`.
 The reference waits for REPLY_OK (0xC8) and checks nothing else; whether a panel sends it before rebooting
 is not stated. Library 2.26.0 sends only operation 3 (`Panel::restart()`); the relay operations stay
-unbuilt (rule 16). Not yet run on any panel — Glass Door (inBIO460, 192.168.7.61) is first, by the owner's
-go-ahead of 2026-11-23. Entrance (TF1700) stays hidden after DC-050.
+unbuilt (rule 16). Not yet run on any panel. Offered on Glass Door (inBIO460, 192.168.7.61) and, from
+2.26.1, Entrance (TF1700, 192.168.7.60), both by the owner's go-ahead of 2026-11-23; Entrance is to be run
+with someone at the panel, given DC-050.
 
 ### Writing to a C3 panel — the command is known, the payload is not (2026-09-15)
 
