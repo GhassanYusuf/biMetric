@@ -177,7 +177,9 @@ export function restartConfirm(device) {
         title: `Restart ${device.name}?`,
         body: [
             'The terminal switches itself off and on. It is unreachable for about half a minute, and nobody can punch at it meanwhile. Everything stored on it stays: people, cards, fingerprints and punches.',
-            'Use it when the terminal keeps refusing changes, for example "Error inserting database". A restart cleared that on Camelot.',
+            ...(device.protocol === 'c3'
+                ? ['This is a door panel: while it restarts, its readers and door locks do not work, so nobody can badge in. Do it when nobody needs the door, with someone nearby.']
+                : ['Use it when the terminal keeps refusing changes, for example "Error inserting database". A restart cleared that on Camelot.']),
             ...(proven ? [] : ['This has not yet been run on this model of terminal. The system checks that it goes away and comes back.']),
         ],
         confirmLabel: 'Restart terminal',

@@ -480,6 +480,17 @@ The panel keeps local time with no zone; pass the device's zone. `setClock()` re
 the clock as read back — compare it, do not trust the acknowledgement. CONFIRMED on the
 inBIO460 and the TF1700, 2026-10-11.
 
+### Restart — `Panel::restart(): bool` (2.26.0, EXPERIMENTAL)
+
+CONTROL_DEVICE (0x05) operation 3, payload `03 00 00 00 00`, transcribed from vwout/zkaccess-c3-py
+(`consts.py` `ControlOperation.RESTART_DEVICE = 3`; `controldevice.py`), read 2026-11-23. **Writes to the
+panel**: nothing stored changes, but its readers and locks are out while it reboots. `true` = REPLY_OK;
+`false` = timeout or dropped link (the reference does not say the panel answers before rebooting);
+REPLY_ERROR throws. No DISCONNECT afterwards. Neither return value proves a restart — confirm by the
+panel going away and answering again (the app's `DeviceRestartService`). `device.restart`: IMPLEMENTED on
+the inBIO460, UNKNOWN on the TF1700 and other C3 models. The relay operations (1 output, 4 normal-open)
+are not built.
+
 ### The staged read — `C3\Protocol\BufferedReader`
 
 `GET_DATA` on a populated table stages its answer rather than returning it:

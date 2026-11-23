@@ -436,9 +436,23 @@ class C3Driver implements BiometricDeviceDriver
         throw new UnsupportedCommandException("{$device->name} is a C3 panel; wiping its users is not implemented (device.wipe).");
     }
 
+    /**
+     * Restarts the panel (library 2.26.0, Panel::restart(): CONTROL_DEVICE op 3). Offered per model by
+     * device.restart — the inBIO460 only, IMPLEMENTED until Glass Door has been seen to restart.
+     * The acknowledgement is logged, never trusted: DeviceRestartService confirms the restart by the
+     * panel going away and answering again (rule 10). WRITES TO THE DEVICE; nothing stored changes.
+     */
     public function restart(Device $device): void
     {
-        throw new UnsupportedCommandException("{$device->name} is a C3 panel; restarting it is not implemented (device.restart).");
+        $this->capabilities($device)->require(Capability::RESTART);
+
+        $acknowledged = $this->attempt($device, fn (Panel $panel) => $panel->restart());
+
+        Log::info('C3 panel restart sent', [
+            'device_id' => $device->id,
+            'device' => $device->name,
+            'acknowledged' => $acknowledged,
+        ]);
     }
 
     /**

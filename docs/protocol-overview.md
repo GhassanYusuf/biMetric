@@ -672,6 +672,17 @@ set_device_datetime, `utils.py` C3DateTime) — the same packed format as a tran
 stamp. Both panels read ~650 s slow, were set, and read back exact (casebook DC-019).
 The panel stores no zone: the caller passes the device's zone both ways.
 
+### Restarting a C3 panel — `CONTROL_DEVICE` (0x05) op 3 (DOCUMENTED, 2026-11-23)
+
+From vwout/zkaccess-c3-py (`consts.py`, `controldevice.py`, `core.py`): CONTROL_DEVICE carries 5 bytes —
+operation, then four parameters. Operations: 1 output (door/aux relay; param1 door, param2 1=door 2=aux,
+param3 seconds, 255 = normal open), 2 cancel alarm, **3 restart device** (`03 00 00 00 00`), 4 normal-open
+on/off. Session-less frame as the inBIO460 and TF1700 are spoken to: `AA 01 05 05 00 03 00 00 00 00 <crc> 55`.
+The reference waits for REPLY_OK (0xC8) and checks nothing else; whether a panel sends it before rebooting
+is not stated. Library 2.26.0 sends only operation 3 (`Panel::restart()`); the relay operations stay
+unbuilt (rule 16). Not yet run on any panel — Glass Door (inBIO460, 192.168.7.61) is first, by the owner's
+go-ahead of 2026-11-23. Entrance (TF1700) stays hidden after DC-050.
+
 ### Writing to a C3 panel — the command is known, the payload is not (2026-09-15)
 
 Asked to make the panels accept user writes, and the honest state of it is worth
