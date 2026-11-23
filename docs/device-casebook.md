@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-051 | 2026-11-23 | Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60) | Both C3 panels off the network (no ARP reply) the morning the C3 restart shipped; neither restart was ever sent | OPEN |
 | DC-050 | 2026-11-19 | Entrance (TF1700, 192.168.7.60) | Stopped answering every C3 command after the door probe's RTLOG reads on 2026-11-18 | FIXED |
 | DC-049 | 2026-11-17 | City One Hotel (F18/ID, 46.184.207.245) | First read gets only 7 punches; the hotel says there are many — the terminal itself holds only 7 | OPEN |
 | DC-048 | 2026-11-16 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | A terminal-ID change deleted Harichandra's only fingerprint: the save-before-delete stored nothing, and 753 fingers there had no system copy | OPEN |
@@ -125,6 +126,34 @@ Template:
 ---
 
 ## Entries
+
+### DC-051 — Both C3 panels off the network; the first restarts never reached them
+
+- **Date:** 2026-11-23
+- **Devices:** Glass Door (#13, inBIO460, 192.168.7.61:4370, LAN); Entrance (#14, TF1700, 192.168.7.60:4370, LAN).
+  Controls on the same LAN: IT ROOM (192.168.7.62), .63, .64 — all answering.
+- **Direction:** software → device
+- **Symptom:** owner, 2026-11-23: Glass Door "has some issue"; then "I restarted Entrance, check it now". The
+  restart commands (library 2.26.0/2.26.1, CONTROL_DEVICE op 3) both failed at once with "could not reach the device".
+- **What was done:** reads only (device_commands, ping, TCP connect, ARP table). Nothing sent to either panel.
+  - Glass Door: last success 02:31 UTC (sync_enrollment); failing from 06:08 UTC. The owner's restart at 08:48 UTC
+    (command 75538) failed in 3 s with `No route to host (113)` — the TCP connect never happened, so the restart
+    was **never sent**.
+  - Entrance: last success 07:01 UTC (sync_attendance, 23,218 read); scheduled jobs failing at 09:08 UTC with the
+    same error; the owner's restart at 09:14 UTC (command 75619) failed the same way — **never sent**.
+  - 09:15 UTC: neither answers ping; the server's ARP entry for both is `FAILED` (nothing on the LAN answers for the
+    address), while .62/.63/.64 are `REACHABLE`. That is a panel without power or link, not a protocol refusal and
+    not the DC-050 state (then the TF1700 still answered ping and accepted TCP).
+- **Root cause:** not known. Both C3 panels lost the network hours apart, with the terminals on the same LAN
+  unaffected — points at their power, cabling or the switch port(s) they share, on site. Our software did not cause
+  it: no command reached either panel this morning before the failures began.
+- **Fix:** owed — physical check of both panels (power, link light, switch port). The C3 restart stays IMPLEMENTED
+  and untested on both models until it actually runs.
+- **Verified:** not yet.
+- **Evidence:** device_commands 75538 (Glass Door restart), 75619 (Entrance restart), 75567/75568, 75569/75570
+  (scheduled jobs, 09:00 UTC); `ip neigh` FAILED for .60 and .61 at 09:15 UTC.
+- **Status:** OPEN
+- **Keywords:** Glass Door, Entrance, inBIO460, TF1700, No route to host, 113, ARP, offline, restart, CONTROL_DEVICE
 
 ### DC-050 — Entrance stopped answering after the door probe
 
