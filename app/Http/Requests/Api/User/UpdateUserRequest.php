@@ -9,6 +9,8 @@ use Illuminate\Validation\Rule;
 /** Edit a user's name, e-mail, level, linked employee or active state. The password has its own endpoint. */
 class UpdateUserRequest extends FormRequest
 {
+    use DropsDeletedCompanies;
+
     public function authorize(): bool
     {
         return true;

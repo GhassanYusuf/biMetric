@@ -13,6 +13,8 @@ use Illuminate\Validation\Rules\Password;
  */
 class StoreUserRequest extends FormRequest
 {
+    use DropsDeletedCompanies;
+
     public function authorize(): bool
     {
         return true;

@@ -199,7 +199,10 @@ export function UserFormModal({ user, levels, myPermissions, companies = [], me,
     // starting password is one somebody else chose.
     const [mustChange, setMustChange] = useState(user ? !!user.must_change_password : true);
     const [onlySome, setOnlySome] = useState(user ? Array.isArray(user.company_ids) && user.company_ids.length > 0 : meLimited);
-    const [companyIds, setCompanyIds] = useState(user?.company_ids ?? (meLimited ? me.company_ids : []));
+    // Only companies that still exist: a deleted one has no tick box to untick, and sending it back would be
+    // refused (2026-11-24). The server drops them too, and never turns "only these" into "every company".
+    const live = (ids) => (ids ?? []).filter((id) => companies.some((c) => c.id === id));
+    const [companyIds, setCompanyIds] = useState(live(user?.company_ids ?? (meLimited ? me.company_ids : [])));
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const ownLevel = user?.is_self;
@@ -332,7 +335,11 @@ export function UserFormModal({ user, levels, myPermissions, companies = [], me,
                         <p className="text-xs text-slate-500">
                             {ownLevel ? 'You cannot change this for yourself.' : 'Only these: they see those companies’ employees, departments and punches, nothing else. Employees in no company and punches linked to nobody are hidden too.'}
                         </p>
-                        {errors.company_ids?.[0] && <p className="text-xs text-rose-700">{errors.company_ids[0]}</p>}
+                        {(() => {
+                            // Also errors on one entry ("company_ids.0"), which used to go unshown.
+                            const key = Object.keys(errors).find((k) => k === 'company_ids' || k.startsWith('company_ids.'));
+                            return key ? <p className="text-xs text-rose-700">{errors[key][0]}</p> : null;
+                        })()}
                     </fieldset>
                 </div>
                 <div className="mt-5 flex justify-end gap-2">

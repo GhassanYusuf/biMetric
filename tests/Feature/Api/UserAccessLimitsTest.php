@@ -168,4 +168,32 @@ class UserAccessLimitsTest extends TestCase
         $this->as($hr)->postJson('/api/companies', ['name' => 'New'])->assertForbidden();
         $this->as($hr)->getJson("/api/companies/{$this->promoseven->id}")->assertForbidden();
     }
+
+    public function test_a_deleted_company_in_someones_access_does_not_block_saving_them(): void
+    {
+        // 2026-11-24: the Seven Hotel's finance user kept City One Hotel after it was deleted; saving him did nothing.
+        $finance = $this->user('finance@acme.test', 'employee');
+        $this->limit($finance, [$this->promoseven, $this->avana]);
+        Tenancy::set($this->tenant->id);
+        $third = Company::create(['name' => 'THE7']);
+        $this->avana->delete();
+        Tenancy::clear();
+
+        $this->as($this->admin)->putJson("/api/users/{$finance->id}", ['company_ids' => [$this->promoseven->id, $this->avana->id, $third->id]])
+            ->assertOk()->assertJsonPath('data.company_ids', [$this->promoseven->id, $third->id]);
+    }
+
+    public function test_dropping_the_only_deleted_company_never_opens_every_company(): void
+    {
+        $finance = $this->user('finance@acme.test', 'employee');
+        $this->limit($finance, [$this->avana]);
+        Tenancy::set($this->tenant->id);
+        $this->avana->delete();
+        Tenancy::clear();
+
+        $this->as($this->admin)->putJson("/api/users/{$finance->id}", ['company_ids' => [$this->avana->id]])
+            ->assertStatus(422)->assertJsonValidationErrors('company_ids');
+        CompanyAccess::forget();
+        $this->assertSame([$this->avana->id], CompanyAccess::for($finance->fresh()), 'still limited, never every company');
+    }
 }
