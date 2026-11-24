@@ -149,13 +149,15 @@ class DashboardService
     public function recentActivity(int $limit = 10): array
     {
         return AttendanceLog::query()
-            ->with(['employee:id,name,last_name', 'device:id,name'])
+            ->with(['employee:id,name,last_name,photo_path', 'device:id,name'])
             ->latest('punched_at')
             ->limit($limit)
             ->get()
             ->map(fn (AttendanceLog $log) => [
                 'id' => $log->id,
                 'employee_name' => $log->employee?->fullName(),
+                // Their photo when they have one (2026-11-24); null shows initials.
+                'employee_photo_url' => $log->employee?->photo_url,
                 'device_name' => $log->device?->name,
                 'punched_at' => $log->punched_at?->toIso8601String(),
             ])

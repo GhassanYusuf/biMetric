@@ -1,5 +1,6 @@
 // Dashboard building blocks shared by the mobile and desktop presentations.
 import { ELEVATION } from '../../shared/theme';
+import { Avatar } from '../../shared/ui';
 
 /*
 | The "Quick Overview" hero: the one place on the surface that carries colour as
@@ -84,9 +85,8 @@ export function RecentTable({ rows }) {
         <ul className="divide-y divide-slate-100">
             {rows.map((r) => (
                 <li key={r.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-50 text-[11px] font-bold text-violet-700">
-                        {initials(r.employee_name)}
-                    </span>
+                    {/* The person's photo when they have one, else their initials (shared Avatar). */}
+                    <Avatar src={r.employee_photo_url} name={r.employee_name || '?'} />
                     <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-slate-800">
                             {r.employee_name || 'Unmatched punch'}
@@ -104,7 +104,3 @@ export function RecentTable({ rows }) {
     );
 }
 
-function initials(name) {
-    if (!name) return '?';
-    return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
-}
