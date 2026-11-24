@@ -269,7 +269,24 @@ Template:
     tries to 15:58 (the router answers ping, 5 ms). Two restart commands sent from the app at 15:13 and 15:22 could not
     reach it. A power-cycle not helping points at the path: the terminal's IP (DHCP?) or the router's UDP 4370
     forward. Hotel to read Menu → Comm. → Ethernet → IP and compare it with the forward.
-- **Verified:** n/a.
+  - **2026-11-22 → 24, the terminal moved to a new device row.** The owner added it again as **#32 "COH"**
+    (2026-11-22 09:46 UTC, 46.184.211.95:4370); its first roster read created 149 employees coded `N-32` (company 30),
+    87 of them still present on 2026-11-24, each linked under its terminal number (all 87 checked: code = number).
+    #32 reads normally — 634 punches from 2026-11-17. The original 149 City One employees (2026-11-17, company 27)
+    were deleted after 2026-11-22.
+  - **2026-11-24 07:49 UTC: #29 "City One Hotel" was deleted** (owner's account, audit 155011). Deleting a device
+    deletes its punches and links, so the 6,898 punches imported from `draft/att.xlsx` on 2026-11-19 and the 149
+    links went with it; no copy was kept in the database.
+  - **2026-11-24, manual database correction (owner ran it):** `/tmp/coh-import.php --apply` re-inserted the export
+    (`/tmp/cityone-punches.json`, kept from 2026-11-19) under #32, each punch attached to the employee #32 links to
+    that number today: **6,331 punches for 70 people** (Sep 2,314, Oct 2,637, Nov 1,380), verify method 210,
+    office time → UTC; 155 skipped as already on #32 (same number and minute). **Not added:** 419 punches of 7
+    numbers #32 links to nobody — 11 (119), 49 (49), 124 (1), 131 (51), 309 (13), 404 (73), 501 (113). Checked
+    after: #32 holds 6,965 punches, none unattributed, none of the imported ones duplicating a punch within a minute.
+    **Undo:** delete the attendance_logs ids listed in `storage/app/coh-import-2026-11-24.json`.
+  - Lesson: removing a device row destroys its attendance. Moving a terminal to a new row needs its punches and
+    links carried across first.
+- **Verified:** n/a for the link fault; the restored attendance was counted on #32 as above.
 - **Evidence:** sync runs 1134–1137; commands 57735–57761; audit log for devices #20, #24, #25
   (2026-11-03 → 2026-11-17); read-only info read 2026-11-17 13:01 UTC (`/tmp/cityone-info.php`);
   operation-log traces `tools/zkprobe/traces-2026-11-17/oplog-read-*.json` (IT ROOM, City One, Gems).
