@@ -144,12 +144,22 @@ Template:
   - 09:15 UTC: neither answers ping; the server's ARP entry for both is `FAILED` (nothing on the LAN answers for the
     address), while .62/.63/.64 are `REACHABLE`. That is a panel without power or link, not a protocol refusal and
     not the DC-050 state (then the TF1700 still answered ping and accepted TCP).
-- **Root cause:** not known. Both C3 panels lost the network hours apart, with the terminals on the same LAN
-  unaffected — points at their power, cabling or the switch port(s) they share, on site. Our software did not cause
-  it: no command reached either panel this morning before the failures began.
-- **Fix:** owed — physical check of both panels (power, link light, switch port). The C3 restart stays IMPLEMENTED
-  and untested on both models until it actually runs.
-- **Verified:** not yet.
+  - 09:17 UTC, owner: both panels have power. A ping sweep of the whole /21 found 132 hosts and neither panel's MAC
+    (Glass Door `00:17:61:10:96:FD`, Entrance `00:17:61:12:34:9B`, from earlier info reads) — not re-addressed,
+    simply not on the LAN.
+  - ~09:44 UTC, owner: "one switch was shut down, not the fingerprint devices". **Entrance answered again from 09:49
+    UTC** (sync_attendance 75698: 23,226 read) and every scheduled job since has succeeded (to 2026-11-24 07:00 UTC).
+    Nothing was lost: it kept recording while cut off — 8 punches stamped 07:00–09:50 UTC came in with that read,
+    49 for the day (40 on the Monday before).
+  - Glass Door: still unreachable on 2026-11-24 08:26 UTC — every job failing, ping down. Not on the switch that was
+    restored, or a second fault.
+- **Root cause:** Entrance — a network switch was shut down (owner, 2026-11-23). Glass Door — not yet known; same
+  pattern (powered, absent from the LAN). Our software did not cause either: no command reached either panel that
+  morning before the failures began.
+- **Fix:** Entrance — switch powered back on (owner). Glass Door — owed: link light at the panel and the switch port
+  it uses. The C3 restart stays IMPLEMENTED and untested on both models until it actually runs.
+- **Verified:** Entrance answering since 2026-11-23 09:49 UTC, all jobs succeeding through 2026-11-24 07:00 UTC.
+  Glass Door not yet.
 - **Evidence:** device_commands 75538 (Glass Door restart), 75619 (Entrance restart), 75567/75568, 75569/75570
   (scheduled jobs, 09:00 UTC); `ip neigh` FAILED for .60 and .61 at 09:15 UTC.
 - **Status:** OPEN
