@@ -165,4 +165,27 @@ class CompanyDepartmentApiTest extends TestCase
         $this->api()->patchJson('/api/v1/employees/31', ['gender' => 'Other'])
             ->assertUnprocessable()->assertJsonValidationErrors('gender');
     }
+
+    public function test_a_deleted_companys_name_can_be_used_again(): void
+    {
+        // 2026-11-24: COH could not be renamed "City One Hotel" a minute after that company was deleted (500).
+        Tenancy::set($this->admin->tenant_id);
+        $old = Company::create(['name' => 'City One Hotel']);
+        $coh = Company::create(['name' => 'COH']);
+        $old->delete();
+        Tenancy::clear();
+
+        $this->api()->putJson("/api/companies/{$coh->id}", ['name' => 'City One Hotel'])->assertOk();
+        // A name a live company holds is still refused, on the field.
+        $this->api()->putJson("/api/companies/{$this->camelot->id}", ['name' => 'City One Hotel'])->assertStatus(422)->assertJsonValidationErrors('name');
+    }
+
+    public function test_a_deleted_departments_name_can_be_used_again_in_its_company(): void
+    {
+        Tenancy::set($this->admin->tenant_id);
+        $this->it->delete();
+        Tenancy::clear();
+
+        $this->api()->postJson('/api/departments', ['name' => 'Information Technology', 'company_id' => $this->promoseven->id])->assertCreated();
+    }
 }
