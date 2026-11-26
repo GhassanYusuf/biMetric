@@ -68,7 +68,7 @@ class DeviceController extends Controller
 
         // Someone who may take fingerprints also needs to know which terminals can capture one
         // (2026-11-17): protocol and on/off, still no address or settings.
-        $forEnrolling = $user->can('employees.fingerprint') || $user->can('employees.push');
+        $forEnrolling = $user->can('employees.fingerprint') || $user->can('employees.push') || $user->can('devices.enroll');
 
         return ApiResponse::success(
             Device::query()->orderBy('name')->get(['id', 'name', 'protocol', 'is_active'])

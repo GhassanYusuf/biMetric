@@ -997,7 +997,7 @@ class EmployeeController extends Controller
      */
     public function assignCard(Request $request, Employee $employee, Device $device): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('enrollCard', $employee);
 
         $data = $request->validate([
             // Digits only: the record holds one unsigned 32-bit number. Leading zeros
@@ -1053,7 +1053,7 @@ class EmployeeController extends Controller
      */
     public function enrollCard(Employee $employee, Device $device): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('enrollCard', $employee);
 
         // The service waits ~20s for a card swipe.
         set_time_limit(90);

@@ -63,7 +63,7 @@ final class PermissionCatalogue
             'devices.update' => 'Change terminals and clear their punches',
             'devices.delete' => 'Remove terminals',
             'devices.sync' => 'Read terminals now',
-            'devices.enroll' => 'Enrol fingerprints and cards',
+            'devices.enroll' => 'Enrol fingerprints and cards: take a finger or give a card on a terminal (removing stays with "Send to and remove from terminals")',
         ],
         'Users & levels' => [
             'users.view' => 'See users',

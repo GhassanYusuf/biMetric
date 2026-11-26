@@ -897,7 +897,7 @@ export default function Employees() {
         canDelete: can('employees.delete'),
         canEnroll: can('employees.push'),
         // Taking fingerprints only (2026-11-17), or everything push allows.
-        canFingerprint: can('employees.fingerprint') || can('employees.push'),
+        canFingerprint: can('employees.fingerprint') || can('employees.push') || can('devices.enroll'),
         canReadDevice: can('devices.sync') && devices.some((d) => d.protocol === 'binary' && d.is_active),
         readingDevice,
         total,
@@ -1130,7 +1130,7 @@ export default function Employees() {
                     employee={rows.find((r) => r.id === viewing.id) ?? viewing}
                     devices={devices.length > 0 ? devices : filterDevices}
                     canEnroll={can('employees.push')}
-                    canFingerprint={can('employees.fingerprint')}
+                    canFingerprint={can('employees.fingerprint') || can('devices.enroll')}
                     onClose={() => setViewing(null)}
                     onEnroll={(employee) => setEnrolling(employee)}
                     // An on-demand device read is persisted server-side, so pull
@@ -1145,6 +1145,8 @@ export default function Employees() {
                     // carries protocol and on/off for someone who may take fingerprints.
                     devices={devices.length > 0 ? devices : filterDevices}
                     canPush={can('employees.push')}
+                    // "Enrol fingerprints and cards" (devices.enroll) gives the card half too (2026-11-26).
+                    canCard={can('employees.push') || can('devices.enroll')}
                     onClose={() => setEnrolling(null)}
                     // A capture changes fingerprint_count / has_card server-side,
                     // so refetch rather than guessing the new values locally.

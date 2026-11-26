@@ -20,11 +20,12 @@ import { useConfirm } from '../../shared/confirm';
 | until the device captures or times out: ~30s for a finger, ~20s for a card.
 */
 /*
+| canCard (2026-11-26): the Card section — employees.push or devices.enroll ("Enrol fingerprints and cards").
 | canPush (2026-11-17): someone with only employees.fingerprint takes fingerprints here and nothing
 | else — the card, "Add to terminal now" and "Update record on terminal" need employees.push. A
 | capture still creates their terminal record when it is missing; that is part of taking a finger.
 */
-export default function EnrollModal({ employee, devices, onClose, onEnrolled, canPush = true }) {
+export default function EnrollModal({ employee, devices, onClose, onEnrolled, canPush = true, canCard = canPush }) {
     // Enrollment and enrollment reads are Binary-only; CSL HTTP cannot capture.
     // Terminals they are enrolled on come first, and the dialog opens on one of them.
     const onIds = new Set(
@@ -363,7 +364,7 @@ export default function EnrollModal({ employee, devices, onClose, onEnrolled, ca
                                     </Button>
                                 </div>
 
-                                {canPush && (
+                                {canCard && (
                                 <div className="rounded-xl border border-slate-200 p-4">
                                     <div className="text-sm font-semibold text-slate-800">Card</div>
                                     <p className="mt-0.5 text-xs text-slate-500">

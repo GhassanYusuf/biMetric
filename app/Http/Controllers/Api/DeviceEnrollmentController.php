@@ -118,7 +118,7 @@ class DeviceEnrollmentController extends Controller
     /** Queues a card capture. */
     public function card(Employee $employee, Device $device): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('enrollCard', $employee);
 
         if ($refusal = $this->refuse($device, Capability::CARD_ENROLL)) {
             return ApiResponse::error($refusal, [], 422);

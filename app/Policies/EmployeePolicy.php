@@ -50,6 +50,16 @@ class EmployeePolicy
      */
     public function enrollFingerprint(User $user, Employee $employee): bool
     {
-        return $user->can('employees.fingerprint') || $user->can('employees.push');
+        // devices.enroll ("Enrol fingerprints and cards") counts too since 2026-11-26; before, it gated nothing.
+        return $user->can('employees.fingerprint') || $user->can('employees.push') || $user->can('devices.enroll');
+    }
+
+    /**
+     * Give someone a card on a terminal — scanned at the terminal or typed in (2026-11-26). Granted by
+     * devices.enroll ("Enrol fingerprints and cards") or employees.push. Removing a card stays on push.
+     */
+    public function enrollCard(User $user, Employee $employee): bool
+    {
+        return $user->can('employees.push') || $user->can('devices.enroll');
     }
 }
