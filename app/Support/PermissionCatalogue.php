@@ -88,6 +88,8 @@ final class PermissionCatalogue
         'System' => [
             'system.move-terminal' => 'Move terminal to company (everyone a terminal holds, in one go)',
             'system.personnel-ids' => 'Personnel IDs: replace terminal user IDs with Personnel IDs in attendance, and undo',
+            'system.enrollments' => 'Enrollments tab: every enrollment waiting or done at the terminals, and cancelling one',
+            'system.legacy' => 'Legacy data tab: import from ZKAccess, and download a backup snapshot',
             // Listed here since 2026-11-26; the permission keeps its name, so nobody's grant changes.
             'employees.duplicates' => 'Scan for duplicate employee records',
         ],

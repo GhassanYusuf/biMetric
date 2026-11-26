@@ -37,6 +37,8 @@ class RolesAndPermissionsSeeder extends Seeder
         // held by the Administrator level (which always has every permission) and by nobody else unless given.
         'system.move-terminal',   // Employees → Move terminal to company
         'system.personnel-ids',   // Attendance → Personnel IDs (replace terminal IDs, undo)
+        'system.enrollments',     // the Enrollments tab (enrollment sessions at terminals)
+        'system.legacy',          // the Legacy data tab (ZKAccess import, backup snapshot)
         'tenants.view', 'tenants.manage', // platform-only
     ];
 

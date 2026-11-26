@@ -55,6 +55,7 @@ class LegacyDataController extends Controller
     public function previewImport(Request $request): Response
     {
         $this->authorize('create', Employee::class);
+        $this->requireLegacy($request);
 
         $tenantId = Tenancy::id();
         if ($tenantId === null) {
@@ -139,6 +140,7 @@ class LegacyDataController extends Controller
     public function applyImport(Request $request, string $token): Response
     {
         $this->authorize('create', Employee::class);
+        $this->requireLegacy($request);
 
         $tenantId = Tenancy::id();
         if ($tenantId === null) {
@@ -185,6 +187,7 @@ class LegacyDataController extends Controller
     public function exportSnapshot(Request $request): Response
     {
         $this->authorize('viewAny', Employee::class);
+        $this->requireLegacy($request);
 
         $tenantId = Tenancy::id();
         if ($tenantId === null) {
@@ -250,5 +253,11 @@ class LegacyDataController extends Controller
                 Storage::disk('local')->delete($file);
             }
         }
+    }
+
+    /** The Legacy data tab is its own permission since 2026-11-26 (System → Legacy data tab). */
+    private function requireLegacy(Request $request): void
+    {
+        abort_unless($request->user()->can('system.legacy'), 403, 'This action is unauthorized.');
     }
 }

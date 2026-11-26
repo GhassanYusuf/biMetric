@@ -36,7 +36,8 @@ class DeviceEnrollmentController extends Controller
     /** Session history, filterable by employee, device or state. */
     public function index(Request $request): JsonResponse
     {
-        $this->authorize('viewAny', Employee::class);
+        // The Enrollments tab is its own permission since 2026-11-26 (System → Enrollments tab).
+        abort_unless(request()->user()->can('system.enrollments'), 403, 'This action is unauthorized.');
 
         $request->validate([
             'employee_id' => ['nullable', 'integer'],
@@ -67,7 +68,8 @@ class DeviceEnrollmentController extends Controller
 
     public function show(EnrollmentSession $session): JsonResponse
     {
-        $this->authorize('viewAny', Employee::class);
+        // The Enrollments tab is its own permission since 2026-11-26 (System → Enrollments tab).
+        abort_unless(request()->user()->can('system.enrollments'), 403, 'This action is unauthorized.');
 
         return ApiResponse::success(
             new EnrollmentSessionResource($session->load(['employee:id,name,employee_code', 'device:id,name'])),
@@ -150,6 +152,7 @@ class DeviceEnrollmentController extends Controller
      */
     public function cancel(EnrollmentSession $session): JsonResponse
     {
+        abort_unless(request()->user()->can('system.enrollments'), 403, 'This action is unauthorized.');
         $this->authorize('enrollFingerprint', $session->employee);
 
         if ($session->isFinished()) {

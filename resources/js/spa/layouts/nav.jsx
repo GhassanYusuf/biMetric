@@ -45,7 +45,7 @@ export const NAV_SECTIONS = [
             // Who changed what, and what went wrong (2026-11-09).
             { to: '/audit-log', label: 'Audit log', icon: 'list', permission: 'audit.view' },
             { to: '/error-logs', label: 'Error logs', icon: 'alert', permission: 'logs.view' },
-            { to: '/legacy', label: 'Legacy data', icon: 'archive', permission: 'employees.update' },
+            { to: '/legacy', label: 'Legacy data', icon: 'archive', permission: 'system.legacy' },
         ],
     },
     {
@@ -61,7 +61,7 @@ export const NAV_SECTIONS = [
         items: [
             { to: '/devices', label: 'Devices', icon: 'device', permission: 'devices.view', mobileBar: true },
             { to: '/device-sync-runs', label: 'Sync history', icon: 'refresh', permission: 'devices.view' },
-            { to: '/enrollment-sessions', label: 'Enrollments', icon: 'bolt', permission: 'employees.view' },
+            { to: '/enrollment-sessions', label: 'Enrollments', icon: 'bolt', permission: 'system.enrollments' },
             { to: '/reconciliation', label: 'Reconciliation', icon: 'search', permission: 'devices.view' },
         ],
     },
