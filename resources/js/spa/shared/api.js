@@ -50,8 +50,8 @@ async function request(method, path, { body, headers } = {}) {
     if (!res.ok || (payload && payload.success === false)) {
         // A 401 anywhere means the session is gone — drop the token so the
         // AuthProvider can bounce the user to login.
-        if (res.status === 401) setToken(null);
-        throw new ApiError(payload?.message || `Request failed (${res.status})`, {
+        if (res.status === 401) signedOut();
+        throw new ApiError(res.status === 401 ? 'Your sign-in has ended. Sign in again to continue.' : payload?.message || `Request failed (${res.status})`, {
             status: res.status,
             errors: payload?.errors,
         });
@@ -83,7 +83,7 @@ async function download(path, fallbackName) {
     });
 
     if (!res.ok) {
-        if (res.status === 401) setToken(null);
+        if (res.status === 401) signedOut();
 
         let payload = null;
         try {
@@ -135,3 +135,19 @@ export const api = {
     download,
     raw: request,
 };
+
+/*
+| The session ended on the server (15 minutes idle, 8 hours at most — App\Support\WebSession). Drop the token
+| so the AuthProvider returns to sign-in, and leave the sign-in page a reason instead of a bare
+| "Unauthenticated." (2026-11-26). An idle sign-out the page did itself has already left its own.
+*/
+function signedOut() {
+    const hadToken = !!getToken();
+    setToken(null);
+    if (!hadToken) return;
+    try {
+        if (!sessionStorage.getItem('session.signedOutReason')) {
+            sessionStorage.setItem('session.signedOutReason', 'Your sign-in ended — after 15 minutes without activity, or 8 hours after signing in. Sign in again to continue.');
+        }
+    } catch { /* private window */ }
+}

@@ -77,6 +77,17 @@ class WebSessionLimitsTest extends TestCase
         }
     }
 
+    public function test_signing_out_after_a_minute_of_activity_does_not_fail(): void
+    {
+        // 2026-11-24 → 26: marking the sign-in active after the request had deleted it tried to INSERT the row
+        // again, so every sign-out more than a minute after the last mark ended in a 500.
+        $token = $this->signIn();
+        $this->travel(2)->minutes();
+        $this->app['auth']->forgetGuards();
+        $this->withToken($token)->postJson('/api/auth/logout')->assertOk();
+        $this->assertSame(0, PersonalAccessToken::query()->count());
+    }
+
     public function test_an_old_sign_in_without_an_expiry_is_ended_too(): void
     {
         $legacy = $this->user->createToken('web')->plainTextToken; // as before 2026-11-11: no expiry

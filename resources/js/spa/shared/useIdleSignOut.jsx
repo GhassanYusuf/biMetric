@@ -27,10 +27,21 @@ export function useIdleSignOut() {
     const { user, logout } = useAuth();
     const [left, setLeft] = useState(null); // ms until sign-out while warning, else null
     const lastWrite = useRef(0);
+    const lastPing = useRef(now());
 
     const activity = useCallback(() => {
         const t = now();
         if (t - lastWrite.current > 15000) { lastWrite.current = t; write(t); }
+        /*
+         * Typing into a form sends nothing to the server, which counts only requests — so 15 minutes spent
+         * filling in a long form signed the person out on the server while this page still thought them
+         * active, and Save met "Unauthenticated." (2026-11-26). While they are actually working, tell the
+         * server at most every 4 minutes. A request the person made (no X-Background), so it counts.
+         */
+        if (t - lastPing.current > 4 * 60 * 1000) {
+            lastPing.current = t;
+            api.get('/auth/me').catch(() => { /* a 401 here signs out with a reason */ });
+        }
     }, []);
 
     const stay = useCallback(async () => {

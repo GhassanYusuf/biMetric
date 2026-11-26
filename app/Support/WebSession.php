@@ -63,7 +63,9 @@ final class WebSession
             return;
         }
         $token = $request->user()?->currentAccessToken();
-        if (! $token instanceof PersonalAccessToken || $token->name !== self::NAME) {
+        // !exists: the request itself ended the sign-in (sign out, password change). Saving it then would try to
+        // INSERT the deleted row again — a 500 on every sign-out (seen 2026-11-24 → 26).
+        if (! $token instanceof PersonalAccessToken || $token->name !== self::NAME || ! $token->exists) {
             return;
         }
         // Once a minute is precise enough, and saves a write per click.
