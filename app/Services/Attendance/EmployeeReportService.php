@@ -126,6 +126,8 @@ class EmployeeReportService
             'left_early_before_minutes' => $rules->leftEarlyBeforeMinutes(),
             'left_late_from_minutes' => $rules->leftLateFromMinutes(),
             'work_days' => $rules->workDays,
+            // Open 24 hours (2026-11-26): charts draw no late mark.
+            'no_fixed_hours' => $rules->noFixedHours,
         ];
     }
 

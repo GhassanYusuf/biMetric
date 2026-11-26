@@ -17,7 +17,7 @@ class CompanyAttendanceRule extends Model
 
     protected $fillable = [
         'tenant_id', 'company_id', 'shift_start', 'shift_end', 'work_days',
-        'late_grace_minutes', 'early_leave_grace_minutes', 'leave_late_after_minutes',
+        'late_grace_minutes', 'early_leave_grace_minutes', 'leave_late_after_minutes', 'no_fixed_hours',
     ];
 
     protected function casts(): array
@@ -28,6 +28,7 @@ class CompanyAttendanceRule extends Model
             'late_grace_minutes' => 'integer',
             'early_leave_grace_minutes' => 'integer',
             'leave_late_after_minutes' => 'integer',
+            'no_fixed_hours' => 'boolean',
         ];
     }
 

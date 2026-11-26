@@ -20,7 +20,7 @@
         ['On-time arrivals', F::pct($S['on_time_rate']), F::delta($S['on_time_rate'], $P['on_time_rate'], 'pts', 'up'), 'of days present'],
         ['Average arrival', C::clock($S['average_arrival_minutes']), F::delta($S['average_arrival_minutes'], $P['average_arrival_minutes'], 'min', 'down'), 'shift starts '.C::clock($r['shift']['start_minutes'])],
         ['People punching', $r['punching'].' <small>of '.$r['headcount'].'</small>', null, $noShow ? $noShow.' with no punch in the period' : 'everybody punched'],
-        ['Late arrivals', F::num($S['late_arrivals']), F::delta($S['late_arrivals'], $P['late_arrivals'], 'n', 'down'), 'after '.C::clock($r['shift']['late_after_minutes'])],
+        ['Late arrivals', F::num($S['late_arrivals']), F::delta($S['late_arrivals'], $P['late_arrivals'], 'n', 'down'), empty($r['shift']['no_fixed_hours']) ? 'after '.C::clock($r['shift']['late_after_minutes']) : 'open 24 hours'],
         ['Unexplained absences', F::num($S['outcomes']['absent']), F::delta($S['outcomes']['absent'], $P['outcomes']['absent'], 'n', 'down'), 'person-days, no holiday or waiver'],
         ['Missed punch-outs', F::num($S['missed_punch_outs']), F::delta($S['missed_punch_outs'], $P['missed_punch_outs'], 'n', 'down'), 'hours not counted on those days'],
         ['Payroll hours', F::num($S['payroll_hours']), null, 'inside the shift window'],

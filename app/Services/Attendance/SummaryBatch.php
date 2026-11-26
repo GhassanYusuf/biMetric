@@ -189,13 +189,14 @@ final class SummaryBatch
     /** Whether the default, or the own rules of a company in $employees, is an overnight shift. */
     private static function anyOvernight(Collection $employees): bool
     {
-        if (AttendanceRules::current()->isOvernight()) {
+        $late = fn (AttendanceRules $r) => $r->isOvernight() || $r->noFixedHours; // a day may end next morning
+        if ($late(AttendanceRules::current())) {
             return true;
         }
         $companyIds = $employees->pluck('company_id')->filter()->unique()->values()->all();
 
         return $companyIds !== [] && CompanyAttendanceRule::query()->whereIn('company_id', $companyIds)->get()
-            ->contains(fn (CompanyAttendanceRule $r) => AttendanceRules::fromCompanyRow($r)->isOvernight());
+            ->contains(fn (CompanyAttendanceRule $r) => $late(AttendanceRules::fromCompanyRow($r)));
     }
 
     /** @return array{rules:AttendanceRules, days:list<array<string,mixed>>, hours:float} */

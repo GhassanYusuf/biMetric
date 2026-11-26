@@ -170,7 +170,9 @@ export function ArrivalDrift({ days, shift }) {
     const B = 38;
     const present = days.filter((d) => d.first_minutes != null).map((d) => d.first_minutes);
     const lo = Math.floor((Math.min(shift.start_minutes - 60, ...present) - 5) / 30) * 30;
-    const hi = Math.ceil((Math.max(shift.late_after_minutes + 45, ...present) + 5) / 30) * 30;
+    // Open 24 hours (2026-11-26): no late mark to draw or scale to.
+    const flexible = !!shift.no_fixed_hours;
+    const hi = Math.ceil((Math.max(flexible ? shift.start_minutes + 60 : shift.late_after_minutes + 45, ...present) + 5) / 30) * 30;
     const y = (m) => T + ((hi - m) / (hi - lo)) * (H - T - B);
     const n = Math.max(days.length, 1);
     const bw = (W - L - R) / n;
@@ -185,7 +187,7 @@ export function ArrivalDrift({ days, shift }) {
     return (
         <Panel
             title="Arrival drift"
-            subtitle={`First punch of each work day against the ${clock(shift.start_minutes)} shift start (late after ${clock(shift.late_after_minutes)})`}
+            subtitle={flexible ? 'First punch of each work day (open 24 hours: nobody is late)' : `First punch of each work day against the ${clock(shift.start_minutes)} shift start (late after ${clock(shift.late_after_minutes)})`}
             aside={<Readout>{focus ? `${dayLabel(focus.date)} · ${focus.first_minutes != null ? `in ${clock(focus.first_minutes)}${focus.first_minutes > shift.late_after_minutes ? ` · ${Math.round(focus.first_minutes - shift.start_minutes)} min late` : ' · on time'}` : OUTCOME[focus.outcome].label}` : 'Hover a day'}</Readout>}
         >
             <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Arrival time per work day">
@@ -195,8 +197,8 @@ export function ArrivalDrift({ days, shift }) {
                         <text x={L - 10} y={y(m) + 4} fill={INK.muted} fontSize="12" textAnchor="end" className="font-mono">{formatClockTick(m)}</text>
                     </g>
                 ))}
-                <line x1={L} x2={W - R} y1={y(shift.late_after_minutes)} y2={y(shift.late_after_minutes)} stroke={ACCENT} strokeWidth="1.5" strokeDasharray="5 5" />
-                <text x={W - R} y={y(shift.late_after_minutes) - 8} fill="#6d28d9" fontSize="12" textAnchor="end">Late after {clock(shift.late_after_minutes)}</text>
+                {!flexible && <line x1={L} x2={W - R} y1={y(shift.late_after_minutes)} y2={y(shift.late_after_minutes)} stroke={ACCENT} strokeWidth="1.5" strokeDasharray="5 5" />}
+                {!flexible && <text x={W - R} y={y(shift.late_after_minutes) - 8} fill="#6d28d9" fontSize="12" textAnchor="end">Late after {clock(shift.late_after_minutes)}</text>}
                 {hover != null && <rect x={L + hover * bw + 1} y={T - 4} width={Math.max(bw - 2, 2)} height={H - T - B + 8} rx="6" fill={ACCENT} opacity="0.1" />}
                 <polyline points={line} fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinejoin="round" />
                 {days.map((d, i) => {

@@ -112,7 +112,7 @@
     {{-- ── Patterns ─────────────────────────────────────────────────────── --}}
     <div class="break"></div>
     <h2>Arrivals and departures</h2>
-    <p class="lead">A filled dot at each day's first punch, coloured by the day's outcome; a ring at the last. The shaded band is the shift; the dashed line is the late mark, {{ C::clock($shift['late_after_minutes']) }}. Absent and excused days are a tick on the baseline.</p>
+    <p class="lead">A filled dot at each day's first punch, coloured by the day's outcome; a ring at the last. @if (! empty($shift['no_fixed_hours'])) Open 24 hours: there is no late mark. @else The shaded band is the shift; the dashed line is the late mark, {{ C::clock($shift['late_after_minutes']) }}. @endif Absent and excused days are a tick on the baseline.</p>
     @if ($p['days'])
         {!! C::dayTimes($p['days'], $shift['start_minutes'], $shift['end_minutes'], $shift['late_after_minutes'], $W, 200) !!}
     @else

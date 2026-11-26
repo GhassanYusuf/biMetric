@@ -96,7 +96,8 @@ class HolidayController extends Controller
         $current = AttendanceRules::current();
         self::assertShiftOrder($data['shift_start'] ?? $current->shiftStart, $data['shift_end'] ?? $current->shiftEnd);
 
-        $writes = collect($data)->except('weekend_days')->mapWithKeys(fn ($v, $k) => ["attendance.{$k}" => $v])->all();
+        // Open 24 hours is per company only (company_attendance_rules.no_fixed_hours), not a default setting.
+        $writes = collect($data)->except(['weekend_days', 'no_fixed_hours'])->mapWithKeys(fn ($v, $k) => ["attendance.{$k}" => $v])->all();
         if (array_key_exists('weekend_days', $data)) {
             $writes['attendance.work_days'] = array_values(array_diff(range(0, 6), $data['weekend_days']));
         }
@@ -121,6 +122,11 @@ class HolidayController extends Controller
 
         $data = $request->validate(...self::ruleValidation(true));
         self::assertShiftOrder($data['shift_start'], $data['shift_end']);
+        $data['no_fixed_hours'] = filter_var($data['no_fixed_hours'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        if ($data['no_fixed_hours']) {
+            // Grace minutes mean nothing without a shift to be late for.
+            $data['late_grace_minutes'] = $data['early_leave_grace_minutes'] = $data['leave_late_after_minutes'] = 0;
+        }
 
         CompanyAttendanceRule::query()->updateOrCreate(['company_id' => $company->id], [
             'shift_start' => $data['shift_start'],
@@ -129,6 +135,7 @@ class HolidayController extends Controller
             'late_grace_minutes' => $data['late_grace_minutes'],
             'early_leave_grace_minutes' => $data['early_leave_grace_minutes'],
             'leave_late_after_minutes' => $data['leave_late_after_minutes'],
+            'no_fixed_hours' => $data['no_fixed_hours'],
         ]);
 
         return ApiResponse::success($this->rulesPayload($request), "{$company->name} now has its own rules.");
@@ -190,6 +197,7 @@ class HolidayController extends Controller
             'late_grace_minutes' => $minutes,
             'early_leave_grace_minutes' => $minutes,
             'leave_late_after_minutes' => $minutes,
+            'no_fixed_hours' => ['sometimes', 'boolean'],
         ], [
             'weekend_days.max' => 'At least one day of the week has to be a work day.',
             'shift_start.date_format' => 'Use 24-hour HH:MM, e.g. 07:30.',

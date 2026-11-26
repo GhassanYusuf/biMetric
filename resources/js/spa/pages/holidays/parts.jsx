@@ -104,6 +104,7 @@ export function AttendanceRulesCard({ rules, draft, errors, canManage, mayEditDe
 export function rulesSummary(r) {
     const off = r.weekend_days ?? [];
     const weekend = off.length === 0 ? 'no weekend' : `${off.map((d) => WEEKDAYS[d].slice(0, 3)).join(', ')} off`;
+    if (r.no_fixed_hours) return `Open 24 hours · ${weekend}`;
     const overnight = r.shift_end < r.shift_start ? ' (next day)' : '';
     return `${r.shift_start}–${r.shift_end}${overnight} · ${weekend} · late after ${r.late_grace_minutes} min`;
 }

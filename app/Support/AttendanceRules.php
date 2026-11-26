@@ -36,7 +36,16 @@ final class AttendanceRules
         public readonly int $earlyLeaveGrace,
         public readonly int $leaveLateAfter,
         public readonly array $workDays,
+        /**
+         * Open 24 hours (2026-11-26): no Late, Left early or Left late; days are found from the punches
+         * (a gap of more than NO_FIXED_HOURS_GAP_MINUTES starts a new one) and paid first to last punch.
+         * shiftStart / shiftEnd then give only the length of a normal day (holiday credit, absence minutes).
+         */
+        public readonly bool $noFixedHours = false,
     ) {}
+
+    /** No fixed hours: punches further apart than this belong to different work days. */
+    public const NO_FIXED_HOURS_GAP_MINUTES = 600;
 
     public static function current(): self
     {
@@ -94,6 +103,7 @@ final class AttendanceRules
             (int) $row->early_leave_grace_minutes,
             (int) $row->leave_late_after_minutes,
             array_values(array_map('intval', (array) $row->work_days)),
+            (bool) $row->no_fixed_hours,
         );
     }
 
@@ -126,7 +136,7 @@ final class AttendanceRules
      */
     public function dayStartsAtMinutes(): int
     {
-        if (! $this->isOvernight()) {
+        if ($this->noFixedHours || ! $this->isOvernight()) {
             return 0;
         }
         $end = self::minutes($this->shiftEnd);
@@ -146,22 +156,22 @@ final class AttendanceRules
         return $local->hour * 60 + $local->minute + ($local->format('Y-m-d') > $day ? 1440 : 0);
     }
 
-    /** The first minute that counts as Late. */
+    /** The first minute that counts as Late. No fixed hours: 1440 — a day's first punch is always before it. */
     public function lateAfterMinutes(): int
     {
-        return $this->startMinutes() + $this->lateGrace;
+        return $this->noFixedHours ? 1440 : $this->startMinutes() + $this->lateGrace;
     }
 
-    /** A last punch before this minute is Left early. */
+    /** A last punch before this minute is Left early. No fixed hours: never. */
     public function leftEarlyBeforeMinutes(): int
     {
-        return $this->endMinutes() - $this->earlyLeaveGrace;
+        return $this->noFixedHours ? 0 : $this->endMinutes() - $this->earlyLeaveGrace;
     }
 
-    /** A last punch at or after this minute is Left late. */
+    /** A last punch at or after this minute is Left late. No fixed hours: never (two whole days). */
     public function leftLateFromMinutes(): int
     {
-        return $this->endMinutes() + $this->leaveLateAfter;
+        return $this->noFixedHours ? 2880 : $this->endMinutes() + $this->leaveLateAfter;
     }
 
     public function shiftLengthMinutes(): int
@@ -180,6 +190,7 @@ final class AttendanceRules
             'leave_late_after_minutes' => $this->leaveLateAfter,
             'work_days' => $this->workDays,
             'weekend_days' => array_values(array_diff(range(0, 6), $this->workDays)),
+            'no_fixed_hours' => $this->noFixedHours,
         ];
     }
 

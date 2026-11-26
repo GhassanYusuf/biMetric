@@ -253,4 +253,37 @@ class CompanyAttendanceRulesTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors('shift_end');
         $this->as($this->admin)->putJson('/api/holidays/rules', ['shift_start' => '17:00', 'shift_end' => '02:00'])->assertOk();
     }
+
+    public function test_a_company_open_24_hours_has_no_late_and_pays_first_to_last_punch(): void
+    {
+        $this->as($this->admin)->putJson("/api/holidays/rules/companies/{$this->gems->id}", $this->ownRules([
+            'no_fixed_hours' => true, 'weekend_days' => [], 'shift_start' => '08:00', 'shift_end' => '16:00', 'late_grace_minutes' => 15,
+        ]))->assertOk()->assertJsonPath('data.companies.1.rules.no_fixed_hours', true)
+            ->assertJsonPath('data.companies.1.rules.late_grace_minutes', 0);
+
+        Tenancy::set($this->tenant->id);
+        AttendanceLog::query()->where('employee_id', $this->inGems->id)->delete();
+        $device = Device::query()->firstOrFail();
+        $tz = config('attendance.timezone');
+        // Mon: a night — 22:00 in, 06:10 out next morning. Tue: nothing more. Wed: 15:30 in, 23:00 out.
+        foreach (['2026-08-03 22:00', '2026-08-04 06:10', '2026-08-05 15:30', '2026-08-05 23:00'] as $at) {
+            AttendanceLog::create(['device_id' => $device->id, 'device_user_id' => 'G1', 'employee_id' => $this->inGems->id,
+                'punched_at' => Carbon::parse($at, $tz)->utc(), 'verify_method' => 1, 'status' => 0]);
+        }
+        Holiday::create(['date' => '2026-08-06', 'name' => 'Thursday off']);
+        $gemma = Employee::query()->findOrFail($this->inGems->id);
+        $from = Carbon::parse('2026-08-03', $tz)->startOfDay();
+        $to = Carbon::parse('2026-08-06', $tz)->endOfDay();
+        $daily = collect(app(AttendanceSummaryService::class)->summary($gemma, '2026-08-03', '2026-08-06', SummaryBatch::for([$gemma], $from, $to))['daily'])->keyBy('date');
+        Tenancy::clear();
+
+        $this->assertSame('present', $daily['2026-08-03']['status']);
+        $this->assertNotSame('come_late', $daily['2026-08-03']['arrival'], '22:00 is not late: there are no fixed hours');
+        $this->assertSame(8.2, $daily['2026-08-03']['payroll_hours'], '22:00 to 06:10, across midnight');
+        $this->assertSame('absent', $daily['2026-08-04']['status'], 'the 06:10 punch closed Monday; Tuesday had none of its own');
+        $this->assertSame('present', $daily['2026-08-05']['status']);
+        $this->assertSame(7.5, $daily['2026-08-05']['payroll_hours']);
+        $this->assertSame('excused', $daily['2026-08-06']['status']);
+        $this->assertSame(8.0, $daily['2026-08-06']['payroll_hours'], 'a holiday is paid the normal day, 08:00–16:00');
+    }
 }

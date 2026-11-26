@@ -67,10 +67,23 @@ class AttendanceSummaryService
         $rules = $batch->rulesFor($employee->id);
         $firstDay = $fromDate->format('Y-m-d');
         $lastDay = $toDate->format('Y-m-d');
+        // No fixed hours (open 24 hours, 2026-11-26): the work day is found from the punches themselves — a gap
+        // of more than 10 hours starts a new one, dated by its first punch — so a night worker's 22:00 in and
+        // 06:00 out stay one day.
         $punchesByDay = [];
+        $previous = null;
+        $sessionDay = null;
         foreach ($logs as $log) {
             $local = $log->punched_at->copy()->setTimezone($tz);
-            $day = $rules->workDayOf($local);
+            if ($rules->noFixedHours) {
+                if ($previous === null || ($local->getTimestamp() - $previous->getTimestamp()) > AttendanceRules::NO_FIXED_HOURS_GAP_MINUTES * 60) {
+                    $sessionDay = $local->format('Y-m-d');
+                }
+                $previous = $local;
+                $day = $sessionDay;
+            } else {
+                $day = $rules->workDayOf($local);
+            }
             if ($day >= $firstDay && $day <= $lastDay) {
                 $punchesByDay[$day][] = $local;
             }
@@ -107,7 +120,20 @@ class AttendanceSummaryService
             $hours = 0;
             $payrollHours = 0;
 
-            if ($info) {
+            if ($info && $rules->noFixedHours) {
+                // Open 24 hours: present, never late or early, paid first to last punch.
+                $status = 'present';
+                $arrival = 'early';
+                $categories['early']++;
+                if ($info['count'] > 1) {
+                    $departure = 'leave_on_time';
+                    $categories['leave_on_time']++;
+                    $hours = round($info['first']->diffInMinutes($info['last']) / 60, 1);
+                    $payrollHours = $hours;
+                } else {
+                    $categories['missed_punch_out']++;
+                }
+            } elseif ($info) {
                 $status = 'present';
                 $expectedStart = $day['expectedStart'];
                 $expectedEnd = $day['expectedEnd'];
