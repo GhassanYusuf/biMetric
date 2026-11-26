@@ -143,11 +143,20 @@ Template:
     record with them. The refusal changed nothing there: he still punches by card as before.
   - Gems WorkShop answered every health check all day (10–22 ms). Earlier 4994s in the log are all Camelot's
     (2026-11-10, 11-11) — this is the first on this unit.
-- **Root cause:** not proven. 4994 is the F18 state seen on Camelot (DC-034) in which every user insert or update
-  is refused while reads work; a remote restart cleared it there.
-- **Fix:** owed — **(owner)** restart Gems WorkShop (Devices → Restart terminal, CONFIRMED on the F18) at a quiet
-  time, then push Ragesh again; it should add fingers 3, 6, 7.
-- **Verified:** not yet.
+  - 14:10 UTC owner restarted Gems WorkShop (command 85525, back in ~10 s); Ragesh pushed again → **fingers 3, 6, 7
+    written and read back** (14:12:41). The 4994 state was cleared by the restart, as on Camelot.
+  - **Second problem, same afternoon:** Ali Mohamed Jaafar (960802797) to Gems WorkShop failed twice, before and after
+    a second restart (14:15), with nothing in the log — the propagator showed the reason on screen only (now logged,
+    `13c6088`). Logged at 14:18:42: `DeviceIdentityConflictException` — "that slot already holds ALI MOHAMED JAAFAR,
+    who is not claimed by this employee". His open link (employee 1419, since 2026-11-15 14:14:58) and the roster
+    entry (created by the roster read at 14:17:00, `unclaimed`) disagreed; the slot check trusts the entry.
+    **9 entries** in that state, all Ragesh or Ali, none claimed for anyone else.
+- **Root cause:** (1) 4994: the F18 refuse-writes state (DC-034); a remote restart clears it. (2) The roster read
+  created entries `unclaimed` without looking at an open link for the same number.
+- **Fix:** (1) restart. (2) `DeviceAdoptionService::readRoster()` claims an unclaimed entry for the linked employee
+  when the name the terminal holds matches the link or the employee — never for a stranger in the slot (tests
+  `DeviceIdentityGuardTest`, both cases). One-off repair `/tmp/claim-linked.php` (database only, name-matched; 9).
+- **Verified:** Ragesh on Gems WorkShop, fingers read back 14:12:41 UTC. Ali: after the repair, owner to push again.
 - **Evidence:** laravel.log 2026-11-26 13:56:37 (device_id 26, reply 4994); employee_device_maps for employee 1416.
 - **Status:** OPEN
 - **Keywords:** Gems WorkShop, 4994, Error updating database, push, user write refused, fingerprints, Ragesh

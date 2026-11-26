@@ -372,6 +372,39 @@ class DeviceIdentityGuardTest extends TestCase
         ]);
     }
 
+    public function test_a_roster_read_claims_a_record_already_linked_to_the_same_person(): void
+    {
+        // 2026-11-26, Ali on Gems WorkShop: the push linked him, the roster read after it left his record
+        // "unclaimed", and every later push was refused as overwriting "someone else" — himself.
+        $device = $this->adoptedDeviceHolding([]);
+        $ali = $this->employee('Ali Jaafar', '960802797');
+        EmployeeDeviceMap::create(['tenant_id' => $this->tenant->id, 'employee_id' => $ali->id, 'device_id' => $device->id,
+            'device_user_id' => '960802797', 'device_name' => 'Ali Jaafar', 'valid_from' => now()]);
+        $this->driver->roster = [new DeviceUser(729, '960802797', 'Ali Jaafar', 0, '7511517', [])];
+
+        $this->adoption()->readRoster($device);
+
+        $entry = DeviceRosterEntry::where('device_id', $device->id)->where('device_user_id', '960802797')->first();
+        $this->assertSame(DeviceRosterEntry::CLAIMED, $entry->claim_status);
+        $this->assertSame($ali->id, (int) $entry->claimed_employee_id);
+        $this->sync()->pushEmployee($device, $ali); // no longer refused
+    }
+
+    public function test_a_link_does_not_vouch_for_a_stranger_in_the_slot(): void
+    {
+        $device = $this->adoptedDeviceHolding([]);
+        $nadia = $this->employee('Nadia', '5');
+        EmployeeDeviceMap::create(['tenant_id' => $this->tenant->id, 'employee_id' => $nadia->id, 'device_id' => $device->id,
+            'device_user_id' => '5', 'valid_from' => now()]);
+        $this->driver->roster = [new DeviceUser(9, '5', 'Existing Person', 0, null, [0, 1])];
+
+        $this->adoption()->readRoster($device);
+
+        $this->assertSame(DeviceRosterEntry::UNCLAIMED, DeviceRosterEntry::where('device_id', $device->id)->where('device_user_id', '5')->value('claim_status'));
+        $this->expectException(DeviceIdentityConflictException::class);
+        $this->sync()->pushEmployee($device, $nadia);
+    }
+
     // ------------------------------------------------------ cross-device identity
 
     public function test_the_same_pin_on_two_devices_stays_two_different_people(): void
