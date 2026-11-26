@@ -71,7 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
-| DC-052 | 2026-11-26 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | Push refused with 4994 "Error updating database" — the Camelot DC-034 state, first seen on this unit | OPEN |
+| DC-052 | 2026-11-26 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | Push refused with 4994 "Error updating database" (restart cleared it); then a same-person push blocked by an unclaimed roster entry | FIXED |
 | DC-051 | 2026-11-23 | Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60) | Both C3 panels off the network (no ARP reply) the morning the C3 restart shipped; neither restart was ever sent | OPEN |
 | DC-050 | 2026-11-19 | Entrance (TF1700, 192.168.7.60) | Stopped answering every C3 command after the door probe's RTLOG reads on 2026-11-18 | FIXED |
 | DC-049 | 2026-11-17 | City One Hotel (F18/ID, 46.184.207.245) | First read gets only 7 punches; the hotel says there are many — the terminal itself holds only 7 | OPEN |
@@ -156,9 +156,10 @@ Template:
 - **Fix:** (1) restart. (2) `DeviceAdoptionService::readRoster()` claims an unclaimed entry for the linked employee
   when the terminal's user ID is the employee's Personnel ID AND the name it holds matches — never on a name alone, never for a stranger in the slot (tests
   `DeviceIdentityGuardTest`, both cases). One-off repair `/tmp/claim-linked.php` (database only, name-matched; 9).
-- **Verified:** Ragesh on Gems WorkShop, fingers read back 14:12:41 UTC. Ali: after the repair, owner to push again.
+- **Verified:** Ragesh on Gems WorkShop, fingers 3, 6, 7 read back 14:12:41 UTC. Repair applied by the owner (9 claimed;
+  0 mismatches left). Ali pushed again: **fingers 6, 7 read back on Gems WorkShop 14:53:12 UTC**, no failure.
 - **Evidence:** laravel.log 2026-11-26 13:56:37 (device_id 26, reply 4994); employee_device_maps for employee 1416.
-- **Status:** OPEN
+- **Status:** FIXED
 - **Keywords:** Gems WorkShop, 4994, Error updating database, push, user write refused, fingerprints, Ragesh
 
 ### DC-051 — Both C3 panels off the network; the first restarts never reached them
