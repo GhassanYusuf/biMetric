@@ -390,6 +390,20 @@ class DeviceIdentityGuardTest extends TestCase
         $this->sync()->pushEmployee($device, $ali); // no longer refused
     }
 
+    public function test_the_same_name_under_a_different_id_is_not_taken_for_them(): void
+    {
+        // Owner, 2026-11-26: two different people can share a name — the ID must match too.
+        $device = $this->adoptedDeviceHolding([]);
+        $ali = $this->employee('Ali Jaafar', '960802797');
+        EmployeeDeviceMap::create(['tenant_id' => $this->tenant->id, 'employee_id' => $ali->id, 'device_id' => $device->id,
+            'device_user_id' => '261', 'device_name' => 'Ali Jaafar', 'valid_from' => now()]);
+        $this->driver->roster = [new DeviceUser(30, '261', 'Ali Jaafar', 0, null, [0])];
+
+        $this->adoption()->readRoster($device);
+
+        $this->assertSame(DeviceRosterEntry::UNCLAIMED, DeviceRosterEntry::where('device_id', $device->id)->where('device_user_id', '261')->value('claim_status'));
+    }
+
     public function test_a_link_does_not_vouch_for_a_stranger_in_the_slot(): void
     {
         $device = $this->adoptedDeviceHolding([]);

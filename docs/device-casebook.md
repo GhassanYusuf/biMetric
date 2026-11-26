@@ -154,7 +154,7 @@ Template:
 - **Root cause:** (1) 4994: the F18 refuse-writes state (DC-034); a remote restart clears it. (2) The roster read
   created entries `unclaimed` without looking at an open link for the same number.
 - **Fix:** (1) restart. (2) `DeviceAdoptionService::readRoster()` claims an unclaimed entry for the linked employee
-  when the name the terminal holds matches the link or the employee — never for a stranger in the slot (tests
+  when the terminal's user ID is the employee's Personnel ID AND the name it holds matches — never on a name alone, never for a stranger in the slot (tests
   `DeviceIdentityGuardTest`, both cases). One-off repair `/tmp/claim-linked.php` (database only, name-matched; 9).
 - **Verified:** Ragesh on Gems WorkShop, fingers read back 14:12:41 UTC. Ali: after the repair, owner to push again.
 - **Evidence:** laravel.log 2026-11-26 13:56:37 (device_id 26, reply 4994); employee_device_maps for employee 1416.

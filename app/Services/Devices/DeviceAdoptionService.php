@@ -100,14 +100,18 @@ class DeviceAdoptionService
              * that same person as "someone else" (2026-11-26, Ali on Gems WorkShop; 9 such entries).
              * Never overrides an ignored or already-claimed entry.
              */
-            // And only when the terminal holds that person by name — a link is not allowed to vouch for a
-            // stranger sitting in the slot (that is exactly what the push's slot check protects).
-            $link = EmployeeDeviceMap::query()->with('employee:id,name,last_name')->where('device_id', $device->id)
+            // And only when the terminal holds that person by NAME AND ID: its user ID is the employee's Personnel
+            // ID (CPR) and its name is theirs. Two people can share a name (owner, 2026-11-26: "it has to validate
+            // the id also"), so a name alone never vouches for whoever sits in the slot.
+            $link = EmployeeDeviceMap::query()->with('employee:id,name,last_name,employee_code')->where('device_id', $device->id)
                 ->where('device_user_id', $user->userId)->whereNull('valid_to')->first();
             $norm = fn (?string $n) => preg_replace('/\s+/', ' ', mb_strtolower(trim((string) $n)));
-            $linkedTo = $link !== null && $norm($user->name) !== '' && in_array($norm($user->name), array_filter([
-                $norm($link->device_name), $norm($link->employee?->name), $norm($link->employee?->fullName()),
-            ]), true) ? (int) $link->employee_id : null;
+            $sameId = $link?->employee !== null && trim((string) $link->employee->employee_code) !== ''
+                && (string) $user->userId === trim((string) $link->employee->employee_code);
+            $sameName = $norm($user->name) !== '' && in_array($norm($user->name), array_filter([
+                $norm($link?->device_name), $norm($link?->employee?->name), $norm($link?->employee?->fullName()),
+            ]), true);
+            $linkedTo = $link !== null && $sameId && $sameName ? (int) $link->employee_id : null;
             $claim = $linkedTo === null ? [] : [
                 'claim_status' => DeviceRosterEntry::CLAIMED,
                 'claimed_employee_id' => $linkedTo,
