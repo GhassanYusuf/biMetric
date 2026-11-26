@@ -8,7 +8,7 @@ machine, or after a long gap, read this before reading code.
 Assistant memory does **not** travel between machines. This file does, because it
 is committed. That is the whole reason it exists.
 
-**Last updated: 2026-11-17**
+**Last updated: 2026-11-26**
 
 ---
 
@@ -79,7 +79,55 @@ Biometric terminals  →  OUR PRODUCT (the bridge)  →  customer's HR platform
 
 ## Where we stopped
 
-### Open at the end of 2026-11-10 (resume here)
+### Open at the end of 2026-11-26 (resume here)
+
+**Everything is committed and pushed** — app `main` at `649f14b` on `GhassanYusuf/biMetric`, library `v2.26.1`
+on `GhassanYusuf/biometric-protocol`, installed (`composer.lock`). Only `docs/database-diagram.md` stays
+untracked (owner, 2026-11-18). Migrations through `2026_11_26_090000` applied; permissions seeded 2026-11-26.
+
+**Built 2026-11-18 → 26 (all live):**
+- **Shift and holidays per company** (`0d45a63`, owner chose "full rules" and "all or chosen companies"):
+  `company_attendance_rules` (own shift, weekend, grace) else the default; `holiday_company` (none = every
+  company). Every report, payroll and the Monthly Statement judge a person by their company's rules and
+  holidays (`SummaryBatch` per-company profiles). Holidays tab: Company rules card + "Applies to".
+- **Overnight shifts** (`b435db3`, Camelot 17:00–02:00): end before start = next day; the work day starts
+  halfway through the hours off (17:00–02:00 → 09:30), minutes past 1440 for the small hours.
+- **Open 24 hours** per company (`13a62bf`, owner chose "no fixed hours"): never Late/Early/Left late; days
+  found from punches (gap > 10 h starts a new one); paid first→last punch; start/end = a normal day's length.
+- **Exports state each company's shift** (`649f14b`): Monthly Statement PDF/Excel and Attendance report list
+  every rule set; the statement legend explains each person's own.
+- **C3 restart** (library 2.26.0/2.26.1, CONTROL_DEVICE op 3 from vwout/zkaccess-c3-py): IMPLEMENTED on
+  the inBIO460 and the TF1700, **never yet run** — both first attempts failed because the panels were off
+  the network (DC-051).
+- **Permissions** (owner, 2026-11-26): new **System** group — Move terminal to company, Personnel IDs, Scan
+  for duplicates, Enrollments tab, Legacy data tab; **Employees → Make employees administrators on
+  terminals** (split from push); **Terminals → "Enrol fingerprints and cards"** now grants taking a finger
+  and giving a card (it gated nothing before). Administrators hold everything automatically.
+- **Sessions:** typing in a form now keeps the server sign-in alive (a heartbeat every 4 min while active);
+  sign-out no longer 500s (`499f028`).
+- Smaller: dashboard Recent activity shows photos; a deleted company's/department's name can be reused
+  (filtered unique indexes); saving a user whose access names a deleted company works.
+
+**Data corrections done on production (casebook DC-049):** City One Hotel moved to device **#32 "COH"**;
+device #29 was deleted 2026-11-24 with its punches; **6,331 punches from the hotel's ZKTime export restored
+under COH** (`/tmp/coh-import.php`, undo list `storage/app/coh-import-2026-11-24.json`); 419 punches of 7
+terminal numbers (11, 49, 124, 131, 309, 404, 501) not added — nobody linked on COH. COH's company (#30) was
+renamed "City One Hotel"; the old company #27 is deleted.
+
+**Open — who owes what:**
+- **(owner)** Run the first C3 restart on **Entrance** (answering since 2026-11-23 12:49 local) with
+  someone at the panel; then promote `device.restart` on the TF1700 if it goes away and comes back.
+- **(owner, on site)** **Glass Door** (inBIO460, 192.168.7.61) has been off the LAN since 2026-11-23 —
+  powered, no ARP reply anywhere on the /21. Entrance's cause was a switch shut down. DC-051 OPEN.
+- **(owner)** Push permission: split into "Send to terminals" and "Remove from terminals…" (recommended,
+  so Finance@thesevenhotelbh.com can push without deleting), or tick it as is.
+- **(owner)** Delete-device safeguard: refuse deleting a device that still has punches, offer to move
+  them — offered after #29's loss, not decided.
+- **(owner)** The 7 unlinked City One numbers' punches, if those people should be on COH.
+- Camelot: still unread since 2026-11-12 (DC-036); restart then Read attendance (full) — **(owner)**.
+- City One / COH over the internet: reading normally as #32 since 2026-11-22.
+
+### Open at the end of 2026-11-10
 
 Committed on `main` here but **not pushed**: everything since `7da1d96` (owner runs
 `git push origin main`). The audit log's before → after change, left uncommitted on 2026-11-09, was committed on 2026-11-18 (`9e0f8c5`) at the owner's request. `docs/database-diagram.md` stays uncommitted (owner, 2026-11-18). Owner owes the answers marked **(owner)**.
@@ -1045,6 +1093,15 @@ wrap all exist already.
 ---
 
 ## Session log
+### 2026-11-18 → 2026-11-26 — Per-company shifts and holidays, overnight and 24-hour; C3 restart; System permissions
+Per-company rules and holiday companies (owner's choices recorded above), overnight shifts for Camelot,
+Open 24 hours, exports stating each company's shift. Library 2.26.0/2.26.1: C3 restart, never yet run —
+both panels were off the network when first tried (DC-051; Entrance's switch had been shut down, Glass Door
+still off). City One moved to COH and its ZKTime punches restored there after device #29 was deleted with
+them (DC-049). New System and terminal-admin permissions; "Enrol fingerprints and cards" made to work.
+Fixed: rename to a deleted company's name (500), saving a user with a deleted company (silent 422), sign-in
+lost while typing a long form, sign-out 500. Every change pushed; suite 944 passing.
+
 ### 2026-11-04 / 2026-11-05 — ID card kit offline; CPR on old punches; photos on Attendance
 
 - **ID card kit** self-contained (no internet); service name corrected; multi-reader PCs
