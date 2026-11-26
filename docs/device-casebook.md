@@ -71,6 +71,7 @@ Template:
 
 | ID | Date | Devices | Title | Status |
 |---|---|---|---|---|
+| DC-052 | 2026-11-26 | Gems WorkShop (F18, 95.84.64.159:4371, internet) | Push refused with 4994 "Error updating database" — the Camelot DC-034 state, first seen on this unit | OPEN |
 | DC-051 | 2026-11-23 | Glass Door (inBIO460, 192.168.7.61), Entrance (TF1700, 192.168.7.60) | Both C3 panels off the network (no ARP reply) the morning the C3 restart shipped; neither restart was ever sent | OPEN |
 | DC-050 | 2026-11-19 | Entrance (TF1700, 192.168.7.60) | Stopped answering every C3 command after the door probe's RTLOG reads on 2026-11-18 | FIXED |
 | DC-049 | 2026-11-17 | City One Hotel (F18/ID, 46.184.207.245) | First read gets only 7 punches; the hotel says there are many — the terminal itself holds only 7 | OPEN |
@@ -126,6 +127,30 @@ Template:
 ---
 
 ## Entries
+
+### DC-052 — Gems WorkShop refuses a user update with 4994
+
+- **Date:** 2026-11-26
+- **Devices:** Gems WorkShop (#26, F18, 95.84.64.159:4371, over the internet)
+- **Direction:** software → device
+- **Symptom:** owner: pushing RAGESH THATHAMPULLY RAMAKRISHNAN (870156500) said it failed on Gems WorkShop, where
+  he already is.
+- **What was done:** reads only (laravel.log, audit log, employee_device_maps, device_commands).
+  - 13:56:37 UTC: `Device rejected the user write (4994 Error updating database)`, uid 728, user 870156500.
+    The same push wrote him to City One Hotel (#32) with card and fingers 3, 6, 7, read back in sync.
+  - Why Gems WorkShop was written at all: he is there (uid 728, card 7459039) with **no fingerprints**
+    (`fingerprint_slots []`, roster read 02:30 UTC), while the system holds 3 — so the push tried to update his
+    record with them. The refusal changed nothing there: he still punches by card as before.
+  - Gems WorkShop answered every health check all day (10–22 ms). Earlier 4994s in the log are all Camelot's
+    (2026-11-10, 11-11) — this is the first on this unit.
+- **Root cause:** not proven. 4994 is the F18 state seen on Camelot (DC-034) in which every user insert or update
+  is refused while reads work; a remote restart cleared it there.
+- **Fix:** owed — **(owner)** restart Gems WorkShop (Devices → Restart terminal, CONFIRMED on the F18) at a quiet
+  time, then push Ragesh again; it should add fingers 3, 6, 7.
+- **Verified:** not yet.
+- **Evidence:** laravel.log 2026-11-26 13:56:37 (device_id 26, reply 4994); employee_device_maps for employee 1416.
+- **Status:** OPEN
+- **Keywords:** Gems WorkShop, 4994, Error updating database, push, user write refused, fingerprints, Ragesh
 
 ### DC-051 — Both C3 panels off the network; the first restarts never reached them
 
