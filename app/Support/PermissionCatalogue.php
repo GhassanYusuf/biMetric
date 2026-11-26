@@ -38,7 +38,8 @@ final class PermissionCatalogue
             'employees.update' => 'Edit employees',
             'employees.delete' => 'Delete employees',
             'employees.fingerprint' => 'Take fingerprints on terminals and copy them into the system',
-            'employees.push' => 'Send to and remove from terminals, delete fingerprints and cards, set terminal admin',
+            'employees.push' => 'Send to and remove from terminals, delete fingerprints and cards',
+            'employees.terminal-admin' => 'Make employees administrators on terminals, or take it away',
         ],
         'Attendance' => [
             'attendance.view' => "See everyone's attendance",

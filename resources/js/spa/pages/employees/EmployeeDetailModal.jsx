@@ -25,7 +25,7 @@ import { EmploymentBadges, orgOf } from './employeeLabels';
 // Very likely this firmware family's empty card field; unproven. See AccessCard::SENTINEL.
 const CARD_EMPTY_MARKER = 4294967295;
 
-export default function EmployeeDetailModal({ employee, devices, canEnroll, canFingerprint = false, onClose, onEnroll, onRefreshed }) {
+export default function EmployeeDetailModal({ employee, devices, canEnroll, canFingerprint = false, canTerminalAdmin = false, onClose, onEnroll, onRefreshed }) {
     /*
      * The terminals they are ON RIGHT NOW come first, and the dialog opens on one of
      * them. Opening on whichever terminal happened to be first in the list showed
@@ -299,7 +299,8 @@ export default function EmployeeDetailModal({ employee, devices, canEnroll, canF
     const privilege = live && 'device_privilege' in live ? live.device_privilege : (mine?.device_privilege ?? null);
     const privilegeCap = device?.capabilities?.['user.privilege'];
     const privilegeProven = privilegeCap?.confirmed === true;
-    const canChangePrivilege = canEnroll && privilegeCap?.usable === true && live?.on_device !== false && !!mine;
+    // Its own permission since 2026-11-26 (Employees → Make employees administrators on terminals).
+    const canChangePrivilege = canTerminalAdmin && privilegeCap?.usable === true && live?.on_device !== false && !!mine;
     // Freshness is this terminal's read, not the roster's newest across all of them.
     const freshness = live ? 'just now' : syncedAgo([{ enrollment_synced_at: stored.syncedAt }]);
 

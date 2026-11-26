@@ -973,6 +973,7 @@ export default function Employees() {
                     departments={departments}
                     onCreateCompany={can('departments.manage') ? createCompany : null}
                     onCreateDepartment={can('departments.manage') ? createDepartment : null}
+                    canTerminalAdmin={can('employees.terminal-admin')}
                 />
             )}
             {pushing && (
@@ -1123,6 +1124,7 @@ export default function Employees() {
                     onEnrollFingerprint={can('employees.push') ? enrollFromForm : null}
                     onReadFingerprints={can('employees.push') ? readFingerprintsToSystem : null}
                     autoPush={autoPush}
+                    canTerminalAdmin={can('employees.terminal-admin')}
                 />
             )}
             {viewing && !enrolling && (
@@ -1131,6 +1133,7 @@ export default function Employees() {
                     devices={devices.length > 0 ? devices : filterDevices}
                     canEnroll={can('employees.push')}
                     canFingerprint={can('employees.fingerprint') || can('devices.enroll')}
+                    canTerminalAdmin={can('employees.terminal-admin')}
                     onClose={() => setViewing(null)}
                     onEnroll={(employee) => setEnrolling(employee)}
                     // An on-demand device read is persisted server-side, so pull

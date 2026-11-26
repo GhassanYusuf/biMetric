@@ -115,6 +115,8 @@ export default function EmployeeFormModal({
     onCreateCompany = null,
     // (name, companyId) → the created department, or null. Null hides "Add".
     onCreateDepartment = null,
+    // Employees → "Make employees administrators on terminals" (2026-11-26). Without it the Device role is read-only.
+    canTerminalAdmin = true,
 }) {
     const isEdit = !!employee;
 
@@ -893,11 +895,11 @@ export default function EmployeeFormModal({
                                     </Row>
                                     <Row label="Device role" htmlFor="employee-privilege">
                                         <div>
-                                            <SelectField id="employee-privilege" value={form.privilege} onChange={(e) => set('privilege', e.target.value)} error={err('privilege')}>
+                                            <SelectField id="employee-privilege" value={form.privilege} onChange={(e) => set('privilege', e.target.value)} error={err('privilege')} disabled={!canTerminalAdmin}>
                                                 {isEdit && <option value="">Not set</option>}
                                                 {PRIVILEGES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                                             </SelectField>
-                                            <p className="mt-1 text-xs text-slate-500">{roleHint}</p>
+                                            <p className="mt-1 text-xs text-slate-500">{canTerminalAdmin ? roleHint : 'Only someone allowed to make terminal administrators can change this.'}</p>
                                         </div>
                                     </Row>
                                 </div>

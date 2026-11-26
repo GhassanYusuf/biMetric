@@ -115,6 +115,7 @@ class EmployeeController extends Controller
         $this->authorize('create', Employee::class);
 
         $data = $request->safe()->except(['photo', 'access_level_ids']);
+        $this->guardTerminalRole($request, $data, null);
 
         if ($request->hasFile('photo')) {
             $data['photo_path'] = $request->file('photo')->store('employees', 'public');
@@ -160,6 +161,7 @@ class EmployeeController extends Controller
         $this->authorize('update', $employee);
 
         $data = $request->safe()->except(['photo', 'access_level_ids']);
+        $this->guardTerminalRole($request, $data, $employee);
 
         if ($request->hasFile('photo')) {
             if ($employee->photo_path) {
@@ -777,7 +779,7 @@ class EmployeeController extends Controller
      */
     public function setDevicePrivilege(Request $request, Employee $employee, Device $device): JsonResponse
     {
-        $this->authorize('pushToDevice', $employee);
+        $this->authorize('setTerminalAdmin', $employee);
 
         $data = $request->validate(['admin' => ['required', 'boolean']]);
 
@@ -1070,6 +1072,23 @@ class EmployeeController extends Controller
             return ApiResponse::success($result['raw'], $result['message']);
         } catch (DeviceException $e) {
             return ApiResponse::error("Card enrollment failed: {$e->getMessage()}", [], 502);
+        }
+    }
+
+    /**
+     * The Device role field writes a terminal role on save. Making someone more than a normal user, or changing
+     * an existing role, needs employees.terminal-admin (owner, 2026-11-26). A new employee as a normal user, or
+     * an edit that leaves the role as it was, needs nothing extra.
+     */
+    private function guardTerminalRole(Request $request, array $data, ?Employee $employee): void
+    {
+        if (! array_key_exists('privilege', $data) || $request->user()->can('employees.terminal-admin')) {
+            return;
+        }
+        $new = $data['privilege'] ?: null;
+        $changed = $employee === null ? ! in_array($new, [null, 'user'], true) : $new !== ($employee->privilege ?: null);
+        if ($changed) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['privilege' => ['You may not change device roles. Ask someone with "Make employees administrators on terminals".']]);
         }
     }
 }

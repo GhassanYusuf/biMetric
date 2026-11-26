@@ -43,6 +43,12 @@ class EmployeePolicy
         return $user->can('employees.push');
     }
 
+    /** Make someone an administrator on a terminal, or a normal user again (own permission since 2026-11-26). */
+    public function setTerminalAdmin(User $user, Employee $employee): bool
+    {
+        return $user->can('employees.terminal-admin');
+    }
+
     /**
      * Take a fingerprint on a terminal, see the person's enrollment, copy their fingerprints into
      * the system (2026-11-17). Granted by employees.fingerprint, or by employees.push which does all
