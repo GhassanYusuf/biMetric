@@ -928,7 +928,7 @@ export default function Employees() {
         onScan: can('employees.duplicates') ? (target) => setScanning(target ?? 'all') : null,
         highlightNoPunches,
         onToggleHighlightNoPunches: setHighlightNoPunches,
-        onMoveTerminal: can('employees.update') && companies.length > 0 ? () => setMovingTerminal(true) : null,
+        onMoveTerminal: can('system.move-terminal') && companies.length > 0 ? () => setMovingTerminal(true) : null,
         onReadFingerprints: readFingerprintsToSystem,
         onPushFingerprints: pushFingerprints,
         autoPush,

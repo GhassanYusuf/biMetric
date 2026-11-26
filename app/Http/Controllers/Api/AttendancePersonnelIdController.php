@@ -100,7 +100,8 @@ class AttendancePersonnelIdController extends Controller
     private function authorizeIt(Request $request): void
     {
         $user = $request->user();
-        abort_unless($user->can('attendance.view') && $user->can('employees.update'), 403, 'This action is unauthorized.');
+        // Its own permission since 2026-11-26 (System → Personnel IDs), was attendance.view + employees.update.
+        abort_unless($user->can('system.personnel-ids'), 403, 'This action is unauthorized.');
     }
 
     /** @return array{0: array, 1: string, 2: string} scope, first day, label */

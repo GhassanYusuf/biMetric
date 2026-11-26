@@ -201,11 +201,13 @@ class PersonnelIdsTest extends TestCase
         $this->actingAs($this->owner(), 'sanctum')->postJson('/api/attendance/personnel-ids/runs/'.$runs[0]['id'].'/undo')->assertStatus(409);
     }
 
-    public function test_the_page_needs_permission_to_change_employees(): void
+    public function test_the_page_needs_the_system_personnel_ids_permission(): void
     {
+        // Its own permission since 2026-11-26 (System → Personnel IDs): changing employees is not enough.
         $viewer = $this->owner();
         Tenancy::set($this->device->tenant_id); // roles are per tenant
-        $viewer->syncRoles(['operator']); // attendance.view, but not employees.update
+        $viewer->syncRoles(['operator']);
+        $viewer->givePermissionTo(['employees.update', 'attendance.view']);
         Tenancy::clear();
 
         $this->actingAs($viewer, 'sanctum')
@@ -215,6 +217,14 @@ class PersonnelIdsTest extends TestCase
             ->postJson('/api/attendance/personnel-ids', ['company_id' => $this->companyId(), 'from' => '2026-09-01'])
             ->assertForbidden();
         $this->assertSame([['701', null], ['701', null], ['701', null], ['921257970', null]], $this->ids());
+
+        Tenancy::set($this->device->tenant_id);
+        $viewer->givePermissionTo('system.personnel-ids');
+        Tenancy::clear();
+        $this->app['auth']->forgetGuards();
+        $this->actingAs($viewer->fresh(), 'sanctum')
+            ->getJson('/api/attendance/personnel-ids/preview?company_id='.$this->companyId().'&from=2026-09-01')
+            ->assertOk();
     }
 
     public function test_a_department_of_another_company_is_refused(): void

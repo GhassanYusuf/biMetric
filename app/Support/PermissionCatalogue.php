@@ -85,6 +85,11 @@ final class PermissionCatalogue
             'audit.view' => 'See the audit log',
             'logs.view' => 'See error logs (server, terminals, browsers)',
         ],
+        // Owner, 2026-11-26: operations that act on a whole terminal or roster at once.
+        'System' => [
+            'system.move-terminal' => 'Move terminal to company (everyone a terminal holds, in one go)',
+            'system.personnel-ids' => 'Personnel IDs: replace terminal user IDs with Personnel IDs in attendance, and undo',
+        ],
     ];
 
     /** Every permission a company level may hold: all of them except platform `tenants.*`. */

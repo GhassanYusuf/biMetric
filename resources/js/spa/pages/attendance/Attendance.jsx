@@ -173,7 +173,7 @@ export default function Attendance() {
         onSelect: (log) => log.employee_id && setSelected(log),
         exportItems,
         // Personnel IDs on punches (2026-11-05): the same permissions the server asks for.
-        onPersonnelIds: can('employees.update') ? () => setPersonnelIdsOpen(true) : null,
+        onPersonnelIds: can('system.personnel-ids') ? () => setPersonnelIdsOpen(true) : null,
     };
 
     const Presentation = deviceClass === 'desktop' ? AttendanceDesktop : AttendanceMobile;

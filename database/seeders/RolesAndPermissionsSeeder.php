@@ -33,6 +33,10 @@ class RolesAndPermissionsSeeder extends Seeder
         'settings.view', 'settings.manage',
         'notifications.view', 'notifications.view.self', 'notifications.manage',
         'audit.view', 'logs.view',
+        // System (owner, 2026-11-26): whole-terminal and whole-roster operations, each its own permission —
+        // held by the Administrator level (which always has every permission) and by nobody else unless given.
+        'system.move-terminal',   // Employees → Move terminal to company
+        'system.personnel-ids',   // Attendance → Personnel IDs (replace terminal IDs, undo)
         'tenants.view', 'tenants.manage', // platform-only
     ];
 

@@ -52,7 +52,8 @@ class EmployeeCompanyTransferController extends Controller
     /** @return array{0: Device, 1: Company, 2: ?Department} */
     private function targets(Request $request): array
     {
-        abort_unless($request->user()->can('employees.update'), 403, 'This action is unauthorized.');
+        // Its own permission since 2026-11-26 (System → Move terminal to company), was employees.update.
+        abort_unless($request->user()->can('system.move-terminal'), 403, 'This action is unauthorized.');
 
         $data = $request->validate([
             'device_id' => ['required', 'integer', Rule::exists('devices', 'id')->where('tenant_id', Tenancy::id())],

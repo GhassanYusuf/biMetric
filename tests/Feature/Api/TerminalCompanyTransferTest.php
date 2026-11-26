@@ -133,6 +133,20 @@ class TerminalCompanyTransferTest extends TestCase
         $this->withToken($token)->postJson('/api/employees/move-to-company', ['device_id' => $this->jjs->id, 'company_id' => $this->jjsCo->id])
             ->assertForbidden();
 
+        // Its own permission since 2026-11-26 (System → Move terminal to company): editing employees is not enough.
+        Tenancy::set($this->tenant->id);
+        $viewer->givePermissionTo(['employees.view', 'employees.update']);
+        Tenancy::clear();
+        $this->app['auth']->forgetGuards();
+        $this->withToken($token)->getJson("/api/employees/move-to-company/preview?device_id={$this->jjs->id}&company_id={$this->jjsCo->id}")
+            ->assertForbidden();
+        Tenancy::set($this->tenant->id);
+        $viewer->givePermissionTo('system.move-terminal');
+        Tenancy::clear();
+        $this->app['auth']->forgetGuards();
+        $this->withToken($token)->getJson("/api/employees/move-to-company/preview?device_id={$this->jjs->id}&company_id={$this->jjsCo->id}")
+            ->assertOk();
+
         $this->api()->postJson('/api/employees/move-to-company', ['device_id' => 999, 'company_id' => 999])
             ->assertUnprocessable()->assertJsonValidationErrors(['device_id', 'company_id']);
     }
