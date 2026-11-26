@@ -213,6 +213,10 @@ class EmployeeDevicePropagator
                 }
 
                 if ($idProblem !== null || $roleProblem !== null) {
+                    \Illuminate\Support\Facades\Log::warning('Push to terminal partly failed', [
+                        'employee_id' => $employee->id, 'device_id' => $device->id, 'device' => $device->name,
+                        'id_problem' => $idProblem, 'role_problem' => $roleProblem,
+                    ]);
                     $failed[] = [
                         'device_id' => $device->id,
                         'device_name' => $device->name,
@@ -231,6 +235,17 @@ class EmployeeDevicePropagator
                     'restored' => $restored,
                 ];
             } catch (\Throwable $e) {
+                // Every failed push is logged with its cause (2026-11-26: Ali's push to Gems WorkShop failed
+                // on screen and left nothing in the log — only terminal errors were logged, by the driver).
+                \Illuminate\Support\Facades\Log::warning('Push to terminal failed', [
+                    'employee_id' => $employee->id,
+                    'employee_code' => $employee->employee_code,
+                    'device_id' => $device->id,
+                    'device' => $device->name,
+                    'exception' => $e::class,
+                    'error' => $e->getMessage(),
+                    'at' => $e->getFile().':'.$e->getLine(),
+                ]);
                 /*
                  * Caught PER DEVICE and never rethrown. One unreachable terminal must
                  * not cancel the writes to the others — that turns a partial outage
