@@ -179,6 +179,23 @@ final class AttendanceRules
         return $this->endMinutes() - $this->startMinutes();
     }
 
+    /**
+     * One line for an export header (2026-11-26): "07:30–16:30, late after 10 min · Fri, Sat off",
+     * "17:00–02:00 (next day), …", or "open 24 hours (a normal day 08:00–16:00) · …".
+     */
+    public function describe(): string
+    {
+        $names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        $off = array_values(array_diff(range(0, 6), $this->workDays));
+        $weekend = $off === [] ? 'no weekend' : implode(', ', array_map(fn (int $d) => $names[$d], $off)).' off';
+        if ($this->noFixedHours) {
+            return "open 24 hours, no Late or Early (a normal day {$this->shiftStart}–{$this->shiftEnd}) · {$weekend}";
+        }
+        $next = $this->isOvernight() ? ' (next day)' : '';
+
+        return "{$this->shiftStart}–{$this->shiftEnd}{$next}, late after {$this->lateGrace} min · {$weekend}";
+    }
+
     /** The shape the report screens and the API carry. */
     public function toArray(): array
     {

@@ -76,13 +76,21 @@
                 </tbody>
             </table>
 
+            @php($sh = $block['shift'] ?? $s['shift'])
             <div class="legend">
-                Work is first In to last Out, no break deducted. Late counts from {{ $s['shift']['start'] }} once past
-                {{ $s['shift']['start'] }} + {{ $s['shift']['grace'] }} min; Early counts back from {{ $s['shift']['end'] }} when the
-                last punch is more than {{ $s['shift']['early_leave_grace'] }} min before it. Absent, Exception (waiver) and Holiday are
-                one shift, {{ $d($s['shift']['length_minutes']) }}. OT1 is time after {{ $s['shift']['end'] }} on a work day once the
-                last punch is {{ $s['shift']['leave_late_after'] }} min or more past it; OT2 is all time on an Off day.
+                @if (! empty($sh['no_fixed_hours']))
+                    Open 24 hours: no fixed working hours, so nothing is Late, Early or OT1. Work is first In to last Out,
+                    no break deducted, across midnight. Absent, Exception (waiver) and Holiday are a normal day,
+                    {{ $d($sh['length_minutes']) }}. OT2 is all time on an Off day.
+                @else
+                    Work is first In to last Out, no break deducted. Shift {{ $sh['start'] }}–{{ $sh['end'] }}{{ ! empty($sh['overnight']) ? ' (ends the next day)' : '' }}.
+                    Late counts from {{ $sh['start'] }} once past {{ $sh['start'] }} + {{ $sh['grace'] }} min; Early counts back from
+                    {{ $sh['end'] }} when the last punch is more than {{ $sh['early_leave_grace'] }} min before it. Absent, Exception
+                    (waiver) and Holiday are one shift, {{ $d($sh['length_minutes']) }}. OT1 is time after {{ $sh['end'] }} on a work day
+                    once the last punch is {{ $sh['leave_late_after'] }} min or more past it; OT2 is all time on an Off day.
+                @endif
                 "None" under Out means one punch only: the day is not counted as worked.
+                Holidays are those of this person's company.
             </div>
 
             @if ($loop->last)

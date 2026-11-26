@@ -36,7 +36,8 @@
         <div class="sub">{{ F::range($r['from'], $r['to']) }} · {{ $r['days'] }} days · {{ count($r['timeline']['buckets']) }} {{ $r['timeline']['grain'] === 'week' ? 'weeks' : 'work days' }} · {{ $r['headcount'] }} people</div>
         <div class="fine">
             Compared with the {{ $r['days'] }} days before ({{ F::range($r['previous']['from'], $r['previous']['to']) }}).
-            Shift {{ C::clock($r['shift']['start_minutes']) }} – {{ C::clock($r['shift']['end_minutes']) }}, late after {{ $r['shift']['grace_minutes'] }} minutes' grace.
+            @foreach ($r['shift_lines'] ?? [] as $line){{ $line }}. @endforeach
+            Each person is judged by their own company's shift and holidays.
             Active employees only.
         </div>
     </div>

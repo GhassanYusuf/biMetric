@@ -237,6 +237,35 @@ final class SummaryBatch
         return array_values(array_map(fn (string $k) => $this->profiles[$k]['rules'], $used));
     }
 
+    /**
+     * The shift(s) this batch judged people by, as export header lines (2026-11-26): one line when everyone
+     * shares a rule set, else one per company with its own rules and one for everyone on the default.
+     *
+     * @return list<string>
+     */
+    public function shiftLines(): array
+    {
+        $used = array_values(array_unique(array_column($this->employees, 'profile'))) ?: ['default'];
+        if (count($used) === 1) {
+            return ['Shift: '.$this->profiles[$used[0]]['rules']->describe()];
+        }
+        $names = \App\Models\Company::query()
+            ->whereIn('id', array_map(fn (string $k) => (int) substr($k, 8), array_filter($used, fn ($k) => $k !== 'default')))
+            ->pluck('name', 'id');
+        $lines = [];
+        foreach ($used as $key) {
+            if ($key !== 'default') {
+                $lines[] = ($names[(int) substr($key, 8)] ?? 'A company').': '.$this->profiles[$key]['rules']->describe();
+            }
+        }
+        sort($lines);
+        if (in_array('default', $used, true)) {
+            $lines[] = 'Everyone else: '.$this->profiles['default']['rules']->describe();
+        }
+
+        return $lines;
+    }
+
     /** @return Collection<int, AttendanceLog> */
     public function logsFor(int $employeeId): Collection
     {

@@ -62,10 +62,14 @@ class MonthlyStatementWorkbook
         $writer->addRow(Row::fromValues([$company ?: 'Company'], $bold));
         $writer->addRow(Row::fromValues(['Monthly Statement Report'], $title));
         $writer->addRow(Row::fromValues(['From '.$from->format('d/m/Y').' To '.$to->format('d/m/Y')]));
+        // Each company's own shift when they differ; 24-hour and overnight said so (2026-11-26).
+        foreach ($statement['shift_lines'] ?? ["Shift {$shift['start']}-{$shift['end']}"] as $line) {
+            $writer->addRow(Row::fromValues([$line]));
+        }
         $writer->addRow(Row::fromValues([
-            "Shift {$shift['start']}-{$shift['end']}. Late after {$shift['grace']} min; Left early more than "
-            ."{$shift['early_leave_grace']} min before the end; OT1 once {$shift['leave_late_after']} min past it. "
-            .'OT2 is time worked on a day off. "None" under Out: one punch only, not counted as worked.',
+            'Late, Left early and OT1 are against each person\'s own company shift (Timetable column); a company open '
+            .'24 hours has none. Holidays are each person\'s company\'s. OT2 is time worked on a day off. '
+            .'"None" under Out: one punch only, not counted as worked.',
         ]));
         $writer->addRow(Row::fromValues([]));
 

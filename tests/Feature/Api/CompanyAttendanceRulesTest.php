@@ -286,4 +286,30 @@ class CompanyAttendanceRulesTest extends TestCase
         $this->assertSame('excused', $daily['2026-08-06']['status']);
         $this->assertSame(8.0, $daily['2026-08-06']['payroll_hours'], 'a holiday is paid the normal day, 08:00–16:00');
     }
+
+    public function test_exports_say_each_companys_own_shift(): void
+    {
+        $this->as($this->admin)->putJson("/api/holidays/rules/companies/{$this->gems->id}", $this->ownRules(['no_fixed_hours' => true, 'weekend_days' => [5, 6]]))->assertOk();
+
+        Tenancy::set($this->tenant->id);
+        $statement = app(\App\Services\Reports\MonthlyStatement::class)->build('2026-08-02', '2026-08-08');
+        $report = app(\App\Services\Reports\AttendanceReport::class)->build('2026-08-02', '2026-08-08');
+        Tenancy::clear();
+
+        $this->assertCount(2, $statement['shift_lines']);
+        $this->assertStringStartsWith('GEMS: open 24 hours', $statement['shift_lines'][0]);
+        $this->assertStringStartsWith('Everyone else: 09:00–18:00', $statement['shift_lines'][1]);
+        $this->assertSame($statement['shift_lines'], $report['shift_lines']);
+
+        $blocks = collect($statement['employees'])->keyBy(fn ($b) => $b['employee']['name']);
+        $this->assertTrue($blocks['Gemma']['shift']['no_fixed_hours']);
+        $this->assertFalse($blocks['Ava']['shift']['no_fixed_hours']);
+        $monday = collect($blocks['Gemma']['rows'])->firstWhere('date', '03/08/2026');
+        $this->assertSame('24 hours', $monday['timetable']);
+        $this->assertSame(0, $monday['late']);
+
+        $this->as($this->admin)->get('/api/exports/monthly-statement?from=2026-08-02&to=2026-08-08')->assertOk();
+        $this->as($this->admin)->get('/api/exports/monthly-statement/excel?from=2026-08-02&to=2026-08-08')->assertOk();
+        $this->as($this->admin)->get('/api/exports/attendance-report?from=2026-08-02&to=2026-08-08')->assertOk();
+    }
 }

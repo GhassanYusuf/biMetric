@@ -142,6 +142,7 @@ class AttendanceReport
             'previous' => ['from' => $prevFrom->format('Y-m-d'), 'to' => $prevTo->format('Y-m-d')],
             'scope' => $scope->name(),
             'shift' => [...EmployeeReportService::shiftPayload($rules), 'timezone' => $tz, 'varies' => count($inUse) > 1],
+            'shift_lines' => $batch->shiftLines(),
             'headcount' => count($people),
             'punching' => count($punching),
             'stats' => EmployeeReportService::stats($current, $shiftStart, $grace),

@@ -323,8 +323,8 @@ class ExportController extends Controller
         }
 
         $fmt = fn (string $d) => Carbon::parse($d)->format('d/m/Y'); // owner, 2026-10-26
-        $days = collect($statement['shift']['work_days'])->map(fn (int $d) => Carbon::create()->startOfWeek(Carbon::SUNDAY)->addDays($d)->format('D'))->implode(' ');
-        $filterLines = ["Shift {$statement['shift']['start']}–{$statement['shift']['end']} · {$days}"];
+        // Each company's own shift when they differ, 24-hour and overnight ones said so (2026-11-26).
+        $filterLines = $statement['shift_lines'];
         [$companyIds, $departmentIds] = $this->statementScope($validated);
         if ($companyIds !== null) {
             $names = Company::whereIn('id', $companyIds)->orderBy('name')->pluck('name');

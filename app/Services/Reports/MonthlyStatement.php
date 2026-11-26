@@ -91,7 +91,7 @@ class MonthlyStatement
         $blocks = $employees->map(function (Employee $employee) use ($from, $to, $batch, $calendar) {
             $summary = $this->summaries->summary($employee, $from, $to, $batch);
             $rules = $batch->rulesFor($employee->id);
-            $timetable = $rules->shiftStart.'-'.$rules->shiftEnd;
+            $timetable = $rules->noFixedHours ? '24 hours' : $rules->shiftStart.'-'.$rules->shiftEnd;
             $workDays = array_column($summary['daily'], null, 'date');
             $offDays = array_column($summary['off_days'], null, 'date');
 
@@ -116,28 +116,40 @@ class MonthlyStatement
                 ],
                 'rows' => $rows,
                 'totals' => $totals,
+                // This person's own rules (their company's, else the default) — what the legend under their
+                // page explains (2026-11-26).
+                'shift' => self::shiftOf($rules),
             ];
         })->values()->all();
 
         return [
             'from' => $from,
             'to' => $to,
-            'shift' => [
-                'start' => $rules->shiftStart,
-                'end' => $rules->shiftEnd,
-                'grace' => $rules->lateGrace,
-                'early_leave_grace' => $rules->earlyLeaveGrace,
-                'leave_late_after' => $rules->leaveLateAfter,
-                'work_days' => $rules->workDays,
-                'length_minutes' => $rules->shiftLengthMinutes(),
-                'varies' => count($inUse) > 1,
-            ],
+            'shift' => [...self::shiftOf($rules), 'varies' => count($inUse) > 1],
+            // Every rule set used, one line each, for the export header (2026-11-26).
+            'shift_lines' => $batch->shiftLines(),
             'employees' => $blocks,
         ];
     }
 
     /** The columns that are durations, in minutes, and are totalled. */
     public const DURATIONS = ['break', 'late', 'early', 'work', 'absent', 'ot1', 'ot2', 'ot3', 'exception', 'holiday'];
+
+    /** @return array<string,mixed> the shift as the statement and its legend carry it */
+    private static function shiftOf(AttendanceRules $rules): array
+    {
+        return [
+            'start' => $rules->shiftStart,
+            'end' => $rules->shiftEnd,
+            'grace' => $rules->lateGrace,
+            'early_leave_grace' => $rules->earlyLeaveGrace,
+            'leave_late_after' => $rules->leaveLateAfter,
+            'work_days' => $rules->workDays,
+            'length_minutes' => $rules->shiftLengthMinutes(),
+            'overnight' => $rules->isOvernight(),
+            'no_fixed_hours' => $rules->noFixedHours,
+        ];
+    }
 
     private static function workDayRow(string $key, array $day, AttendanceRules $rules, string $timetable): array
     {

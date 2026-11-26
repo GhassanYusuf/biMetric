@@ -22,10 +22,10 @@
         ['Attendance', F::pct($S['attendance_rate']), F::delta($S['attendance_rate'], $P['attendance_rate'], 'pts', 'up'), $S['present_days'].' of '.$S['expected_days'].' expected days'],
         ['On-time arrivals', F::pct($S['on_time_rate']), F::delta($S['on_time_rate'], $P['on_time_rate'], 'pts', 'up'),
             $S['late_arrivals'] ? $S['late_arrivals'].' late arrival'.($S['late_arrivals'] === 1 ? '' : 's') : ($S['present_days'] ? 'never late' : 'no days present')],
-        ['Average arrival', C::clock($S['average_arrival_minutes']), F::delta($S['average_arrival_minutes'], $P['average_arrival_minutes'], 'min', 'down'), 'shift starts '.C::clock($shift['start_minutes'])],
-        ['Average departure', C::clock($S['average_departure_minutes']), null, 'shift ends '.C::clock($shift['end_minutes'])],
+        ['Average arrival', C::clock($S['average_arrival_minutes']), F::delta($S['average_arrival_minutes'], $P['average_arrival_minutes'], 'min', 'down'), (! empty($shift['no_fixed_hours']) ? 'open 24 hours' : 'shift starts '.C::clock($shift['start_minutes']))],
+        ['Average departure', C::clock($S['average_departure_minutes']), null, ! empty($shift['no_fixed_hours']) ? 'no fixed end' : 'shift ends '.C::clock($shift['end_minutes'])],
         ['Missed punch-outs', $S['present_days'] ? (string) $S['missed_punch_outs'] : '—', F::delta($S['missed_punch_outs'], $P['missed_punch_outs'], 'n', 'down'), $S['missed_punch_outs'] ? 'hours not counted on those days' : ($S['present_days'] ? 'every day closed' : 'no days present')],
-        ['Payroll hours', $S['work_days'] ? F::num($S['payroll_hours'], 1) : '—', null, 'inside the shift window'],
+        ['Payroll hours', $S['work_days'] ? F::num($S['payroll_hours'], 1) : '—', null, ! empty($shift['no_fixed_hours']) ? 'first to last punch' : 'inside the shift window'],
     ];
     $states = ['never_read' => 'never read', 'unknown' => 'unknown'];
 @endphp
