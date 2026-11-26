@@ -38,7 +38,6 @@ final class PermissionCatalogue
             'employees.update' => 'Edit employees',
             'employees.delete' => 'Delete employees',
             'employees.fingerprint' => 'Take fingerprints on terminals and copy them into the system',
-            'employees.duplicates' => 'Scan for duplicate employee records',
             'employees.push' => 'Send to and remove from terminals, delete fingerprints and cards, set terminal admin',
         ],
         'Attendance' => [
@@ -89,6 +88,8 @@ final class PermissionCatalogue
         'System' => [
             'system.move-terminal' => 'Move terminal to company (everyone a terminal holds, in one go)',
             'system.personnel-ids' => 'Personnel IDs: replace terminal user IDs with Personnel IDs in attendance, and undo',
+            // Listed here since 2026-11-26; the permission keeps its name, so nobody's grant changes.
+            'employees.duplicates' => 'Scan for duplicate employee records',
         ],
     ];
 
