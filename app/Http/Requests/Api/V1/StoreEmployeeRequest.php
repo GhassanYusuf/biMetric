@@ -17,6 +17,12 @@ use Illuminate\Validation\Rule;
  */
 class StoreEmployeeRequest extends BaseRequest
 {
+    /** Integration callers may create or update someone without a company (unchanged by 2026-11-26). */
+    protected function companyRequired(): bool
+    {
+        return false;
+    }
+
     protected function prepareForValidation(): void
     {
         $this->normaliseGender();

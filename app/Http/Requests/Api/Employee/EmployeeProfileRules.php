@@ -88,6 +88,9 @@ trait EmployeeProfileRules
     {
         return [
             'employee_code.regex' => 'The employee code must be digits only, up to 9.',
+            'employee_code.required' => 'Enter the Personnel ID.',
+            'name.required' => 'Enter the employee\'s name.',
+            'company_id.required_without' => 'Choose the company this employee belongs to.',
             'device_password.regex' => 'The device password must be 1 to 8 digits.',
             'access_valid_to.after' => 'The end date must be after the start date.',
             'employment_type.in' => 'Choose full-time or part-time.',

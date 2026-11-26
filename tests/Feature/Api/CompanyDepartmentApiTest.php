@@ -188,4 +188,17 @@ class CompanyDepartmentApiTest extends TestCase
 
         $this->api()->postJson('/api/departments', ['name' => 'Information Technology', 'company_id' => $this->promoseven->id])->assertCreated();
     }
+
+    public function test_personnel_id_name_and_company_are_required_on_the_form(): void
+    {
+        // Owner, 2026-11-26.
+        $this->api()->postJson('/api/employees', ['name' => '', 'employee_code' => ''])
+            ->assertStatus(422)->assertJsonValidationErrors(['name', 'employee_code', 'company_id'])
+            ->assertJsonPath('errors.company_id.0', 'Choose the company this employee belongs to.');
+        // A department implies its company.
+        $this->api()->postJson('/api/employees', ['name' => 'Sara', 'employee_code' => '4401', 'department_id' => $this->it->id])
+            ->assertCreated()->assertJsonPath('data.company_id', $this->promoseven->id);
+        $this->api()->postJson('/api/employees', ['name' => 'Omar', 'employee_code' => '4402', 'company_id' => $this->camelot->id])
+            ->assertCreated();
+    }
 }

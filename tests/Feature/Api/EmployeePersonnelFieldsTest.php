@@ -268,7 +268,22 @@ class EmployeePersonnelFieldsTest extends TestCase
     private function send(string $method, string $uri, array $data = []): \Illuminate\Testing\TestResponse
     {
         $this->app['auth']->forgetGuards();
+        // The employee form always sends a company (required since 2026-11-26).
+        if (in_array(strtoupper($method), ['POST', 'PUT'], true) && preg_match('#^/api/employees(/\d+)?$#', $uri) && ! array_key_exists('company_id', $data)) {
+            $data['company_id'] = $this->testCompanyId();
+        }
 
         return $this->json(strtoupper($method), $uri, $data, ['Authorization' => "Bearer {$this->token}"]);
+    }
+
+    /** Every employee saved through the form has a company (required since 2026-11-26). */
+    private function testCompanyId(): int
+    {
+        // The tenant of the signed-in user, else of the newest user (the one the test acts as).
+        $tenantId = auth()->user()?->tenant_id
+            ?? \App\Models\User::withoutGlobalScopes()->whereNotNull('tenant_id')->orderByDesc('id')->value('tenant_id');
+        $id = \App\Models\Company::withoutGlobalScopes()->where('tenant_id', $tenantId)->where('name', 'Test Co')->value('id');
+
+        return (int) ($id ?? \App\Models\Company::withoutGlobalScopes()->create(['tenant_id' => $tenantId, 'name' => 'Test Co'])->id);
     }
 }

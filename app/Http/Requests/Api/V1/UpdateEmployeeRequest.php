@@ -14,6 +14,12 @@ use App\Http\Requests\Api\Employee\UpdateEmployeeRequest as BaseRequest;
  */
 class UpdateEmployeeRequest extends BaseRequest
 {
+    /** Integration callers may create or update someone without a company (unchanged by 2026-11-26). */
+    protected function companyRequired(): bool
+    {
+        return false;
+    }
+
     protected function prepareForValidation(): void
     {
         $this->normaliseGender();

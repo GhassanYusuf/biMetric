@@ -71,7 +71,13 @@ class EmployeeEmploymentTest extends TestCase
     /** @return array<string,mixed> the SPA form's whole-record body */
     private function body(Employee $e, array $changes = []): array
     {
-        return ['name' => $e->name, 'employee_code' => $e->employee_code] + $changes;
+        $base = ['name' => $e->name, 'employee_code' => $e->employee_code];
+        // A company, or a department that implies one (required since 2026-11-26).
+        if (! array_key_exists('company_id', $changes) && ! array_key_exists('department_id', $changes)) {
+            $base['company_id'] = $e->company_id ?? $this->testCompanyId();
+        }
+
+        return $changes + $base;
     }
 
     public function test_employment_type_defaults_to_full_time_and_can_be_part_time(): void
@@ -259,5 +265,16 @@ class EmployeeEmploymentTest extends TestCase
 
         $this->assertSame('Technology', $follows->fresh()->department);
         $this->assertSame('INFO TECH', $own->fresh()->department, 'an imported text of its own is kept');
+    }
+
+    /** Every employee saved through the form has a company (required since 2026-11-26). */
+    private function testCompanyId(): int
+    {
+        // The tenant of the signed-in user, else of the newest user (the one the test acts as).
+        $tenantId = auth()->user()?->tenant_id
+            ?? \App\Models\User::withoutGlobalScopes()->whereNotNull('tenant_id')->orderByDesc('id')->value('tenant_id');
+        $id = \App\Models\Company::withoutGlobalScopes()->where('tenant_id', $tenantId)->where('name', 'Test Co')->value('id');
+
+        return (int) ($id ?? \App\Models\Company::withoutGlobalScopes()->create(['tenant_id' => $tenantId, 'name' => 'Test Co'])->id);
     }
 }

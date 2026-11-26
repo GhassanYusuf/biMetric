@@ -24,9 +24,18 @@ trait CompanyDepartmentRules
         $tenant = Tenancy::id();
 
         return [
-            'company_id' => ['nullable', 'integer', Rule::exists('companies', 'id')->where('tenant_id', $tenant)->whereNull('deleted_at')],
+            // Required on the add / edit employee form (owner, 2026-11-26: Personnel ID, name and company are
+            // required). The integration API keeps it optional (companyRequired()).
+            // A department alone also does: it belongs to one company, which the employee then takes.
+            'company_id' => [$this->companyRequired() ? 'required_without:department_id' : 'nullable', 'nullable', 'integer', Rule::exists('companies', 'id')->where('tenant_id', $tenant)->whereNull('deleted_at')],
             'department_id' => ['nullable', 'integer', Rule::exists('departments', 'id')->where('tenant_id', $tenant)->whereNull('deleted_at')],
         ];
+    }
+
+    /** The SPA's employee form requires a company; the integration API (V1) overrides this to false. */
+    protected function companyRequired(): bool
+    {
+        return true;
     }
 
     public function withValidator(Validator $validator): void

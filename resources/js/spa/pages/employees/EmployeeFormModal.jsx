@@ -463,6 +463,8 @@ export default function EmployeeFormModal({
         if (!form.name.trim()) found.name = ['Enter a name.'];
         const code = String(form.employee_code).trim();
         if (!code) found.employee_code = ['Enter a personnel ID.'];
+        // Required since 2026-11-26 (owner): every employee belongs to a company.
+        if (!Number(form.company_id) && !Number(form.unit_id)) found.company_id = ['Choose the company this employee belongs to.'];
         // Existing non-numeric codes ("10-12") stay editable — only a NEW or CHANGED
         // code must be digits, exactly as the server checks it.
         else if ((!isEdit || code !== String(employee.employee_code)) && !/^\d{1,9}$/.test(code)) {
@@ -810,7 +812,7 @@ export default function EmployeeFormModal({
                                         <TextField id="employee-email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} error={errors.email?.[0]} />
                                     </Row>
 
-                                    <Row label="Company" htmlFor="employee-company">
+                                    <Row label="Company" htmlFor="employee-company" required>
                                         <Combobox
                                             id="employee-company"
                                             options={companyOptions}
@@ -820,7 +822,6 @@ export default function EmployeeFormModal({
                                             emptyText="No company matches."
                                             onCreate={onCreateCompany ? (name) => createCompany(name) : null}
                                             createLabel={(q) => `Add company “${q}”`}
-                                            allowClear
                                             error={err('company_id')}
                                         />
                                     </Row>

@@ -125,7 +125,7 @@ class EmployeePropagationTest extends TestCase
     {
         Queue::fake();
 
-        $this->asAdmin()->putJson("/api/employees/{$this->employee->id}", [
+        $this->asAdmin()->putJson("/api/employees/{$this->employee->id}", ['company_id' => $this->testCompanyId(), 
             'name' => 'Aisha Rahman-Khan',
             'employee_code' => '501',
         ])->assertOk();
@@ -1175,5 +1175,16 @@ class EmployeePropagationTest extends TestCase
         $this->assertSame('4321', $this->employee->fresh()->device_password, 'captured from the terminal');
         $this->assertSame('1111', $other->fresh()->device_password, 'the system\'s own password is never overwritten by a read');
         Tenancy::clear();
+    }
+
+    /** Every employee saved through the form has a company (required since 2026-11-26). */
+    private function testCompanyId(): int
+    {
+        // The tenant of the signed-in user, else of the newest user (the one the test acts as).
+        $tenantId = auth()->user()?->tenant_id
+            ?? \App\Models\User::withoutGlobalScopes()->whereNotNull('tenant_id')->orderByDesc('id')->value('tenant_id');
+        $id = \App\Models\Company::withoutGlobalScopes()->where('tenant_id', $tenantId)->where('name', 'Test Co')->value('id');
+
+        return (int) ($id ?? \App\Models\Company::withoutGlobalScopes()->create(['tenant_id' => $tenantId, 'name' => 'Test Co'])->id);
     }
 }

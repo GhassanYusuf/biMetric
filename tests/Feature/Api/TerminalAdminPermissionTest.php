@@ -42,17 +42,17 @@ class TerminalAdminPermissionTest extends TestCase
     public function test_push_alone_no_longer_makes_terminal_administrators(): void
     {
         $this->actingAs($this->hr, 'sanctum')->putJson("/api/employees/{$this->ali->id}/devices/{$this->device->id}/privilege", ['admin' => true])->assertForbidden();
-        $this->actingAs($this->hr, 'sanctum')->putJson("/api/employees/{$this->ali->id}", ['name' => 'Ali', 'employee_code' => '7', 'privilege' => 'admin'])
+        $this->actingAs($this->hr, 'sanctum')->putJson("/api/employees/{$this->ali->id}", ['company_id' => $this->testCompanyId(), 'name' => 'Ali', 'employee_code' => '7', 'privilege' => 'admin'])
             ->assertStatus(422)->assertJsonValidationErrors('privilege');
-        $this->actingAs($this->hr, 'sanctum')->postJson('/api/employees', ['name' => 'Sara', 'employee_code' => '8', 'privilege' => 'admin'])
+        $this->actingAs($this->hr, 'sanctum')->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Sara', 'employee_code' => '8', 'privilege' => 'admin'])
             ->assertStatus(422)->assertJsonValidationErrors('privilege');
     }
 
     public function test_editing_or_adding_without_touching_the_role_still_works(): void
     {
-        $this->actingAs($this->hr, 'sanctum')->putJson("/api/employees/{$this->ali->id}", ['name' => 'Ali Hassan', 'employee_code' => '7', 'privilege' => 'user'])
+        $this->actingAs($this->hr, 'sanctum')->putJson("/api/employees/{$this->ali->id}", ['company_id' => $this->testCompanyId(), 'name' => 'Ali Hassan', 'employee_code' => '7', 'privilege' => 'user'])
             ->assertOk();
-        $this->actingAs($this->hr, 'sanctum')->postJson('/api/employees', ['name' => 'Sara', 'employee_code' => '8', 'privilege' => 'user'])
+        $this->actingAs($this->hr, 'sanctum')->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Sara', 'employee_code' => '8', 'privilege' => 'user'])
             ->assertCreated();
     }
 
@@ -62,7 +62,18 @@ class TerminalAdminPermissionTest extends TestCase
         $this->hr->givePermissionTo('employees.terminal-admin');
         Tenancy::clear();
 
-        $this->actingAs($this->hr->fresh(), 'sanctum')->putJson("/api/employees/{$this->ali->id}", ['name' => 'Ali', 'employee_code' => '7', 'privilege' => 'admin'])
+        $this->actingAs($this->hr->fresh(), 'sanctum')->putJson("/api/employees/{$this->ali->id}", ['company_id' => $this->testCompanyId(), 'name' => 'Ali', 'employee_code' => '7', 'privilege' => 'admin'])
             ->assertOk();
+    }
+
+    /** Every employee saved through the form has a company (required since 2026-11-26). */
+    private function testCompanyId(): int
+    {
+        // The tenant of the signed-in user, else of the newest user (the one the test acts as).
+        $tenantId = auth()->user()?->tenant_id
+            ?? \App\Models\User::withoutGlobalScopes()->whereNotNull('tenant_id')->orderByDesc('id')->value('tenant_id');
+        $id = \App\Models\Company::withoutGlobalScopes()->where('tenant_id', $tenantId)->where('name', 'Test Co')->value('id');
+
+        return (int) ($id ?? \App\Models\Company::withoutGlobalScopes()->create(['tenant_id' => $tenantId, 'name' => 'Test Co'])->id);
     }
 }

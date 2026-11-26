@@ -130,7 +130,7 @@ class ApiFlowTest extends TestCase
     {
         $adminToken = $this->tokenFor('admin@acme.test');
         $created = $this->actingWithToken($adminToken)
-            ->postJson('/api/employees', ['name' => 'Temp', 'employee_code' => '5555'])
+            ->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Temp', 'employee_code' => '5555'])
             ->assertStatus(201)
             ->json('data.id');
 
@@ -143,7 +143,7 @@ class ApiFlowTest extends TestCase
     {
         $token = $this->tokenFor('admin@acme.test');
         $id = $this->actingWithToken($token)
-            ->postJson('/api/employees', ['name' => 'Code Delete', 'employee_code' => '99901'])
+            ->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Code Delete', 'employee_code' => '99901'])
             ->assertStatus(201)
             ->json('data.id');
 
@@ -167,7 +167,7 @@ class ApiFlowTest extends TestCase
     public function test_an_employee_is_found_by_personnel_id(): void
     {
         $token = $this->tokenFor('admin@acme.test');
-        $id = $this->actingWithToken($token)->postJson('/api/employees', ['name' => 'Get Me', 'employee_code' => '99911'])->assertStatus(201)->json('data.id');
+        $id = $this->actingWithToken($token)->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Get Me', 'employee_code' => '99911'])->assertStatus(201)->json('data.id');
 
         $this->actingWithToken($token)->getJson('/api/employees/by-code/99911')
             ->assertOk()->assertJsonPath('data.id', $id)->assertJsonPath('data.name', 'Get Me');
@@ -179,7 +179,7 @@ class ApiFlowTest extends TestCase
     public function test_delete_by_personnel_id_matches_the_code_exactly(): void
     {
         $token = $this->tokenFor('admin@acme.test');
-        $this->actingWithToken($token)->postJson('/api/employees', ['name' => 'Short', 'employee_code' => '99902'])->assertStatus(201);
+        $this->actingWithToken($token)->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Short', 'employee_code' => '99902'])->assertStatus(201);
 
         $this->actingWithToken($token)->deleteJson('/api/employees/by-code/0099902')->assertStatus(404);
         $this->actingWithToken($token)->getJson('/api/employees?search=99902')->assertJsonPath('meta.pagination.total', 1);
@@ -199,7 +199,7 @@ class ApiFlowTest extends TestCase
         $this->assertTrue(Employee::where('employee_code', '77001')->exists());
         Tenancy::clear();
 
-        $this->actingWithToken($admin)->postJson('/api/employees', ['name' => 'Kept', 'employee_code' => '77002'])->assertStatus(201);
+        $this->actingWithToken($admin)->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Kept', 'employee_code' => '77002'])->assertStatus(201);
         $operator = $this->tokenFor('operator@acme.test');
         $this->actingWithToken($operator)->deleteJson('/api/employees/by-code/77002')->assertStatus(403);
     }
@@ -208,11 +208,11 @@ class ApiFlowTest extends TestCase
     {
         $token = $this->tokenFor('admin@acme.test');
 
-        $this->withToken($token)->postJson('/api/employees', ['name' => 'Uniq', 'employee_code' => '4242'])
+        $this->withToken($token)->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Uniq', 'employee_code' => '4242'])
             ->assertStatus(201);
 
         // Same code again within the tenant → 422.
-        $this->withToken($token)->postJson('/api/employees', ['name' => 'Dup', 'employee_code' => '4242'])
+        $this->withToken($token)->postJson('/api/employees', ['company_id' => $this->testCompanyId(), 'name' => 'Dup', 'employee_code' => '4242'])
             ->assertStatus(422)
             ->assertJsonStructure(['errors' => ['employee_code']]);
     }
@@ -242,5 +242,16 @@ class ApiFlowTest extends TestCase
         $this->withToken($hrToken)->getJson('/api/notifications/unread-count')
             ->assertOk()
             ->assertJsonPath('data.unread_count', 1);
+    }
+
+    /** Every employee saved through the form has a company (required since 2026-11-26). */
+    private function testCompanyId(): int
+    {
+        // The tenant of the signed-in user, else of the newest user (the one the test acts as).
+        $tenantId = auth()->user()?->tenant_id
+            ?? \App\Models\User::withoutGlobalScopes()->whereNotNull('tenant_id')->orderByDesc('id')->value('tenant_id');
+        $id = \App\Models\Company::withoutGlobalScopes()->where('tenant_id', $tenantId)->where('name', 'Test Co')->value('id');
+
+        return (int) ($id ?? \App\Models\Company::withoutGlobalScopes()->create(['tenant_id' => $tenantId, 'name' => 'Test Co'])->id);
     }
 }
